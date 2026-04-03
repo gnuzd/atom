@@ -12,3 +12,9 @@ pub enum YankType {
     Char,
     Line,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Editor,
+    Explorer,
+}

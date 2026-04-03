@@ -1,7 +1,7 @@
 pub mod mode;
 pub mod motion;
 
-use mode::YankType;
+use mode::{Focus, YankType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
@@ -11,6 +11,7 @@ pub struct Position {
 
 pub struct VimState {
     pub mode: mode::Mode,
+    pub focus: mode::Focus,
     pub command_buffer: String,
     pub selection_start: Option<Position>,
     pub search_query: String,
@@ -24,6 +25,7 @@ impl VimState {
     pub fn new() -> Self {
         Self {
             mode: mode::Mode::Normal,
+            focus: Focus::Editor,
             command_buffer: String::new(),
             selection_start: None,
             search_query: String::new(),

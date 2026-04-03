@@ -15,7 +15,8 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use editor::Editor;
 use ui::TerminalUi;
-use vim::{mode::{Mode, YankType}, VimState, Position};
+use vim::{mode::{Mode, YankType, Focus}, VimState, Position};
+use ui::explorer::FileExplorer;
 
 fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
@@ -27,6 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut editor = Editor::new();
     let mut vim = VimState::new();
     let ui = TerminalUi::new();
+    let mut explorer = FileExplorer::new();
 
     // Handle CLI arguments - Open multiple files
     let args: Vec<String> = env::args().collect();
@@ -55,6 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
             "Press 'yy' to copy line, 'p/P' to paste.".to_string(),
             "Press 'Home/End' or 'PgUp/PgDn' for line boundaries.".to_string(),
+            "Press 'Ctrl-b' to toggle File Explorer.".to_string(),
             "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
     }
@@ -68,7 +71,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBlock)?,
         }
 
-        terminal.draw(|f| ui.draw(f, &editor, &vim))?;
+        terminal.draw(|f| ui.draw(f, &editor, &vim, &explorer))?;
 
         // Clear yank highlight after some iterations (brief flash)
         if vim.yank_highlight_line.is_some() {
@@ -85,6 +88,42 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // Any key press clears the highlight immediately
                 vim.yank_highlight_line = None;
                 flash_counter = 0;
+
+                // Global Toggle Explorer
+                if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    explorer.toggle();
+                    if explorer.visible {
+                        vim.focus = Focus::Explorer;
+                    } else {
+                        vim.focus = Focus::Editor;
+                    }
+                    continue;
+                }
+
+                // Focus Handling
+                if vim.focus == Focus::Explorer {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            vim.focus = Focus::Editor;
+                        }
+                        KeyCode::Char('j') | KeyCode::Down => explorer.move_down(),
+                        KeyCode::Char('k') | KeyCode::Up => explorer.move_up(),
+                        KeyCode::Enter => {
+                            if let Some(entry) = explorer.selected_entry() {
+                                let path = entry.path.clone();
+                                let is_dir = entry.is_dir;
+                                if is_dir {
+                                    explorer.toggle_expand();
+                                } else {
+                                    let _ = editor.open_file(path);
+                                    vim.focus = Focus::Editor;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
 
                 match vim.mode {
                     Mode::Normal => match key.code {
