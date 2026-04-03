@@ -3,7 +3,7 @@ pub mod editor;
 pub mod ui;
 pub mod vim;
 
-use std::{error::Error, io};
+use std::{env, error::Error, io, path::PathBuf};
 
 use crossterm::{
     cursor::SetCursorStyle,
@@ -28,11 +28,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut vim = VimState::new();
     let ui = TerminalUi::new();
 
-    editor.buffer.lines = vec![
-        "Welcome to Atom IDE!".to_string(),
-        "Press 'i' for Insert mode, 'Esc' for Normal mode.".to_string(),
-        "Press ':' for Command mode (e.g., :q to quit).".to_string(),
-    ];
+    // Handle CLI arguments
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 {
+        let path = PathBuf::from(&args[1]);
+        if path.exists() {
+            editor.open_file(path)?;
+        } else {
+            // New file
+            editor.buffer.file_path = Some(path);
+        }
+    } else {
+        // Welcome message for empty buffer
+        editor.buffer.lines = vec![
+            "Welcome to Atom IDE!".to_string(),
+            "Press 'i' for Insert mode, 'Esc' for Normal mode.".to_string(),
+            "Press ':' for Command mode (e.g., :q to quit, :w to save).".to_string(),
+        ];
+    }
 
     loop {
         // Set cursor style based on mode
@@ -112,14 +125,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                     KeyCode::Enter => {
-                        let cmd = vim.command_buffer.as_str();
-                        match cmd {
-                            "q" | "quit" => break,
-                            _ => {
-                                // Unknown command, just go back to normal mode
-                                vim.mode = Mode::Normal;
+                        let cmd_parts: Vec<&str> = vim.command_buffer.split_whitespace().collect();
+                        if !cmd_parts.is_empty() {
+                            match cmd_parts[0] {
+                                "q" | "quit" => break,
+                                "w" | "write" => {
+                                    if cmd_parts.len() > 1 {
+                                        let path = PathBuf::from(cmd_parts[1]);
+                                        let _ = editor.save_file_as(path);
+                                    } else {
+                                        let _ = editor.save_file();
+                                    }
+                                }
+                                "wq" => {
+                                    let _ = editor.save_file();
+                                    break;
+                                }
+                                _ => {}
                             }
                         }
+                        vim.mode = Mode::Normal;
                         vim.command_buffer.clear();
                     }
                     _ => {}

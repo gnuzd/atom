@@ -5,6 +5,7 @@ A minimalist, terminal-based IDE built with Rust, Ratatui, and Vim-inspired moti
 ## Features
 
 - **Vim-inspired Modes:** Supports `Normal`, `Insert`, and `Command` modes.
+- **File I/O:** Open files via CLI and save changes using `:w` commands.
 - **Dynamic Cursor:** Uses a thin bar cursor in `Insert` mode and a block cursor in `Normal/Command` modes.
 - **Minimalist UI:** Borderless, clean design focused on your code.
 - **Navigation:** Supports both classic `hjkl` and standard arrow key movement.
@@ -45,6 +46,9 @@ cargo run
 
 - `Esc`: Return to **Normal** mode.
 - `q` or `quit` followed by `Enter`: Quit the application.
+- `w` or `write` followed by `Enter`: Save the current file.
+- `w <filename>` followed by `Enter`: Save the current buffer to a specific file.
+- `wq` followed by `Enter`: Save and quit.
 - `Backspace`: Delete characters or exit to Normal mode if empty.
 
 ## Project Structure

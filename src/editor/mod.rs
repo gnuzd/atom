@@ -1,3 +1,5 @@
+use std::{io, path::PathBuf};
+
 pub mod buffer;
 pub mod cursor;
 
@@ -12,6 +14,21 @@ impl Editor {
             buffer: buffer::Buffer::new(),
             cursor: cursor::Cursor::new(),
         }
+    }
+
+    pub fn open_file(&mut self, path: PathBuf) -> io::Result<()> {
+        self.buffer = buffer::Buffer::load(path)?;
+        self.cursor.x = 0;
+        self.cursor.y = 0;
+        Ok(())
+    }
+
+    pub fn save_file(&self) -> io::Result<()> {
+        self.buffer.save()
+    }
+
+    pub fn save_file_as(&mut self, path: PathBuf) -> io::Result<()> {
+        self.buffer.save_as(path)
     }
 
     pub fn move_up(&mut self) {

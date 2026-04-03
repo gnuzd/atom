@@ -28,7 +28,11 @@ impl TerminalUi {
 
         // Status Line
         let mode_text = format!("{:?}", vim.mode).to_uppercase();
-        let status_text = format!(" {} | {}:{} ", mode_text, editor.cursor.y + 1, editor.cursor.x + 1);
+        let file_name = editor.buffer.file_path.as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("[No Name]");
+        let status_text = format!(" {} | {} | {}:{} ", mode_text, file_name, editor.cursor.y + 1, editor.cursor.x + 1);
         let status_bar = Paragraph::new(status_text);
         frame.render_widget(status_bar, chunks[1]);
 
