@@ -7,7 +7,7 @@ use std::{env, error::Error, io, path::PathBuf};
 
 use crossterm::{
     cursor::SetCursorStyle,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -15,7 +15,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use editor::Editor;
 use ui::TerminalUi;
-use vim::{mode::Mode, VimState};
+use vim::{mode::Mode, VimState, Position};
 
 fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
@@ -42,8 +42,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Welcome message for empty buffer
         editor.buffer.lines = vec![
             "Welcome to Atom IDE!".to_string(),
-            "Press 'i' for Insert mode, 'Esc' for Normal mode.".to_string(),
-            "Press ':' for Command mode (e.g., :q to quit, :w to save).".to_string(),
+            "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
+            "Press '/' to search, 'u' to undo, 'Ctrl-r' to redo.".to_string(),
         ];
     }
 
@@ -60,10 +60,38 @@ fn main() -> Result<(), Box<dyn Error>> {
             match vim.mode {
                 Mode::Normal => match key.code {
                     KeyCode::Char('q') => break,
-                    KeyCode::Char('i') => vim.mode = Mode::Insert,
+                    KeyCode::Char('i') => {
+                        editor.buffer.push_history();
+                        vim.mode = Mode::Insert;
+                    },
+                    KeyCode::Char('v') => {
+                        vim.mode = Mode::Visual;
+                        vim.selection_start = Some(Position { x: editor.cursor.x, y: editor.cursor.y });
+                    }
                     KeyCode::Char(':') => {
                         vim.mode = Mode::Command;
                         vim.command_buffer.clear();
+                    }
+                    KeyCode::Char('/') => {
+                        vim.mode = Mode::Search;
+                        vim.search_query.clear();
+                    }
+                    KeyCode::Char('u') => {
+                        editor.undo();
+                    }
+                    KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        editor.redo();
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
+                    KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
+                    KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
+                    KeyCode::Char('l') | KeyCode::Right => editor.move_right(),
+                    _ => {}
+                },
+                Mode::Visual => match key.code {
+                    KeyCode::Esc => {
+                        vim.mode = Mode::Normal;
+                        vim.selection_start = None;
                     }
                     KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                     KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
@@ -149,7 +177,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     _ => {}
                 },
-                _ => {}
+                Mode::Search => match key.code {
+                    KeyCode::Esc => {
+                        vim.mode = Mode::Normal;
+                        vim.search_query.clear();
+                    }
+                    KeyCode::Char(c) => {
+                        vim.search_query.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        if vim.search_query.is_empty() {
+                            vim.mode = Mode::Normal;
+                        } else {
+                            vim.search_query.pop();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        vim.mode = Mode::Normal;
+                    }
+                    _ => {}
+                },
             }
         }
     }

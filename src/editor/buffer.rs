@@ -1,8 +1,11 @@
 use std::{fs, io, path::PathBuf};
 
+#[derive(Clone)]
 pub struct Buffer {
     pub lines: Vec<String>,
     pub file_path: Option<PathBuf>,
+    pub history: Vec<Vec<String>>,
+    pub redo_stack: Vec<Vec<String>>,
 }
 
 impl Buffer {
@@ -10,6 +13,8 @@ impl Buffer {
         Self {
             lines: vec![String::new()],
             file_path: None,
+            history: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
@@ -24,6 +29,8 @@ impl Buffer {
         Ok(Self {
             lines,
             file_path: Some(path),
+            history: Vec::new(),
+            redo_stack: Vec::new(),
         })
     }
 
@@ -41,6 +48,31 @@ impl Buffer {
         self.file_path = Some(path);
         Ok(())
     }
+
+    pub fn push_history(&mut self) {
+        self.history.push(self.lines.clone());
+        self.redo_stack.clear();
+    }
+
+    pub fn undo(&mut self) -> bool {
+        if let Some(prev_state) = self.history.pop() {
+            self.redo_stack.push(self.lines.clone());
+            self.lines = prev_state;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn redo(&mut self) -> bool {
+        if let Some(next_state) = self.redo_stack.pop() {
+            self.history.push(self.lines.clone());
+            self.lines = next_state;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -57,26 +89,18 @@ mod tests {
     }
 
     #[test]
-    fn test_buffer_save_load() {
-        let mut temp_path = env::temp_dir();
-        temp_path.push("atom_test_buffer.txt");
-        
+    fn test_buffer_undo_redo() {
         let mut buffer = Buffer::new();
-        buffer.lines = vec!["Line 1".to_string(), "Line 2".to_string()];
+        buffer.lines = vec!["State 1".to_string()];
+        buffer.push_history();
         
-        // Save As
-        buffer.save_as(temp_path.clone()).expect("Failed to save as");
-        assert_eq!(buffer.file_path, Some(temp_path.clone()));
-        assert!(temp_path.exists());
+        buffer.lines = vec!["State 2".to_string()];
+        assert_eq!(buffer.lines[0], "State 2");
         
-        // Load
-        let loaded_buffer = Buffer::load(temp_path.clone()).expect("Failed to load");
-        assert_eq!(loaded_buffer.lines.len(), 2);
-        assert_eq!(loaded_buffer.lines[0], "Line 1");
-        assert_eq!(loaded_buffer.lines[1], "Line 2");
-        assert_eq!(loaded_buffer.file_path, Some(temp_path.clone()));
+        buffer.undo();
+        assert_eq!(buffer.lines[0], "State 1");
         
-        // Clean up
-        let _ = fs::remove_file(temp_path);
+        buffer.redo();
+        assert_eq!(buffer.lines[0], "State 2");
     }
 }

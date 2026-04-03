@@ -31,6 +31,14 @@ impl Editor {
         self.buffer.save_as(path)
     }
 
+    pub fn undo(&mut self) -> bool {
+        self.buffer.undo()
+    }
+
+    pub fn redo(&mut self) -> bool {
+        self.buffer.redo()
+    }
+
     pub fn move_up(&mut self) {
         if self.cursor.y > 0 {
             self.cursor.y -= 1;

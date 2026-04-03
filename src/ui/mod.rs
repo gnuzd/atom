@@ -1,5 +1,7 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
     widgets::Paragraph,
     Frame,
 };
@@ -17,13 +19,73 @@ impl TerminalUi {
             .constraints([
                 Constraint::Min(1),    // Editor
                 Constraint::Length(1), // Status Line
-                Constraint::Length(1), // Command Line
+                Constraint::Length(1), // Command/Search Line
             ])
             .split(frame.area());
 
-        // Main Editor Area - No Border
-        let lines: Vec<String> = editor.buffer.lines.clone();
-        let editor_paragraph = Paragraph::new(lines.join("\n"));
+        // Editor Area
+        let mut text = Text::default();
+        let search_query = &vim.search_query;
+        
+        for (y, line) in editor.buffer.lines.iter().enumerate() {
+            let mut spans = Vec::new();
+            
+            // Collect matches if search query is not empty
+            let mut search_matches = Vec::new();
+            if !search_query.is_empty() {
+                let mut start = 0;
+                while let Some(pos) = line[start..].find(search_query) {
+                    let absolute_pos = start + pos;
+                    search_matches.push(absolute_pos..absolute_pos + search_query.len());
+                    start = absolute_pos + 1;
+                }
+            }
+
+            for (x, c) in line.chars().enumerate() {
+                let mut style = Style::default();
+                
+                // Visual Mode Selection
+                if let Some(start) = vim.selection_start {
+                    let cur = crate::vim::Position { x: editor.cursor.x, y: editor.cursor.y };
+                    let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) {
+                        (start.y, start.x, cur.y, cur.x)
+                    } else {
+                        (cur.y, cur.x, start.y, start.x)
+                    };
+
+                    let is_in_range = if y > s_y && y < e_y {
+                        true
+                    } else if y == s_y && y == e_y {
+                        x >= s_x && x <= e_x
+                    } else if y == s_y {
+                        x >= s_x
+                    } else if y == e_y {
+                        x <= e_x
+                    } else {
+                        false
+                    };
+
+                    if is_in_range {
+                        style = style.add_modifier(Modifier::REVERSED);
+                    }
+                }
+                
+                // Search Highlight
+                for range in &search_matches {
+                    if range.contains(&x) {
+                        style = style.bg(Color::Yellow).fg(Color::Black);
+                    }
+                }
+                
+                spans.push(Span::styled(c.to_string(), style));
+            }
+            if line.is_empty() {
+                 spans.push(Span::raw(" "));
+            }
+            text.lines.push(Line::from(spans));
+        }
+
+        let editor_paragraph = Paragraph::new(text);
         frame.render_widget(editor_paragraph, chunks[0]);
 
         // Status Line
@@ -36,7 +98,7 @@ impl TerminalUi {
         let status_bar = Paragraph::new(status_text);
         frame.render_widget(status_bar, chunks[1]);
 
-        // Command Line
+        // Command/Search Line
         if vim.mode == crate::vim::mode::Mode::Command {
             let command_text = format!(":{}", vim.command_buffer);
             let command_bar = Paragraph::new(command_text);
@@ -46,10 +108,17 @@ impl TerminalUi {
                 chunks[2].x + vim.command_buffer.len() as u16 + 1,
                 chunks[2].y,
             ));
-        } else {
-            // Clear command line area when not in command mode
-            frame.render_widget(Paragraph::new(""), chunks[2]);
+        } else if vim.mode == crate::vim::mode::Mode::Search {
+            let search_text = format!("/{}", vim.search_query);
+            let search_bar = Paragraph::new(search_text);
+            frame.render_widget(search_bar, chunks[2]);
 
+            frame.set_cursor_position((
+                chunks[2].x + vim.search_query.len() as u16 + 1,
+                chunks[2].y,
+            ));
+        } else {
+            frame.render_widget(Paragraph::new(""), chunks[2]);
             frame.set_cursor_position((
                 chunks[0].x + editor.cursor.x as u16,
                 chunks[0].y + editor.cursor.y as u16,
