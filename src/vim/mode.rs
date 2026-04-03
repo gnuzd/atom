@@ -5,6 +5,16 @@ pub enum Mode {
     Visual,
     Command,
     Search,
+    ExplorerInput(ExplorerInputType),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExplorerInputType {
+    Add,
+    Rename,
+    Move,
+    Filter,
+    DeleteConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

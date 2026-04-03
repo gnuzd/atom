@@ -13,6 +13,7 @@ pub struct VimState {
     pub mode: mode::Mode,
     pub focus: mode::Focus,
     pub command_buffer: String,
+    pub input_buffer: String, // For Explorer operations
     pub selection_start: Option<Position>,
     pub search_query: String,
     pub register: String,
@@ -27,6 +28,7 @@ impl VimState {
             mode: mode::Mode::Normal,
             focus: Focus::Editor,
             command_buffer: String::new(),
+            input_buffer: String::new(),
             selection_start: None,
             search_query: String::new(),
             register: String::new(),

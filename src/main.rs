@@ -15,7 +15,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use editor::Editor;
 use ui::TerminalUi;
-use vim::{mode::{Mode, YankType, Focus}, VimState, Position};
+use vim::{mode::{Mode, YankType, Focus, ExplorerInputType}, VimState, Position};
 use ui::explorer::FileExplorer;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -33,10 +33,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Handle CLI arguments - Open multiple files
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        // Clear initial empty buffer
         editor.buffers.clear();
         editor.cursors.clear();
-        
         for arg in &args[1..] {
             let path = PathBuf::from(arg);
             if path.exists() {
@@ -50,7 +48,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         editor.active_idx = 0;
     } else {
-        // Welcome message
         let active_buffer = editor.buffer_mut();
         active_buffer.lines = vec![
             "Welcome to Atom IDE!".to_string(),
@@ -58,6 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Press 'yy' to copy line, 'p/P' to paste.".to_string(),
             "Press 'Home/End' or 'PgUp/PgDn' for line boundaries.".to_string(),
             "Press 'Ctrl-b' to toggle File Explorer.".to_string(),
+            "Explorer: a(add), r(rename), d(del), m(move), /(filter), Z(close all)".to_string(),
             "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
     }
@@ -67,13 +65,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
         // Set cursor style based on mode
         match vim.mode {
-            Mode::Insert => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBar)?,
+            Mode::Insert | Mode::ExplorerInput(_) => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBar)?,
             _ => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBlock)?,
         }
 
         terminal.draw(|f| ui.draw(f, &editor, &vim, &explorer))?;
 
-        // Clear yank highlight after some iterations (brief flash)
         if vim.yank_highlight_line.is_some() {
             if flash_counter > 5 {
                 vim.yank_highlight_line = None;
@@ -85,39 +82,94 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                // Any key press clears the highlight immediately
                 vim.yank_highlight_line = None;
                 flash_counter = 0;
+
+                // Handle Explorer Input Mode (Add, Rename, Move, Filter, Delete)
+                if let Mode::ExplorerInput(input_type) = vim.mode {
+                    match key.code {
+                        KeyCode::Esc => {
+                            vim.mode = Mode::Normal;
+                            vim.input_buffer.clear();
+                        }
+                        KeyCode::Enter => {
+                            let input = vim.input_buffer.clone();
+                            match input_type {
+                                ExplorerInputType::Add => { let _ = explorer.create_file(&input); }
+                                ExplorerInputType::Rename => { let _ = explorer.rename_selected(&input); }
+                                ExplorerInputType::Move => { let _ = explorer.move_selected(PathBuf::from(&input).as_path()); }
+                                ExplorerInputType::Filter => { explorer.filter = input; explorer.refresh(); }
+                                ExplorerInputType::DeleteConfirm => {
+                                    if input.to_lowercase() == "y" { let _ = explorer.delete_selected(); }
+                                }
+                            }
+                            vim.mode = Mode::Normal;
+                            vim.input_buffer.clear();
+                        }
+                        KeyCode::Char(c) => {
+                            vim.input_buffer.push(c);
+                            if input_type == ExplorerInputType::Filter {
+                                explorer.filter = vim.input_buffer.clone();
+                                explorer.refresh();
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            vim.input_buffer.pop();
+                            if input_type == ExplorerInputType::Filter {
+                                explorer.filter = vim.input_buffer.clone();
+                                explorer.refresh();
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
 
                 // Global Toggle Explorer
                 if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     explorer.toggle();
-                    if explorer.visible {
-                        vim.focus = Focus::Explorer;
-                    } else {
-                        vim.focus = Focus::Editor;
-                    }
+                    vim.focus = if explorer.visible { Focus::Explorer } else { Focus::Editor };
                     continue;
                 }
 
                 // Focus Handling
                 if vim.focus == Focus::Explorer {
                     match key.code {
-                        KeyCode::Esc | KeyCode::Char('q') => {
-                            vim.focus = Focus::Editor;
-                        }
+                        KeyCode::Esc | KeyCode::Char('q') => { vim.focus = Focus::Editor; }
                         KeyCode::Char('j') | KeyCode::Down => explorer.move_down(),
                         KeyCode::Char('k') | KeyCode::Up => explorer.move_up(),
+                        KeyCode::Char('h') | KeyCode::Left => explorer.collapse(),
+                        KeyCode::Char('l') | KeyCode::Right => explorer.expand(),
+                        KeyCode::Char('a') => {
+                            vim.mode = Mode::ExplorerInput(ExplorerInputType::Add);
+                            vim.input_buffer.clear();
+                        }
+                        KeyCode::Char('r') => {
+                            vim.mode = Mode::ExplorerInput(ExplorerInputType::Rename);
+                            if let Some(entry) = explorer.selected_entry() {
+                                vim.input_buffer = entry.path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                            }
+                        }
+                        KeyCode::Char('d') => {
+                            vim.mode = Mode::ExplorerInput(ExplorerInputType::DeleteConfirm);
+                            vim.input_buffer.clear();
+                        }
+                        KeyCode::Char('m') => {
+                            vim.mode = Mode::ExplorerInput(ExplorerInputType::Move);
+                            vim.input_buffer.clear();
+                        }
+                        KeyCode::Char('/') => {
+                            vim.mode = Mode::ExplorerInput(ExplorerInputType::Filter);
+                            vim.input_buffer = explorer.filter.clone();
+                        }
+                        KeyCode::Char('Z') => { explorer.close_all(); }
+                        KeyCode::Char('H') => { explorer.show_hidden = !explorer.show_hidden; explorer.refresh(); }
+                        KeyCode::Char('I') => { explorer.show_ignored = !explorer.show_ignored; explorer.refresh(); }
                         KeyCode::Enter => {
                             if let Some(entry) = explorer.selected_entry() {
                                 let path = entry.path.clone();
-                                let is_dir = entry.is_dir;
-                                if is_dir {
-                                    explorer.toggle_expand();
-                                } else {
-                                    let _ = editor.open_file(path);
-                                    vim.focus = Focus::Editor;
-                                }
+                                if entry.is_dir { explorer.toggle_expand(); }
+                                else { let _ = editor.open_file(path); vim.focus = Focus::Editor; }
                             }
                         }
                         _ => {}
@@ -128,107 +180,41 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match vim.mode {
                     Mode::Normal => match key.code {
                         KeyCode::Char('q') => break,
-                        KeyCode::Char('i') => {
-                            editor.buffer_mut().push_history();
-                            vim.mode = Mode::Insert;
-                        },
-                        KeyCode::Char('v') => {
-                            vim.mode = Mode::Visual;
-                            let cursor = editor.cursor();
-                            vim.selection_start = Some(Position { x: cursor.x, y: cursor.y });
-                        }
-                        KeyCode::Char(':') => {
-                            vim.mode = Mode::Command;
-                            vim.command_buffer.clear();
-                        }
-                        KeyCode::Char('/') => {
-                            vim.mode = Mode::Search;
-                            vim.search_query.clear();
-                        }
-                        KeyCode::Char('u') => {
-                            editor.undo();
-                        }
-                        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            editor.redo();
-                        }
+                        KeyCode::Char('i') => { editor.buffer_mut().push_history(); vim.mode = Mode::Insert; },
+                        KeyCode::Char('v') => { vim.mode = Mode::Visual; let cursor = editor.cursor(); vim.selection_start = Some(Position { x: cursor.x, y: cursor.y }); }
+                        KeyCode::Char(':') => { vim.mode = Mode::Command; vim.command_buffer.clear(); }
+                        KeyCode::Char('/') => { vim.mode = Mode::Search; vim.search_query.clear(); }
+                        KeyCode::Char('u') => { editor.undo(); }
+                        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
                         KeyCode::Char('w') => editor.move_word_forward(),
                         KeyCode::Char('b') => editor.move_word_backward(),
                         KeyCode::Char('e') => editor.move_word_end(),
-                        KeyCode::Char('o') => {
-                            editor.open_line_below();
-                            vim.mode = Mode::Insert;
-                        }
-                        KeyCode::Char('O') => {
-                            editor.open_line_above();
-                            vim.mode = Mode::Insert;
-                        }
+                        KeyCode::Char('o') => { editor.open_line_below(); vim.mode = Mode::Insert; }
+                        KeyCode::Char('O') => { editor.open_line_above(); vim.mode = Mode::Insert; }
                         KeyCode::Char('p') => editor.paste_after(&vim.register, vim.yank_type),
                         KeyCode::Char('P') => editor.paste_before(&vim.register, vim.yank_type),
                         KeyCode::Char('y') => {
                             if vim.pending_op == Some('y') {
-                                // yy logic
                                 let cursor_y = editor.cursor().y;
                                 vim.register = editor.buffer().lines[cursor_y].clone();
                                 vim.yank_type = YankType::Line;
                                 vim.pending_op = None;
-                                // Visual feedback
                                 vim.yank_highlight_line = Some(cursor_y);
                                 flash_counter = 0;
-                            } else {
-                                vim.pending_op = Some('y');
-                            }
+                            } else { vim.pending_op = Some('y'); }
                         }
-                        KeyCode::PageUp | KeyCode::Home => {
-                            vim.pending_op = None;
-                            editor.move_to_line_start();
-                        }
-                        KeyCode::PageDown | KeyCode::End => {
-                            vim.pending_op = None;
-                            editor.move_to_line_end();
-                        }
-                        KeyCode::Char('j') | KeyCode::Down => {
-                            vim.pending_op = None;
-                            editor.move_down();
-                        },
-                        KeyCode::Char('k') | KeyCode::Up => {
-                            vim.pending_op = None;
-                            editor.move_up();
-                        },
-                        KeyCode::Char('h') | KeyCode::Left => {
-                            vim.pending_op = None;
-                            editor.move_left();
-                        },
-                        KeyCode::Char('l') | KeyCode::Right => {
-                            vim.pending_op = None;
-                            editor.move_right();
-                        },
-                        _ => {
-                            vim.pending_op = None;
-                        }
+                        KeyCode::PageUp | KeyCode::Home => { vim.pending_op = None; editor.move_to_line_start(); }
+                        KeyCode::PageDown | KeyCode::End => { vim.pending_op = None; editor.move_to_line_end(); }
+                        KeyCode::Char('j') | KeyCode::Down => { vim.pending_op = None; editor.move_down(); },
+                        KeyCode::Char('k') | KeyCode::Up => { vim.pending_op = None; editor.move_up(); },
+                        KeyCode::Char('h') | KeyCode::Left => { vim.pending_op = None; editor.move_left(); },
+                        KeyCode::Char('l') | KeyCode::Right => { vim.pending_op = None; editor.move_right(); },
+                        _ => { vim.pending_op = None; }
                     },
                     Mode::Visual => match key.code {
-                        KeyCode::Esc => {
-                            vim.mode = Mode::Normal;
-                            vim.selection_start = None;
-                        }
-                        KeyCode::Char('y') => {
-                            if let Some(start) = vim.selection_start {
-                                let cursor = editor.cursor();
-                                vim.register = editor.yank(start.x, start.y, cursor.x, cursor.y);
-                                vim.yank_type = YankType::Char;
-                            }
-                            vim.mode = Mode::Normal;
-                            vim.selection_start = None;
-                        }
-                        KeyCode::Char('d') | KeyCode::Char('x') => {
-                            if let Some(start) = vim.selection_start {
-                                let cursor = editor.cursor();
-                                vim.register = editor.delete_selection(start.x, start.y, cursor.x, cursor.y);
-                                vim.yank_type = YankType::Char;
-                            }
-                            vim.mode = Mode::Normal;
-                            vim.selection_start = None;
-                        }
+                        KeyCode::Esc => { vim.mode = Mode::Normal; vim.selection_start = None; }
+                        KeyCode::Char('y') => { if let Some(start) = vim.selection_start { let cursor = editor.cursor(); vim.register = editor.yank(start.x, start.y, cursor.x, cursor.y); vim.yank_type = YankType::Char; } vim.mode = Mode::Normal; vim.selection_start = None; }
+                        KeyCode::Char('d') | KeyCode::Char('x') => { if let Some(start) = vim.selection_start { let cursor = editor.cursor(); vim.register = editor.delete_selection(start.x, start.y, cursor.x, cursor.y); vim.yank_type = YankType::Char; } vim.mode = Mode::Normal; vim.selection_start = None; }
                         KeyCode::Char('w') => editor.move_word_forward(),
                         KeyCode::Char('b') => editor.move_word_backward(),
                         KeyCode::Char('e') => editor.move_word_end(),
@@ -241,9 +227,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Insert => match key.code {
-                        KeyCode::Esc => {
-                            vim.mode = Mode::Normal;
-                        }
+                        KeyCode::Esc => { vim.mode = Mode::Normal; }
                         KeyCode::Up => editor.move_up(),
                         KeyCode::Down => editor.move_down(),
                         KeyCode::Left => editor.move_left(),
@@ -289,46 +273,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Command => match key.code {
-                        KeyCode::Esc => {
-                            vim.mode = Mode::Normal;
-                            vim.command_buffer.clear();
-                        }
-                        KeyCode::Char(c) => {
-                            vim.command_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            if vim.command_buffer.is_empty() {
-                                vim.mode = Mode::Normal;
-                            } else {
-                                vim.command_buffer.pop();
-                            }
-                        }
+                        KeyCode::Esc => { vim.mode = Mode::Normal; vim.command_buffer.clear(); }
+                        KeyCode::Char(c) => { vim.command_buffer.push(c); }
+                        KeyCode::Backspace => { if vim.command_buffer.is_empty() { vim.mode = Mode::Normal; } else { vim.command_buffer.pop(); } }
                         KeyCode::Enter => {
                             let cmd_parts: Vec<&str> = vim.command_buffer.split_whitespace().collect();
                             if !cmd_parts.is_empty() {
                                 match cmd_parts[0] {
                                     "q" | "quit" => break,
-                                    "w" | "write" => {
-                                        if cmd_parts.len() > 1 {
-                                            let path = PathBuf::from(cmd_parts[1]);
-                                            let _ = editor.save_file_as(path);
-                                        } else {
-                                            let _ = editor.save_file();
-                                        }
-                                    }
-                                    "wq" => {
-                                        let _ = editor.save_file();
-                                        break;
-                                    }
+                                    "w" | "write" => { if cmd_parts.len() > 1 { let path = PathBuf::from(cmd_parts[1]); let _ = editor.save_file_as(path); } else { let _ = editor.save_file(); } }
+                                    "wq" => { let _ = editor.save_file(); break; }
                                     "bn" | "bnext" => editor.next_buffer(),
                                     "bp" | "bprev" => editor.prev_buffer(),
                                     "bd" | "bdelete" => editor.close_current_buffer(),
-                                    "e" | "edit" => {
-                                        if cmd_parts.len() > 1 {
-                                            let path = PathBuf::from(cmd_parts[1]);
-                                            let _ = editor.open_file(path);
-                                        }
-                                    }
+                                    "e" | "edit" => { if cmd_parts.len() > 1 { let path = PathBuf::from(cmd_parts[1]); let _ = editor.open_file(path); } }
                                     _ => {}
                                 }
                             }
@@ -338,38 +296,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Search => match key.code {
-                        KeyCode::Esc => {
-                            vim.mode = Mode::Normal;
-                            vim.search_query.clear();
-                        }
-                        KeyCode::Char(c) => {
-                            vim.search_query.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            if vim.search_query.is_empty() {
-                                vim.mode = Mode::Normal;
-                            } else {
-                                vim.search_query.pop();
-                            }
-                        }
-                        KeyCode::Enter => {
-                            vim.mode = Mode::Normal;
-                        }
+                        KeyCode::Esc => { vim.mode = Mode::Normal; vim.search_query.clear(); }
+                        KeyCode::Char(c) => { vim.search_query.push(c); }
+                        KeyCode::Backspace => { if vim.search_query.is_empty() { vim.mode = Mode::Normal; } else { vim.search_query.pop(); } }
+                        KeyCode::Enter => { vim.mode = Mode::Normal; }
                         _ => {}
                     },
+                    _ => {}
                 }
             }
         }
     }
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-        SetCursorStyle::DefaultUserShape
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture, SetCursorStyle::DefaultUserShape)?;
     terminal.show_cursor()?;
-
     Ok(())
 }
