@@ -2,17 +2,21 @@ use std::{io, path::PathBuf};
 
 pub mod buffer;
 pub mod cursor;
+pub mod highlighter;
 
 pub struct Editor {
     pub buffer: buffer::Buffer,
     pub cursor: cursor::Cursor,
+    pub highlighter: highlighter::Highlighter,
 }
 
 impl Editor {
     pub fn new() -> Self {
+        let colors = crate::ui::colorscheme::ColorScheme::default_dark();
         Self {
             buffer: buffer::Buffer::new(),
             cursor: cursor::Cursor::new(),
+            highlighter: highlighter::Highlighter::new(colors),
         }
     }
 

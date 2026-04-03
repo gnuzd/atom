@@ -1,6 +1,8 @@
+pub mod colorscheme;
+
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier},
     text::{Line, Span, Text},
     widgets::Paragraph,
     Frame,
@@ -29,6 +31,7 @@ impl TerminalUi {
         
         for (y, line) in editor.buffer.lines.iter().enumerate() {
             let mut spans = Vec::new();
+            let syntax_styles = editor.highlighter.highlight_line(line);
             
             // Collect matches if search query is not empty
             let mut search_matches = Vec::new();
@@ -42,7 +45,7 @@ impl TerminalUi {
             }
 
             for (x, c) in line.chars().enumerate() {
-                let mut style = Style::default();
+                let mut style = syntax_styles.get(x).copied().unwrap_or(editor.highlighter.colors.normal);
                 
                 // Visual Mode Selection
                 if let Some(start) = vim.selection_start {
