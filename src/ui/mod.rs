@@ -25,11 +25,14 @@ impl TerminalUi {
             ])
             .split(frame.area());
 
+        let buffer = editor.buffer();
+        let cursor = editor.cursor();
+
         // Editor Area
         let mut text = Text::default();
         let search_query = &vim.search_query;
         
-        for (y, line) in editor.buffer.lines.iter().enumerate() {
+        for (y, line) in buffer.lines.iter().enumerate() {
             let mut spans = Vec::new();
             let syntax_styles = editor.highlighter.highlight_line(line);
             
@@ -49,7 +52,7 @@ impl TerminalUi {
                 
                 // Visual Mode Selection
                 if let Some(start) = vim.selection_start {
-                    let cur = crate::vim::Position { x: editor.cursor.x, y: editor.cursor.y };
+                    let cur = crate::vim::Position { x: cursor.x, y: cursor.y };
                     let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) {
                         (start.y, start.x, cur.y, cur.x)
                     } else {
@@ -93,11 +96,11 @@ impl TerminalUi {
 
         // Status Line
         let mode_text = format!("{:?}", vim.mode).to_uppercase();
-        let file_name = editor.buffer.file_path.as_ref()
+        let file_name = buffer.file_path.as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("[No Name]");
-        let status_text = format!(" {} | {} | {}:{} ", mode_text, file_name, editor.cursor.y + 1, editor.cursor.x + 1);
+        let status_text = format!(" {} | {} | {}:{} (Buffer {}/{})", mode_text, file_name, cursor.y + 1, cursor.x + 1, editor.active_idx + 1, editor.buffers.len());
         let status_bar = Paragraph::new(status_text);
         frame.render_widget(status_bar, chunks[1]);
 
@@ -123,8 +126,8 @@ impl TerminalUi {
         } else {
             frame.render_widget(Paragraph::new(""), chunks[2]);
             frame.set_cursor_position((
-                chunks[0].x + editor.cursor.x as u16,
-                chunks[0].y + editor.cursor.y as u16,
+                chunks[0].x + cursor.x as u16,
+                chunks[0].y + cursor.y as u16,
             ));
         }
     }

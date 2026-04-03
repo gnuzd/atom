@@ -28,23 +28,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut vim = VimState::new();
     let ui = TerminalUi::new();
 
-    // Handle CLI arguments
+    // Handle CLI arguments - Open multiple files
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        let path = PathBuf::from(&args[1]);
-        if path.exists() {
-            editor.open_file(path)?;
-        } else {
-            // New file
-            editor.buffer.file_path = Some(path);
+        // Clear initial empty buffer
+        editor.buffers.clear();
+        editor.cursors.clear();
+        
+        for arg in &args[1..] {
+            let path = PathBuf::from(arg);
+            if path.exists() {
+                let _ = editor.open_file(path);
+            } else {
+                let mut new_buffer = editor::buffer::Buffer::new();
+                new_buffer.file_path = Some(path);
+                editor.buffers.push(new_buffer);
+                editor.cursors.push(editor::cursor::Cursor::new());
+            }
         }
+        editor.active_idx = 0;
     } else {
-        // Welcome message for empty buffer
-        editor.buffer.lines = vec![
+        // Welcome message
+        let active_buffer = editor.buffer_mut();
+        active_buffer.lines = vec![
             "Welcome to Atom IDE!".to_string(),
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
             "Press 'w/b/e' for words, 'y' to yank, 'd' to delete (Visual).".to_string(),
             "Press '/' to search, 'u' to undo, 'Ctrl-r' to redo.".to_string(),
+            "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
     }
 
@@ -62,12 +73,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Mode::Normal => match key.code {
                     KeyCode::Char('q') => break,
                     KeyCode::Char('i') => {
-                        editor.buffer.push_history();
+                        editor.buffer_mut().push_history();
                         vim.mode = Mode::Insert;
                     },
                     KeyCode::Char('v') => {
                         vim.mode = Mode::Visual;
-                        vim.selection_start = Some(Position { x: editor.cursor.x, y: editor.cursor.y });
+                        let cursor = editor.cursor();
+                        vim.selection_start = Some(Position { x: cursor.x, y: cursor.y });
                     }
                     KeyCode::Char(':') => {
                         vim.mode = Mode::Command;
@@ -100,14 +112,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     KeyCode::Char('y') => {
                         if let Some(start) = vim.selection_start {
-                            vim.register = editor.yank(start.x, start.y, editor.cursor.x, editor.cursor.y);
+                            let cursor = editor.cursor();
+                            vim.register = editor.yank(start.x, start.y, cursor.x, cursor.y);
                         }
                         vim.mode = Mode::Normal;
                         vim.selection_start = None;
                     }
                     KeyCode::Char('d') | KeyCode::Char('x') => {
                         if let Some(start) = vim.selection_start {
-                            vim.register = editor.delete_selection(start.x, start.y, editor.cursor.x, editor.cursor.y);
+                            let cursor = editor.cursor();
+                            vim.register = editor.delete_selection(start.x, start.y, cursor.x, cursor.y);
                         }
                         vim.mode = Mode::Normal;
                         vim.selection_start = None;
@@ -124,8 +138,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Mode::Insert => match key.code {
                     KeyCode::Esc => {
                         vim.mode = Mode::Normal;
-                        if editor.cursor.x > 0 {
-                            editor.cursor.x -= 1;
+                        let cursor = editor.cursor_mut();
+                        if cursor.x > 0 {
+                            cursor.x -= 1;
                         }
                     }
                     KeyCode::Up => editor.move_up(),
@@ -133,29 +148,40 @@ fn main() -> Result<(), Box<dyn Error>> {
                     KeyCode::Left => editor.move_left(),
                     KeyCode::Right => editor.move_right(),
                     KeyCode::Char(c) => {
-                        let line = &mut editor.buffer.lines[editor.cursor.y];
-                        line.insert(editor.cursor.x, c);
-                        editor.cursor.x += 1;
+                        let cursor = editor.cursor();
+                        let cursor_y = cursor.y;
+                        let cursor_x = cursor.x;
+                        let line = &mut editor.buffer_mut().lines[cursor_y];
+                        line.insert(cursor_x, c);
+                        editor.cursor_mut().x += 1;
                     }
                     KeyCode::Backspace => {
-                        if editor.cursor.x > 0 {
-                            let line = &mut editor.buffer.lines[editor.cursor.y];
-                            line.remove(editor.cursor.x - 1);
-                            editor.cursor.x -= 1;
-                        } else if editor.cursor.y > 0 {
-                            let current_line = editor.buffer.lines.remove(editor.cursor.y);
-                            editor.cursor.y -= 1;
-                            let prev_line = &mut editor.buffer.lines[editor.cursor.y];
-                            editor.cursor.x = prev_line.len();
+                        let cursor = editor.cursor();
+                        let cursor_x = cursor.x;
+                        let cursor_y = cursor.y;
+                        if cursor_x > 0 {
+                            let line = &mut editor.buffer_mut().lines[cursor_y];
+                            line.remove(cursor_x - 1);
+                            editor.cursor_mut().x -= 1;
+                        } else if cursor_y > 0 {
+                            let current_line = editor.buffer_mut().lines.remove(cursor_y);
+                            editor.cursor_mut().y -= 1;
+                            let prev_y = editor.cursor().y;
+                            let prev_line = &mut editor.buffer_mut().lines[prev_y];
+                            let new_x = prev_line.len();
                             prev_line.push_str(&current_line);
+                            editor.cursor_mut().x = new_x;
                         }
                     }
                     KeyCode::Enter => {
-                        let line = &mut editor.buffer.lines[editor.cursor.y];
-                        let new_line = line.split_off(editor.cursor.x);
-                        editor.buffer.lines.insert(editor.cursor.y + 1, new_line);
-                        editor.cursor.y += 1;
-                        editor.cursor.x = 0;
+                        let cursor = editor.cursor();
+                        let cursor_y = cursor.y;
+                        let cursor_x = cursor.x;
+                        let line = &mut editor.buffer_mut().lines[cursor_y];
+                        let new_line = line.split_off(cursor_x);
+                        editor.buffer_mut().lines.insert(cursor_y + 1, new_line);
+                        editor.cursor_mut().y += 1;
+                        editor.cursor_mut().x = 0;
                     }
                     _ => {}
                 },
@@ -190,6 +216,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 "wq" => {
                                     let _ = editor.save_file();
                                     break;
+                                }
+                                "bn" | "bnext" => editor.next_buffer(),
+                                "bp" | "bprev" => editor.prev_buffer(),
+                                "bd" | "bdelete" => editor.close_current_buffer(),
+                                "e" | "edit" => {
+                                    if cmd_parts.len() > 1 {
+                                        let path = PathBuf::from(cmd_parts[1]);
+                                        let _ = editor.open_file(path);
+                                    }
                                 }
                                 _ => {}
                             }

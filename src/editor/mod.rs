@@ -5,8 +5,9 @@ pub mod cursor;
 pub mod highlighter;
 
 pub struct Editor {
-    pub buffer: buffer::Buffer,
-    pub cursor: cursor::Cursor,
+    pub buffers: Vec<buffer::Buffer>,
+    pub cursors: Vec<cursor::Cursor>,
+    pub active_idx: usize,
     pub highlighter: highlighter::Highlighter,
 }
 
@@ -14,65 +15,117 @@ impl Editor {
     pub fn new() -> Self {
         let colors = crate::ui::colorscheme::ColorScheme::default_dark();
         Self {
-            buffer: buffer::Buffer::new(),
-            cursor: cursor::Cursor::new(),
+            buffers: vec![buffer::Buffer::new()],
+            cursors: vec![cursor::Cursor::new()],
+            active_idx: 0,
             highlighter: highlighter::Highlighter::new(colors),
         }
     }
 
+    pub fn buffer(&self) -> &buffer::Buffer {
+        &self.buffers[self.active_idx]
+    }
+
+    pub fn buffer_mut(&mut self) -> &mut buffer::Buffer {
+        &mut self.buffers[self.active_idx]
+    }
+
+    pub fn cursor(&self) -> &cursor::Cursor {
+        &self.cursors[self.active_idx]
+    }
+
+    pub fn cursor_mut(&mut self) -> &mut cursor::Cursor {
+        &mut self.cursors[self.active_idx]
+    }
+
     pub fn open_file(&mut self, path: PathBuf) -> io::Result<()> {
-        self.buffer = buffer::Buffer::load(path)?;
-        self.cursor.x = 0;
-        self.cursor.y = 0;
+        let new_buffer = buffer::Buffer::load(path)?;
+        self.buffers.push(new_buffer);
+        self.cursors.push(cursor::Cursor::new());
+        self.active_idx = self.buffers.len() - 1;
         Ok(())
     }
 
+    pub fn next_buffer(&mut self) {
+        if !self.buffers.is_empty() {
+            self.active_idx = (self.active_idx + 1) % self.buffers.len();
+        }
+    }
+
+    pub fn prev_buffer(&mut self) {
+        if !self.buffers.is_empty() {
+            if self.active_idx == 0 {
+                self.active_idx = self.buffers.len() - 1;
+            } else {
+                self.active_idx -= 1;
+            }
+        }
+    }
+
+    pub fn close_current_buffer(&mut self) {
+        if self.buffers.len() > 1 {
+            self.buffers.remove(self.active_idx);
+            self.cursors.remove(self.active_idx);
+            if self.active_idx >= self.buffers.len() {
+                self.active_idx = self.buffers.len() - 1;
+            }
+        } else {
+            // Keep at least one empty buffer
+            self.buffers[0] = buffer::Buffer::new();
+            self.cursors[0] = cursor::Cursor::new();
+        }
+    }
+
     pub fn save_file(&self) -> io::Result<()> {
-        self.buffer.save()
+        self.buffer().save()
     }
 
     pub fn save_file_as(&mut self, path: PathBuf) -> io::Result<()> {
-        self.buffer.save_as(path)
+        self.buffer_mut().save_as(path)
     }
 
     pub fn undo(&mut self) -> bool {
-        self.buffer.undo()
+        self.buffer_mut().undo()
     }
 
     pub fn redo(&mut self) -> bool {
-        self.buffer.redo()
+        self.buffer_mut().redo()
     }
 
     pub fn move_up(&mut self) {
-        if self.cursor.y > 0 {
-            self.cursor.y -= 1;
-            let line_len = self.buffer.lines[self.cursor.y].len();
-            if self.cursor.x > line_len {
-                self.cursor.x = line_len;
+        if self.cursor().y > 0 {
+            self.cursor_mut().y -= 1;
+            let y = self.cursor().y;
+            let line_len = self.buffer().lines[y].len();
+            if self.cursor().x > line_len {
+                self.cursor_mut().x = line_len;
             }
         }
     }
 
     pub fn move_down(&mut self) {
-        if self.cursor.y < self.buffer.lines.len() - 1 {
-            self.cursor.y += 1;
-            let line_len = self.buffer.lines[self.cursor.y].len();
-            if self.cursor.x > line_len {
-                self.cursor.x = line_len;
+        if self.cursor().y < self.buffer().lines.len() - 1 {
+            self.cursor_mut().y += 1;
+            let y = self.cursor().y;
+            let line_len = self.buffer().lines[y].len();
+            if self.cursor().x > line_len {
+                self.cursor_mut().x = line_len;
             }
         }
     }
 
     pub fn move_left(&mut self) {
-        if self.cursor.x > 0 {
-            self.cursor.x -= 1;
+        if self.cursor().x > 0 {
+            self.cursor_mut().x -= 1;
         }
     }
 
     pub fn move_right(&mut self) {
-        if let Some(line) = self.buffer.lines.get(self.cursor.y) {
-            if self.cursor.x < line.len() {
-                self.cursor.x += 1;
+        let y = self.cursor().y;
+        let x = self.cursor().x;
+        if let Some(line) = self.buffer().lines.get(y) {
+            if x < line.len() {
+                self.cursor_mut().x += 1;
             }
         }
     }
@@ -82,23 +135,18 @@ impl Editor {
     }
 
     pub fn move_word_forward(&mut self) {
-        let lines = &self.buffer.lines;
-        let y = self.cursor.y;
-        let x = self.cursor.x;
+        let y = self.cursor().y;
+        let x = self.cursor().x;
+        let num_lines = self.buffer().lines.len();
 
-        if y >= lines.len() { return; }
-        let line = &lines[y];
+        if y >= num_lines { return; }
+        let line = &self.buffer().lines[y];
         
         if x >= line.len() {
-            if y < lines.len() - 1 {
-                self.cursor.y += 1;
-                self.cursor.x = 0;
-                let next_line = &lines[self.cursor.y];
-                let mut j = 0;
-                while j < next_line.len() && next_line.chars().nth(j).unwrap().is_whitespace() {
-                    j += 1;
-                }
-                self.cursor.x = j;
+            if y < num_lines - 1 {
+                self.cursor_mut().y += 1;
+                self.cursor_mut().x = 0;
+                self.move_word_forward();
             }
             return;
         }
@@ -106,10 +154,6 @@ impl Editor {
         let chars: Vec<char> = line.chars().collect();
         let mut i = x;
 
-        // Vim-like 'w' logic: 
-        // 1. If on word char, skip word chars, then skip whitespace.
-        // 2. If on punctuation, skip punctuation, then skip whitespace.
-        // 3. If on whitespace, skip whitespace.
         if Self::is_word_char(chars[i]) {
             while i < chars.len() && Self::is_word_char(chars[i]) {
                 i += 1;
@@ -131,36 +175,37 @@ impl Editor {
         }
 
         if i < chars.len() {
-            self.cursor.x = i;
-        } else if y < lines.len() - 1 {
-            self.cursor.y += 1;
-            self.cursor.x = 0;
-            let next_line = &lines[self.cursor.y];
+            self.cursor_mut().x = i;
+        } else if y < num_lines - 1 {
+            self.cursor_mut().y += 1;
+            self.cursor_mut().x = 0;
+            let y_new = self.cursor().y;
+            let next_line_text = &self.buffer().lines[y_new];
             let mut j = 0;
-            while j < next_line.len() && next_line.chars().nth(j).unwrap().is_whitespace() {
+            while j < next_line_text.len() && next_line_text.chars().nth(j).unwrap().is_whitespace() {
                 j += 1;
             }
-            self.cursor.x = j;
+            self.cursor_mut().x = j;
         } else {
-            self.cursor.x = line.len();
+            self.cursor_mut().x = line.len();
         }
     }
 
     pub fn move_word_backward(&mut self) {
-        let lines = &self.buffer.lines;
-        let y = self.cursor.y;
-        let x = self.cursor.x;
+        let y = self.cursor().y;
+        let x = self.cursor().x;
 
         if x == 0 {
             if y > 0 {
-                self.cursor.y -= 1;
-                self.cursor.x = lines[self.cursor.y].len();
+                self.cursor_mut().y -= 1;
+                let y_new = self.cursor().y;
+                self.cursor_mut().x = self.buffer().lines[y_new].len();
                 self.move_word_backward();
             }
             return;
         }
 
-        let line = &lines[y];
+        let line = &self.buffer().lines[y];
         let chars: Vec<char> = line.chars().collect();
         let mut i = x.saturating_sub(1);
 
@@ -169,7 +214,7 @@ impl Editor {
         }
 
         if chars[i].is_whitespace() {
-            self.cursor.x = i;
+            self.cursor_mut().x = i;
             return;
         }
 
@@ -183,22 +228,22 @@ impl Editor {
             }
         }
 
-        self.cursor.x = i;
+        self.cursor_mut().x = i;
     }
 
     pub fn move_word_end(&mut self) {
-        let lines = &self.buffer.lines;
-        let y = self.cursor.y;
-        let x = self.cursor.x;
+        let y = self.cursor().y;
+        let x = self.cursor().x;
+        let num_lines = self.buffer().lines.len();
 
-        if y >= lines.len() { return; }
-        let line = &lines[y];
+        if y >= num_lines { return; }
+        let line = &self.buffer().lines[y];
         let chars: Vec<char> = line.chars().collect();
         
         if x >= line.len().saturating_sub(1) {
-            if y < lines.len() - 1 {
-                self.cursor.y += 1;
-                self.cursor.x = 0;
+            if y < num_lines - 1 {
+                self.cursor_mut().y += 1;
+                self.cursor_mut().x = 0;
                 self.move_word_end();
             }
             return;
@@ -210,9 +255,9 @@ impl Editor {
         }
 
         if i >= chars.len() {
-            if y < lines.len() - 1 {
-                self.cursor.y += 1;
-                self.cursor.x = 0;
+            if y < num_lines - 1 {
+                self.cursor_mut().y += 1;
+                self.cursor_mut().x = 0;
                 self.move_word_end();
             }
             return;
@@ -227,7 +272,7 @@ impl Editor {
                 i += 1;
             }
         }
-        self.cursor.x = i;
+        self.cursor_mut().x = i;
     }
 
     pub fn yank(&self, start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> String {
@@ -239,15 +284,13 @@ impl Editor {
 
         let mut result = Vec::new();
         for y in s_y..=e_y {
-            if let Some(line) = self.buffer.lines.get(y) {
+            if let Some(line) = self.buffer().lines.get(y) {
                 let start = if y == s_y { s_x } else { 0 };
                 let end = if y == e_y { e_x + 1 } else { line.len() };
                 
                 if start < line.len() {
                     let end = end.min(line.len());
                     result.push(line[start..end].to_string());
-                } else if y == s_y && y == e_y && start == e_x && line.is_empty() {
-                    // Empty line
                 }
             }
         }
@@ -256,30 +299,33 @@ impl Editor {
 
     pub fn paste(&mut self, text: &str) {
         if text.is_empty() { return; }
-        self.buffer.push_history();
+        self.buffer_mut().push_history();
 
         let lines_to_paste: Vec<&str> = text.split('\n').collect();
-        let current_line = &mut self.buffer.lines[self.cursor.y];
+        let cursor_y = self.cursor().y;
+        let cursor_x = self.cursor().x;
         
         if lines_to_paste.len() == 1 {
-            current_line.insert_str(self.cursor.x, lines_to_paste[0]);
-            self.cursor.x += lines_to_paste[0].len();
+            let current_line = &mut self.buffer_mut().lines[cursor_y];
+            current_line.insert_str(cursor_x, lines_to_paste[0]);
+            self.cursor_mut().x += lines_to_paste[0].len();
         } else {
-            let suffix = current_line.split_off(self.cursor.x);
+            let current_line = &mut self.buffer_mut().lines[cursor_y];
+            let suffix = current_line.split_off(cursor_x);
             current_line.push_str(lines_to_paste[0]);
             
             for i in 1..lines_to_paste.len() - 1 {
-                self.buffer.lines.insert(self.cursor.y + i, lines_to_paste[i].to_string());
+                self.buffer_mut().lines.insert(cursor_y + i, lines_to_paste[i].to_string());
             }
             
-            let last_line_idx = self.cursor.y + lines_to_paste.len() - 1;
+            let last_line_idx = cursor_y + lines_to_paste.len() - 1;
             let mut last_line = lines_to_paste.last().unwrap().to_string();
             let new_x = last_line.len();
             last_line.push_str(&suffix);
-            self.buffer.lines.insert(last_line_idx, last_line);
+            self.buffer_mut().lines.insert(last_line_idx, last_line);
             
-            self.cursor.y = last_line_idx;
-            self.cursor.x = new_x;
+            self.cursor_mut().y = last_line_idx;
+            self.cursor_mut().x = new_x;
         }
     }
 
@@ -290,30 +336,30 @@ impl Editor {
             (end_y, end_x, start_y, start_x)
         };
 
-        self.buffer.push_history();
         let yanked = self.yank(start_x, start_y, end_x, end_y);
+        self.buffer_mut().push_history();
 
         if s_y == e_y {
-            let line = &mut self.buffer.lines[s_y];
+            let line = &mut self.buffer_mut().lines[s_y];
             let suffix = line.split_off(e_x + 1);
             line.truncate(s_x);
             line.push_str(&suffix);
         } else {
-            let first_line = self.buffer.lines[s_y].clone();
-            let last_line = self.buffer.lines[e_y].clone();
+            let first_line = self.buffer_mut().lines[s_y].clone();
+            let last_line = self.buffer_mut().lines[e_y].clone();
             
             let prefix = &first_line[..s_x];
             let suffix = if e_x + 1 < last_line.len() { &last_line[e_x+1..] } else { "" };
             
-            self.buffer.lines[s_y] = format!("{}{}", prefix, suffix);
+            self.buffer_mut().lines[s_y] = format!("{}{}", prefix, suffix);
             
             for _ in s_y+1..=e_y {
-                self.buffer.lines.remove(s_y + 1);
+                self.buffer_mut().lines.remove(s_y + 1);
             }
         }
 
-        self.cursor.x = s_x;
-        self.cursor.y = s_y;
+        self.cursor_mut().x = s_x;
+        self.cursor_mut().y = s_y;
         yanked
     }
 }
@@ -325,45 +371,62 @@ mod tests {
     #[test]
     fn test_editor_new() {
         let editor = Editor::new();
-        assert_eq!(editor.buffer.lines.len(), 1);
-        assert_eq!(editor.cursor.x, 0);
-        assert_eq!(editor.cursor.y, 0);
+        assert_eq!(editor.buffers.len(), 1);
+        assert_eq!(editor.cursors.len(), 1);
+    }
+
+    #[test]
+    fn test_editor_multi_buffer() {
+        let mut editor = Editor::new();
+        editor.buffers[0].lines = vec!["Buffer 1".to_string()];
+        
+        editor.buffers.push(buffer::Buffer::new());
+        editor.cursors.push(cursor::Cursor::new());
+        editor.buffers[1].lines = vec!["Buffer 2".to_string()];
+        
+        editor.next_buffer();
+        assert_eq!(editor.active_idx, 1);
+        assert_eq!(editor.buffer().lines[0], "Buffer 2");
+        
+        editor.prev_buffer();
+        assert_eq!(editor.active_idx, 0);
+        assert_eq!(editor.buffer().lines[0], "Buffer 1");
     }
 
     #[test]
     fn test_editor_movement() {
         let mut editor = Editor::new();
-        editor.buffer.lines = vec!["abc".to_string(), "de".to_string()];
+        editor.buffer_mut().lines = vec!["abc".to_string(), "de".to_string()];
         editor.move_right();
-        assert_eq!(editor.cursor.x, 1);
+        assert_eq!(editor.cursor().x, 1);
         editor.move_down();
-        assert_eq!(editor.cursor.y, 1);
-        assert_eq!(editor.cursor.x, 1);
+        assert_eq!(editor.cursor().y, 1);
+        assert_eq!(editor.cursor().x, 1);
     }
 
     #[test]
     fn test_editor_word_movement() {
         let mut editor = Editor::new();
-        editor.buffer.lines = vec!["hello, world rust".to_string()];
+        editor.buffer_mut().lines = vec!["hello, world rust".to_string()];
         
         editor.move_word_forward();
-        assert_eq!(editor.cursor.x, 5); // start of ','
+        assert_eq!(editor.cursor().x, 5); // start of ','
         
         editor.move_word_forward();
-        assert_eq!(editor.cursor.x, 7); // start of 'world'
+        assert_eq!(editor.cursor().x, 7); // start of 'world'
         
         editor.move_word_end();
-        assert_eq!(editor.cursor.x, 11); // end of 'world'
+        assert_eq!(editor.cursor().x, 11); // end of 'world'
         
         editor.move_word_backward();
-        assert_eq!(editor.cursor.x, 7); // start of 'world'
+        assert_eq!(editor.cursor().x, 7); // start of 'world'
     }
 
     #[test]
     fn test_editor_delete_selection() {
         let mut editor = Editor::new();
-        editor.buffer.lines = vec!["hello world".to_string()];
+        editor.buffer_mut().lines = vec!["hello world".to_string()];
         editor.delete_selection(0, 0, 5, 0); // delete "hello "
-        assert_eq!(editor.buffer.lines[0], "world");
+        assert_eq!(editor.buffer().lines[0], "world");
     }
 }
