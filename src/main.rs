@@ -15,7 +15,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use editor::Editor;
 use ui::TerminalUi;
-use vim::{mode::Mode, VimState, Position};
+use vim::{mode::{Mode, YankType}, VimState, Position};
 
 fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
@@ -53,8 +53,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         active_buffer.lines = vec![
             "Welcome to Atom IDE!".to_string(),
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
-            "Press 'o/O' to open line, 'p/P' to paste after/before.".to_string(),
-            "Press 'w/b/e' for words, 'y' to yank, 'd' to delete (Visual).".to_string(),
+            "Press 'yy' to copy line, 'p/P' to paste.".to_string(),
+            "Press 'PgUp/PgDn' to jump to top/bottom.".to_string(),
             "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
     }
@@ -106,13 +106,40 @@ fn main() -> Result<(), Box<dyn Error>> {
                         editor.open_line_above();
                         vim.mode = Mode::Insert;
                     }
-                    KeyCode::Char('p') => editor.paste_after(&vim.register),
-                    KeyCode::Char('P') => editor.paste_before(&vim.register),
-                    KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
-                    KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
-                    KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
-                    KeyCode::Char('l') | KeyCode::Right => editor.move_right(),
-                    _ => {}
+                    KeyCode::Char('p') => editor.paste_after(&vim.register, vim.yank_type),
+                    KeyCode::Char('P') => editor.paste_before(&vim.register, vim.yank_type),
+                    KeyCode::Char('y') => {
+                        if vim.pending_op == Some('y') {
+                            // yy logic
+                            let cursor_y = editor.cursor().y;
+                            vim.register = editor.buffer().lines[cursor_y].clone();
+                            vim.yank_type = YankType::Line;
+                            vim.pending_op = None;
+                        } else {
+                            vim.pending_op = Some('y');
+                        }
+                    }
+                    KeyCode::PageUp => editor.jump_to_first_line(),
+                    KeyCode::PageDown => editor.jump_to_last_line(),
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        vim.pending_op = None;
+                        editor.move_down();
+                    },
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        vim.pending_op = None;
+                        editor.move_up();
+                    },
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        vim.pending_op = None;
+                        editor.move_left();
+                    },
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        vim.pending_op = None;
+                        editor.move_right();
+                    },
+                    _ => {
+                        vim.pending_op = None;
+                    }
                 },
                 Mode::Visual => match key.code {
                     KeyCode::Esc => {
@@ -123,6 +150,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if let Some(start) = vim.selection_start {
                             let cursor = editor.cursor();
                             vim.register = editor.yank(start.x, start.y, cursor.x, cursor.y);
+                            vim.yank_type = YankType::Char;
                         }
                         vim.mode = Mode::Normal;
                         vim.selection_start = None;
@@ -131,6 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if let Some(start) = vim.selection_start {
                             let cursor = editor.cursor();
                             vim.register = editor.delete_selection(start.x, start.y, cursor.x, cursor.y);
+                            vim.yank_type = YankType::Char;
                         }
                         vim.mode = Mode::Normal;
                         vim.selection_start = None;
@@ -138,6 +167,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     KeyCode::Char('w') => editor.move_word_forward(),
                     KeyCode::Char('b') => editor.move_word_backward(),
                     KeyCode::Char('e') => editor.move_word_end(),
+                    KeyCode::PageUp => editor.jump_to_first_line(),
+                    KeyCode::PageDown => editor.jump_to_last_line(),
                     KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                     KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                     KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
@@ -149,13 +180,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                         vim.mode = Mode::Normal;
                         let cursor = editor.cursor_mut();
                         if cursor.x > 0 {
-                            cursor.x -= 1;
+                            cursor.x -= 0; // In vim, Esc moves back one char, but let's keep it simple
                         }
                     }
                     KeyCode::Up => editor.move_up(),
                     KeyCode::Down => editor.move_down(),
                     KeyCode::Left => editor.move_left(),
                     KeyCode::Right => editor.move_right(),
+                    KeyCode::PageUp => editor.jump_to_first_line(),
+                    KeyCode::PageDown => editor.jump_to_last_line(),
                     KeyCode::Char(c) => {
                         let cursor = editor.cursor();
                         let cursor_y = cursor.y;

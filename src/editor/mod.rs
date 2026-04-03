@@ -70,7 +70,6 @@ impl Editor {
                 self.active_idx = self.buffers.len() - 1;
             }
         } else {
-            // Keep at least one empty buffer
             self.buffers[0] = buffer::Buffer::new();
             self.cursors[0] = cursor::Cursor::new();
         }
@@ -128,6 +127,17 @@ impl Editor {
                 self.cursor_mut().x += 1;
             }
         }
+    }
+
+    pub fn jump_to_first_line(&mut self) {
+        self.cursor_mut().y = 0;
+        self.cursor_mut().x = 0;
+    }
+
+    pub fn jump_to_last_line(&mut self) {
+        let last_y = self.buffer().lines.len().saturating_sub(1);
+        self.cursor_mut().y = last_y;
+        self.cursor_mut().x = 0;
     }
 
     fn is_word_char(c: char) -> bool {
@@ -313,49 +323,67 @@ impl Editor {
         result.join("\n")
     }
 
-    pub fn paste_before(&mut self, text: &str) {
+    pub fn paste_before(&mut self, text: &str, yank_type: crate::vim::mode::YankType) {
         if text.is_empty() { return; }
         self.buffer_mut().push_history();
 
-        let lines_to_paste: Vec<&str> = text.split('\n').collect();
         let cursor_y = self.cursor().y;
         let cursor_x = self.cursor().x;
-        
-        if lines_to_paste.len() == 1 {
-            let current_line = &mut self.buffer_mut().lines[cursor_y];
-            current_line.insert_str(cursor_x, lines_to_paste[0]);
-            self.cursor_mut().x += lines_to_paste[0].len();
-        } else {
-            let current_line = &mut self.buffer_mut().lines[cursor_y];
-            let suffix = current_line.split_off(cursor_x);
-            current_line.push_str(lines_to_paste[0]);
-            
-            for i in 1..lines_to_paste.len() - 1 {
-                self.buffer_mut().lines.insert(cursor_y + i, lines_to_paste[i].to_string());
+
+        if yank_type == crate::vim::mode::YankType::Line {
+            let lines_to_paste: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
+            for (i, line) in lines_to_paste.into_iter().enumerate() {
+                self.buffer_mut().lines.insert(cursor_y + i, line);
             }
-            
-            let last_line_idx = cursor_y + lines_to_paste.len() - 1;
-            let mut last_line = lines_to_paste.last().unwrap().to_string();
-            let new_x = last_line.len();
-            last_line.push_str(&suffix);
-            self.buffer_mut().lines.insert(last_line_idx, last_line);
-            
-            self.cursor_mut().y = last_line_idx;
-            self.cursor_mut().x = new_x;
+            self.cursor_mut().y = cursor_y;
+            self.cursor_mut().x = 0;
+        } else {
+            let lines_to_paste: Vec<&str> = text.split('\n').collect();
+            if lines_to_paste.len() == 1 {
+                let current_line = &mut self.buffer_mut().lines[cursor_y];
+                current_line.insert_str(cursor_x, lines_to_paste[0]);
+                self.cursor_mut().x += lines_to_paste[0].len();
+            } else {
+                let current_line = &mut self.buffer_mut().lines[cursor_y];
+                let suffix = current_line.split_off(cursor_x);
+                current_line.push_str(lines_to_paste[0]);
+                
+                for i in 1..lines_to_paste.len() - 1 {
+                    self.buffer_mut().lines.insert(cursor_y + i, lines_to_paste[i].to_string());
+                }
+                
+                let last_line_idx = cursor_y + lines_to_paste.len() - 1;
+                let mut last_line = lines_to_paste.last().unwrap().to_string();
+                let new_x = last_line.len();
+                last_line.push_str(&suffix);
+                self.buffer_mut().lines.insert(last_line_idx, last_line);
+                
+                self.cursor_mut().y = last_line_idx;
+                self.cursor_mut().x = new_x;
+            }
         }
     }
 
-    pub fn paste_after(&mut self, text: &str) {
+    pub fn paste_after(&mut self, text: &str, yank_type: crate::vim::mode::YankType) {
         if text.is_empty() { return; }
         
-        let cursor_x = self.cursor().x;
-        let line_len = self.buffer().lines[self.cursor().y].len();
-        
-        if cursor_x < line_len {
-            self.cursor_mut().x += 1;
+        if yank_type == crate::vim::mode::YankType::Line {
+            self.buffer_mut().push_history();
+            let cursor_y = self.cursor().y;
+            let lines_to_paste: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
+            for (i, line) in lines_to_paste.into_iter().enumerate() {
+                self.buffer_mut().lines.insert(cursor_y + 1 + i, line);
+            }
+            self.cursor_mut().y = cursor_y + 1;
+            self.cursor_mut().x = 0;
+        } else {
+            let cursor_x = self.cursor().x;
+            let line_len = self.buffer().lines[self.cursor().y].len();
+            if cursor_x < line_len {
+                self.cursor_mut().x += 1;
+            }
+            self.paste_before(text, yank_type);
         }
-        
-        self.paste_before(text);
     }
 
     pub fn delete_selection(&mut self, start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> String {
@@ -480,11 +508,11 @@ mod tests {
         editor.buffer_mut().lines = vec!["ab".to_string()];
         editor.cursor_mut().x = 1; // On 'b'
         
-        editor.paste_after("X");
+        editor.paste_after("X", crate::vim::mode::YankType::Char);
         assert_eq!(editor.buffer().lines[0], "abX");
         
         editor.cursor_mut().x = 1; // On 'b'
-        editor.paste_before("Y");
+        editor.paste_before("Y", crate::vim::mode::YankType::Char);
         assert_eq!(editor.buffer().lines[0], "aYbX");
     }
 }

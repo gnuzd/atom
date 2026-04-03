@@ -1,6 +1,8 @@
 pub mod mode;
 pub mod motion;
 
+use mode::YankType;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub x: usize,
@@ -13,6 +15,8 @@ pub struct VimState {
     pub selection_start: Option<Position>,
     pub search_query: String,
     pub register: String,
+    pub yank_type: YankType,
+    pub pending_op: Option<char>,
 }
 
 impl VimState {
@@ -23,6 +27,8 @@ impl VimState {
             selection_start: None,
             search_query: String::new(),
             register: String::new(),
+            yank_type: YankType::Char,
+            pending_op: None,
         }
     }
 }
