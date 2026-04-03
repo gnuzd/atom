@@ -275,6 +275,22 @@ impl Editor {
         self.cursor_mut().x = i;
     }
 
+    pub fn open_line_below(&mut self) {
+        self.buffer_mut().push_history();
+        let y = self.cursor().y;
+        self.buffer_mut().lines.insert(y + 1, String::new());
+        self.cursor_mut().y = y + 1;
+        self.cursor_mut().x = 0;
+    }
+
+    pub fn open_line_above(&mut self) {
+        self.buffer_mut().push_history();
+        let y = self.cursor().y;
+        self.buffer_mut().lines.insert(y, String::new());
+        self.cursor_mut().y = y;
+        self.cursor_mut().x = 0;
+    }
+
     pub fn yank(&self, start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> String {
         let (s_y, s_x, e_y, e_x) = if (start_y, start_x) < (end_y, end_x) {
             (start_y, start_x, end_y, end_x)
@@ -297,7 +313,7 @@ impl Editor {
         result.join("\n")
     }
 
-    pub fn paste(&mut self, text: &str) {
+    pub fn paste_before(&mut self, text: &str) {
         if text.is_empty() { return; }
         self.buffer_mut().push_history();
 
@@ -327,6 +343,19 @@ impl Editor {
             self.cursor_mut().y = last_line_idx;
             self.cursor_mut().x = new_x;
         }
+    }
+
+    pub fn paste_after(&mut self, text: &str) {
+        if text.is_empty() { return; }
+        
+        let cursor_x = self.cursor().x;
+        let line_len = self.buffer().lines[self.cursor().y].len();
+        
+        if cursor_x < line_len {
+            self.cursor_mut().x += 1;
+        }
+        
+        self.paste_before(text);
     }
 
     pub fn delete_selection(&mut self, start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> String {
@@ -428,5 +457,34 @@ mod tests {
         editor.buffer_mut().lines = vec!["hello world".to_string()];
         editor.delete_selection(0, 0, 5, 0); // delete "hello "
         assert_eq!(editor.buffer().lines[0], "world");
+    }
+
+    #[test]
+    fn test_editor_open_line() {
+        let mut editor = Editor::new();
+        editor.buffer_mut().lines = vec!["line 1".to_string()];
+        
+        editor.open_line_below();
+        assert_eq!(editor.buffer().lines.len(), 2);
+        assert_eq!(editor.cursor().y, 1);
+        
+        editor.open_line_above();
+        assert_eq!(editor.buffer().lines.len(), 3);
+        assert_eq!(editor.cursor().y, 1);
+        assert_eq!(editor.buffer().lines[1], "");
+    }
+
+    #[test]
+    fn test_editor_paste() {
+        let mut editor = Editor::new();
+        editor.buffer_mut().lines = vec!["ab".to_string()];
+        editor.cursor_mut().x = 1; // On 'b'
+        
+        editor.paste_after("X");
+        assert_eq!(editor.buffer().lines[0], "abX");
+        
+        editor.cursor_mut().x = 1; // On 'b'
+        editor.paste_before("Y");
+        assert_eq!(editor.buffer().lines[0], "aYbX");
     }
 }

@@ -33,10 +33,11 @@ cargo run
 - `v`: Enter **Visual** mode.
 - `: `: Enter **Command** mode.
 - `h`, `j`, `k`, `l` or **Arrow Keys**: Move the cursor.
-- `w`, `b`: Move forward/backward by word.
+- `w`, `b`, `e`: Move forward/backward by word (start/end).
+- `o`, `O`: Open new line below/above and enter Insert mode.
+- `p`, `P`: Paste yanked text after/before the cursor.
 - `u`: Undo change.
 - `Ctrl-r`: Redo change.
-- `p`: Paste yanked text.
 - `q`: Quit the application (or `:q` in Command mode).
 
 #### Insert Mode

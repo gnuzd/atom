@@ -53,8 +53,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         active_buffer.lines = vec![
             "Welcome to Atom IDE!".to_string(),
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
+            "Press 'o/O' to open line, 'p/P' to paste after/before.".to_string(),
             "Press 'w/b/e' for words, 'y' to yank, 'd' to delete (Visual).".to_string(),
-            "Press '/' to search, 'u' to undo, 'Ctrl-r' to redo.".to_string(),
             "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
     }
@@ -98,7 +98,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                     KeyCode::Char('w') => editor.move_word_forward(),
                     KeyCode::Char('b') => editor.move_word_backward(),
                     KeyCode::Char('e') => editor.move_word_end(),
-                    KeyCode::Char('p') => editor.paste(&vim.register),
+                    KeyCode::Char('o') => {
+                        editor.open_line_below();
+                        vim.mode = Mode::Insert;
+                    }
+                    KeyCode::Char('O') => {
+                        editor.open_line_above();
+                        vim.mode = Mode::Insert;
+                    }
+                    KeyCode::Char('p') => editor.paste_after(&vim.register),
+                    KeyCode::Char('P') => editor.paste_before(&vim.register),
                     KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                     KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                     KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
