@@ -4,7 +4,8 @@ A minimalist, terminal-based IDE built with Rust, Ratatui, and Vim-inspired moti
 
 ## Features
 
-- **Vim-inspired Modes:** Supports `Normal` and `Insert` modes.
+- **Vim-inspired Modes:** Supports `Normal`, `Insert`, and `Command` modes.
+- **Dynamic Cursor:** Uses a thin bar cursor in `Insert` mode and a block cursor in `Normal/Command` modes.
 - **Minimalist UI:** Borderless, clean design focused on your code.
 - **Navigation:** Supports both classic `hjkl` and standard arrow key movement.
 - **Dynamic Status Line:** Real-time feedback on current mode and cursor position.
@@ -28,8 +29,9 @@ cargo run
 #### Normal Mode (Default)
 
 - `i`: Enter **Insert** mode.
+- `: `: Enter **Command** mode.
 - `h`, `j`, `k`, `l` or **Arrow Keys**: Move the cursor.
-- `q`: Quit the application.
+- `q`: Quit the application (or `:q` in Command mode).
 
 #### Insert Mode
 
@@ -38,6 +40,12 @@ cargo run
 - **Backspace**: Delete characters or merge lines.
 - **Enter**: Split lines.
 - **Arrow Keys**: Move the cursor while editing.
+
+#### Command Mode
+
+- `Esc`: Return to **Normal** mode.
+- `q` or `quit` followed by `Enter`: Quit the application.
+- `Backspace`: Delete characters or exit to Normal mode if empty.
 
 ## Project Structure
 

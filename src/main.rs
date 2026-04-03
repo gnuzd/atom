@@ -6,6 +6,7 @@ pub mod vim;
 use std::{error::Error, io};
 
 use crossterm::{
+    cursor::SetCursorStyle,
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -30,10 +31,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     editor.buffer.lines = vec![
         "Welcome to Atom IDE!".to_string(),
         "Press 'i' for Insert mode, 'Esc' for Normal mode.".to_string(),
-        "Use hjkl or Arrow keys to move around.".to_string(),
+        "Press ':' for Command mode (e.g., :q to quit).".to_string(),
     ];
 
     loop {
+        // Set cursor style based on mode
+        match vim.mode {
+            Mode::Insert => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBar)?,
+            _ => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBlock)?,
+        }
+
         terminal.draw(|f| ui.draw(f, &editor, &vim))?;
 
         if let Event::Key(key) = event::read()? {
@@ -41,6 +48,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Mode::Normal => match key.code {
                     KeyCode::Char('q') => break,
                     KeyCode::Char('i') => vim.mode = Mode::Insert,
+                    KeyCode::Char(':') => {
+                        vim.mode = Mode::Command;
+                        vim.command_buffer.clear();
+                    }
                     KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                     KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                     KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
@@ -85,6 +96,34 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     _ => {}
                 },
+                Mode::Command => match key.code {
+                    KeyCode::Esc => {
+                        vim.mode = Mode::Normal;
+                        vim.command_buffer.clear();
+                    }
+                    KeyCode::Char(c) => {
+                        vim.command_buffer.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        if vim.command_buffer.is_empty() {
+                            vim.mode = Mode::Normal;
+                        } else {
+                            vim.command_buffer.pop();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let cmd = vim.command_buffer.as_str();
+                        match cmd {
+                            "q" | "quit" => break,
+                            _ => {
+                                // Unknown command, just go back to normal mode
+                                vim.mode = Mode::Normal;
+                            }
+                        }
+                        vim.command_buffer.clear();
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -94,7 +133,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        SetCursorStyle::DefaultUserShape
     )?;
     terminal.show_cursor()?;
 

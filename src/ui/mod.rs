@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
@@ -23,15 +23,26 @@ impl TerminalUi {
         frame.render_widget(editor_paragraph, chunks[0]);
 
         // Status Line
-        let mode_text = format!("{:?}", vim.mode).to_uppercase();
-        let status_text = format!(" {} | {}:{} ", mode_text, editor.cursor.y + 1, editor.cursor.x + 1);
+        let status_text = if vim.mode == crate::vim::mode::Mode::Command {
+            format!(":{}", vim.command_buffer)
+        } else {
+            let mode_text = format!("{:?}", vim.mode).to_uppercase();
+            format!(" {} | {}:{} ", mode_text, editor.cursor.y + 1, editor.cursor.x + 1)
+        };
         let status_bar = Paragraph::new(status_text);
         frame.render_widget(status_bar, chunks[1]);
 
-        // Set Cursor (No offset since border is gone)
-        frame.set_cursor_position((
-            chunks[0].x + editor.cursor.x as u16,
-            chunks[0].y + editor.cursor.y as u16,
-        ));
+        // Set Cursor
+        if vim.mode == crate::vim::mode::Mode::Command {
+            frame.set_cursor_position((
+                chunks[1].x + vim.command_buffer.len() as u16 + 1,
+                chunks[1].y,
+            ));
+        } else {
+            frame.set_cursor_position((
+                chunks[0].x + editor.cursor.x as u16,
+                chunks[0].y + editor.cursor.y as u16,
+            ));
+        }
     }
 }
