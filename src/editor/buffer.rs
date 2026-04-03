@@ -46,6 +46,7 @@ impl Buffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     #[test]
     fn test_buffer_new() {
@@ -53,5 +54,29 @@ mod tests {
         assert_eq!(buffer.lines.len(), 1);
         assert_eq!(buffer.lines[0], "");
         assert!(buffer.file_path.is_none());
+    }
+
+    #[test]
+    fn test_buffer_save_load() {
+        let mut temp_path = env::temp_dir();
+        temp_path.push("atom_test_buffer.txt");
+        
+        let mut buffer = Buffer::new();
+        buffer.lines = vec!["Line 1".to_string(), "Line 2".to_string()];
+        
+        // Save As
+        buffer.save_as(temp_path.clone()).expect("Failed to save as");
+        assert_eq!(buffer.file_path, Some(temp_path.clone()));
+        assert!(temp_path.exists());
+        
+        // Load
+        let loaded_buffer = Buffer::load(temp_path.clone()).expect("Failed to load");
+        assert_eq!(loaded_buffer.lines.len(), 2);
+        assert_eq!(loaded_buffer.lines[0], "Line 1");
+        assert_eq!(loaded_buffer.lines[1], "Line 2");
+        assert_eq!(loaded_buffer.file_path, Some(temp_path.clone()));
+        
+        // Clean up
+        let _ = fs::remove_file(temp_path);
     }
 }
