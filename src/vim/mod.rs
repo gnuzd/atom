@@ -17,6 +17,7 @@ pub struct VimState {
     pub register: String,
     pub yank_type: YankType,
     pub pending_op: Option<char>,
+    pub yank_highlight_line: Option<usize>,
 }
 
 impl VimState {
@@ -29,6 +30,7 @@ impl VimState {
             register: String::new(),
             yank_type: YankType::Char,
             pending_op: None,
+            yank_highlight_line: None,
         }
     }
 }

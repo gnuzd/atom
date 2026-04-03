@@ -70,6 +70,7 @@ impl Editor {
                 self.active_idx = self.buffers.len() - 1;
             }
         } else {
+            // Keep at least one empty buffer
             self.buffers[0] = buffer::Buffer::new();
             self.cursors[0] = cursor::Cursor::new();
         }
@@ -127,6 +128,16 @@ impl Editor {
                 self.cursor_mut().x += 1;
             }
         }
+    }
+
+    pub fn move_to_line_start(&mut self) {
+        self.cursor_mut().x = 0;
+    }
+
+    pub fn move_to_line_end(&mut self) {
+        let y = self.cursor().y;
+        let line_len = self.buffer().lines[y].len();
+        self.cursor_mut().x = line_len;
     }
 
     pub fn jump_to_first_line(&mut self) {
@@ -459,6 +470,16 @@ mod tests {
         editor.move_down();
         assert_eq!(editor.cursor().y, 1);
         assert_eq!(editor.cursor().x, 1);
+    }
+
+    #[test]
+    fn test_editor_line_boundaries() {
+        let mut editor = Editor::new();
+        editor.buffer_mut().lines = vec!["hello world".to_string()];
+        editor.move_to_line_end();
+        assert_eq!(editor.cursor().x, 11);
+        editor.move_to_line_start();
+        assert_eq!(editor.cursor().x, 0);
     }
 
     #[test]

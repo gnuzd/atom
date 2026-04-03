@@ -82,6 +82,11 @@ impl TerminalUi {
                         style = style.bg(Color::Yellow).fg(Color::Black);
                     }
                 }
+
+                // Yank Highlight
+                if vim.yank_highlight_line == Some(y) {
+                    style = style.bg(Color::Blue).fg(Color::White);
+                }
                 
                 spans.push(Span::styled(c.to_string(), style));
             }
