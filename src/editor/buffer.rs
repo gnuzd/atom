@@ -78,7 +78,6 @@ impl Buffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
     #[test]
     fn test_buffer_new() {

@@ -43,6 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         editor.buffer.lines = vec![
             "Welcome to Atom IDE!".to_string(),
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
+            "Press 'w/b' for words, 'y' to yank (Visual), 'p' to paste.".to_string(),
             "Press '/' to search, 'u' to undo, 'Ctrl-r' to redo.".to_string(),
         ];
     }
@@ -82,6 +83,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         editor.redo();
                     }
+                    KeyCode::Char('w') => editor.move_word_forward(),
+                    KeyCode::Char('b') => editor.move_word_backward(),
+                    KeyCode::Char('p') => editor.paste(&vim.register),
                     KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                     KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                     KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
@@ -93,6 +97,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                         vim.mode = Mode::Normal;
                         vim.selection_start = None;
                     }
+                    KeyCode::Char('y') => {
+                        if let Some(start) = vim.selection_start {
+                            vim.register = editor.yank(start.x, start.y, editor.cursor.x, editor.cursor.y);
+                        }
+                        vim.mode = Mode::Normal;
+                        vim.selection_start = None;
+                    }
+                    KeyCode::Char('w') => editor.move_word_forward(),
+                    KeyCode::Char('b') => editor.move_word_backward(),
                     KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                     KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                     KeyCode::Char('h') | KeyCode::Left => editor.move_left(),

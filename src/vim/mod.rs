@@ -12,6 +12,7 @@ pub struct VimState {
     pub command_buffer: String,
     pub selection_start: Option<Position>,
     pub search_query: String,
+    pub register: String,
 }
 
 impl VimState {
@@ -21,6 +22,7 @@ impl VimState {
             command_buffer: String::new(),
             selection_start: None,
             search_query: String::new(),
+            register: String::new(),
         }
     }
 }
@@ -37,5 +39,6 @@ mod tests {
         assert!(state.command_buffer.is_empty());
         assert!(state.selection_start.is_none());
         assert!(state.search_query.is_empty());
+        assert!(state.register.is_empty());
     }
 }

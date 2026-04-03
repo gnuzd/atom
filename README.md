@@ -30,8 +30,13 @@ cargo run
 #### Normal Mode (Default)
 
 - `i`: Enter **Insert** mode.
+- `v`: Enter **Visual** mode.
 - `: `: Enter **Command** mode.
 - `h`, `j`, `k`, `l` or **Arrow Keys**: Move the cursor.
+- `w`, `b`: Move forward/backward by word.
+- `u`: Undo change.
+- `Ctrl-r`: Redo change.
+- `p`: Paste yanked text.
 - `q`: Quit the application (or `:q` in Command mode).
 
 #### Insert Mode
@@ -41,6 +46,12 @@ cargo run
 - **Backspace**: Delete characters or merge lines.
 - **Enter**: Split lines.
 - **Arrow Keys**: Move the cursor while editing.
+
+#### Visual Mode
+
+- `Esc`: Return to **Normal** mode.
+- `h`, `j`, `k`, `l`, `w`, `b`: Expand selection.
+- `y`: Yank selection to register.
 
 #### Command Mode
 
