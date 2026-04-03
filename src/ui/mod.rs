@@ -14,7 +14,11 @@ impl TerminalUi {
     pub fn draw(&self, frame: &mut Frame, editor: &crate::editor::Editor, vim: &crate::vim::VimState) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .constraints([
+                Constraint::Min(1),    // Editor
+                Constraint::Length(1), // Status Line
+                Constraint::Length(1), // Command Line
+            ])
             .split(frame.area());
 
         // Main Editor Area - No Border
@@ -23,22 +27,25 @@ impl TerminalUi {
         frame.render_widget(editor_paragraph, chunks[0]);
 
         // Status Line
-        let status_text = if vim.mode == crate::vim::mode::Mode::Command {
-            format!(":{}", vim.command_buffer)
-        } else {
-            let mode_text = format!("{:?}", vim.mode).to_uppercase();
-            format!(" {} | {}:{} ", mode_text, editor.cursor.y + 1, editor.cursor.x + 1)
-        };
+        let mode_text = format!("{:?}", vim.mode).to_uppercase();
+        let status_text = format!(" {} | {}:{} ", mode_text, editor.cursor.y + 1, editor.cursor.x + 1);
         let status_bar = Paragraph::new(status_text);
         frame.render_widget(status_bar, chunks[1]);
 
-        // Set Cursor
+        // Command Line
         if vim.mode == crate::vim::mode::Mode::Command {
+            let command_text = format!(":{}", vim.command_buffer);
+            let command_bar = Paragraph::new(command_text);
+            frame.render_widget(command_bar, chunks[2]);
+            
             frame.set_cursor_position((
-                chunks[1].x + vim.command_buffer.len() as u16 + 1,
-                chunks[1].y,
+                chunks[2].x + vim.command_buffer.len() as u16 + 1,
+                chunks[2].y,
             ));
         } else {
+            // Clear command line area when not in command mode
+            frame.render_widget(Paragraph::new(""), chunks[2]);
+
             frame.set_cursor_position((
                 chunks[0].x + editor.cursor.x as u16,
                 chunks[0].y + editor.cursor.y as u16,
