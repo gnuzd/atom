@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Welcome to Atom IDE!".to_string(),
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
             "Press 'yy' to copy line, 'p/P' to paste.".to_string(),
-            "Press 'PgUp/PgDn' to jump to start/end of line.".to_string(),
+            "Press 'Home/End' or 'PgUp/PgDn' for line boundaries.".to_string(),
             "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
     }
@@ -139,8 +139,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 vim.pending_op = Some('y');
                             }
                         }
-                        KeyCode::PageUp => editor.move_to_line_start(),
-                        KeyCode::PageDown => editor.move_to_line_end(),
+                        KeyCode::PageUp | KeyCode::Home => {
+                            vim.pending_op = None;
+                            editor.move_to_line_start();
+                        }
+                        KeyCode::PageDown | KeyCode::End => {
+                            vim.pending_op = None;
+                            editor.move_to_line_end();
+                        }
                         KeyCode::Char('j') | KeyCode::Down => {
                             vim.pending_op = None;
                             editor.move_down();
@@ -187,8 +193,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('w') => editor.move_word_forward(),
                         KeyCode::Char('b') => editor.move_word_backward(),
                         KeyCode::Char('e') => editor.move_word_end(),
-                        KeyCode::PageUp => editor.move_to_line_start(),
-                        KeyCode::PageDown => editor.move_to_line_end(),
+                        KeyCode::PageUp | KeyCode::Home => editor.move_to_line_start(),
+                        KeyCode::PageDown | KeyCode::End => editor.move_to_line_end(),
                         KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                         KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                         KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
@@ -203,8 +209,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Down => editor.move_down(),
                         KeyCode::Left => editor.move_left(),
                         KeyCode::Right => editor.move_right(),
-                        KeyCode::PageUp => editor.move_to_line_start(),
-                        KeyCode::PageDown => editor.move_to_line_end(),
+                        KeyCode::PageUp | KeyCode::Home => editor.move_to_line_start(),
+                        KeyCode::PageDown | KeyCode::End => editor.move_to_line_end(),
                         KeyCode::Char(c) => {
                             let cursor = editor.cursor();
                             let cursor_y = cursor.y;
