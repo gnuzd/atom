@@ -12,49 +12,92 @@ impl Highlighter {
 
     pub fn highlight_line(&self, line: &str) -> Vec<Style> {
         let mut styles = vec![self.theme.get("Normal"); line.len()];
-        let words: Vec<&str> = vec!["fn", "let", "mut", "use", "pub", "mod", "match", "if", "else", "loop", "while", "for", "in", "impl", "struct", "enum", "type", "trait", "as", "return", "true", "false"];
+        if line.is_empty() { return styles; }
 
-        // Simple comment check
-        if let Some(comment_start) = line.find("//") {
-            let style = self.theme.get("Comment");
-            for i in comment_start..line.len() {
-                styles[i] = style;
+        let keywords = ["fn", "let", "mut", "use", "pub", "mod", "match", "if", "else", "loop", "while", "for", "in", "impl", "struct", "enum", "type", "trait", "as", "return", "const", "static", "async", "await", "where", "dyn", "move", "unsafe", "extern", "crate", "self", "Self", "import", "from", "export", "default", "class", "interface", "extends", "implements", "readonly", "private", "protected", "public", "abstract", "override", "virtual", "new", "delete", "throw", "try", "catch", "finally", "instanceof", "typeof", "void", "yield", "package", "namespace", "using", "var", "function", "goto", "break", "continue", "switch", "case", "true", "false", "null", "undefined", "NaN", "Infinity", "this", "super"];
+        let builtins = ["String", "Option", "Result", "Some", "None", "Ok", "Err", "Box", "Vec", "HashMap", "HashSet", "BTreeMap", "BTreeSet", "Arc", "Rc", "RefCell", "Mutex", "RwLock", "Console", "Math", "JSON", "Promise", "Object", "Array", "Number", "Boolean", "Symbol", "Error", "Map", "Set", "WeakMap", "WeakSet", "Intl", "WebAssembly", "Global", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array"];
+        let types = ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64", "bool", "char", "str", "number", "string", "boolean", "any", "unknown", "never", "void", "object", "bigint", "symbol"];
+
+        let mut i = 0;
+        let chars: Vec<char> = line.chars().collect();
+
+        while i < chars.len() {
+            // Comments
+            if chars[i] == '/' && i + 1 < chars.len() && chars[i+1] == '/' {
+                let style = self.theme.get("Comment");
+                for j in i..chars.len() { styles[j] = style; }
+                break;
             }
-        }
 
-        // Simple keyword check
-        let mut current_word = String::new();
-        let mut word_start = 0;
-
-        for (i, c) in line.chars().enumerate() {
-            if c.is_alphanumeric() || c == '_' {
-                if current_word.is_empty() { word_start = i; }
-                current_word.push(c);
-            } else {
-                if !current_word.is_empty() {
-                    if words.contains(&current_word.as_str()) {
-                        let style = self.theme.get("Keyword");
-                        for j in word_start..i { styles[j] = style; }
+            // Strings
+            if chars[i] == '"' || chars[i] == '\'' || chars[i] == '`' {
+                let quote = chars[i];
+                let start = i;
+                styles[i] = self.theme.get("String");
+                i += 1;
+                while i < chars.len() && chars[i] != quote {
+                    if chars[i] == '\\' && i + 1 < chars.len() {
+                        styles[i] = self.theme.get("Constant");
+                        styles[i+1] = self.theme.get("Constant");
+                        i += 2;
+                    } else {
+                        styles[i] = self.theme.get("String");
+                        i += 1;
                     }
-                    current_word.clear();
                 }
+                if i < chars.len() {
+                    styles[i] = self.theme.get("String");
+                    i += 1;
+                }
+                continue;
             }
-        }
-        if !current_word.is_empty() && words.contains(&current_word.as_str()) {
-            let style = self.theme.get("Keyword");
-            for j in word_start..line.len() { styles[j] = style; }
-        }
 
-        // Simple string check
-        let mut in_string = false;
-        let string_style = self.theme.get("String");
-        for (i, c) in line.chars().enumerate() {
-            if c == '"' {
-                styles[i] = string_style;
-                in_string = !in_string;
-            } else if in_string {
-                styles[i] = string_style;
+            // Numbers
+            if chars[i].is_ascii_digit() {
+                let style = self.theme.get("Constant");
+                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == '_' || chars[i] == 'x' || chars[i] == 'b' || chars[i] == 'o' || (chars[i] >= 'a' && chars[i] <= 'f') || (chars[i] >= 'A' && chars[i] <= 'F')) {
+                    styles[i] = style;
+                    i += 1;
+                }
+                continue;
             }
+
+            // Words (Keywords, Types, Functions, etc.)
+            if chars[i].is_alphabetic() || chars[i] == '_' || chars[i] == '$' {
+                let start = i;
+                while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '$') {
+                    i += 1;
+                }
+                let word: String = chars[start..i].iter().collect();
+                
+                let mut style = self.theme.get("Normal");
+                if keywords.contains(&word.as_str()) {
+                    style = self.theme.get("Keyword");
+                } else if builtins.contains(&word.as_str()) {
+                    style = self.theme.get("Function");
+                } else if types.contains(&word.as_str()) {
+                    style = self.theme.get("Type");
+                } else if chars.get(i) == Some(&'(') {
+                    style = self.theme.get("Function");
+                } else if word.chars().next().unwrap().is_uppercase() {
+                    style = self.theme.get("Type");
+                } else if word.to_uppercase() == word && word.len() > 1 && word.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    style = self.theme.get("Constant");
+                }
+
+                for j in start..i { styles[j] = style; }
+                continue;
+            }
+
+            // Symbols
+            let symbols = ['=', '+', '-', '*', '/', '%', '<', '>', '&', '|', '^', '!', '?', ':', ';', ',', '.', '(', ')', '[', ']', '{', '}'];
+            if symbols.contains(&chars[i]) {
+                styles[i] = self.theme.get("Keyword"); // Using Keyword color for symbols often looks good
+                i += 1;
+                continue;
+            }
+
+            i += 1;
         }
 
         styles

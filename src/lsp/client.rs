@@ -40,18 +40,23 @@ impl LspClient {
         let mut reader = BufReader::new(stdout);
         thread::spawn(move || {
             loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line).is_err() || line.is_empty() { break; }
-                if line.starts_with("Content-Length: ") {
-                    if let Ok(len) = line.trim_start_matches("Content-Length: ").trim().parse::<usize>() {
-                        let mut empty = String::new();
-                        let _ = reader.read_line(&mut empty); // read \r\n
-                        
-                        let mut buf = vec![0u8; len];
-                        if reader.read_exact(&mut buf).is_ok() {
-                            if let Ok(msg) = serde_json::from_slice::<Message>(&buf) {
-                                let _ = reader_sender.send(msg);
-                            }
+                let mut content_length = 0;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).is_err() || line.is_empty() { return; }
+                    if line == "\r\n" || line == "\n" { break; }
+                    if line.starts_with("Content-Length: ") {
+                        if let Ok(len) = line.trim_start_matches("Content-Length: ").trim().parse::<usize>() {
+                            content_length = len;
+                        }
+                    }
+                }
+
+                if content_length > 0 {
+                    let mut buf = vec![0u8; content_length];
+                    if reader.read_exact(&mut buf).is_ok() {
+                        if let Ok(msg) = serde_json::from_slice::<Message>(&buf) {
+                            let _ = reader_sender.send(msg);
                         }
                     }
                 }
@@ -69,7 +74,7 @@ impl LspClient {
         })
     }
 
-    pub fn initialize(&self, root_uri: Url) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_initialize(&self, root_uri: Url) -> Result<(), Box<dyn std::error::Error>> {
         let params = InitializeParams {
             root_uri: Some(root_uri),
             capabilities: ClientCapabilities {
@@ -91,21 +96,6 @@ impl LspClient {
         let id = RequestId::from(1);
         let request = Request::new(id, "initialize".to_string(), params);
         self.connection.sender.send(Message::Request(request))?;
-
-        // Wait for response, skipping notifications
-        loop {
-            match self.connection.receiver.recv()? {
-                Message::Response(resp) => {
-                    if resp.id == RequestId::from(1) {
-                        let notification = lsp_server::Notification::new("initialized".to_string(), serde_json::json!({}));
-                        self.connection.sender.send(Message::Notification(notification))?;
-                        break;
-                    }
-                }
-                _ => continue,
-            }
-        }
-
         Ok(())
     }
 

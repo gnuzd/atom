@@ -6,6 +6,8 @@ pub enum Mode {
     Command,
     Search,
     ExplorerInput(ExplorerInputType),
+    Mason,
+    Keymaps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

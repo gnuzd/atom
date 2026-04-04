@@ -19,6 +19,8 @@ pub enum LspStatus {
     Error(String),
 }
 
+use ratatui::widgets::ListState;
+
 pub struct VimState {
     pub mode: mode::Mode,
     pub focus: mode::Focus,
@@ -32,14 +34,20 @@ pub struct VimState {
     pub yank_highlight_line: Option<usize>,
     pub suggestions: Vec<CompletionItem>,
     pub selected_suggestion: usize,
+    pub suggestion_state: ListState,
+    pub keymap_state: ListState,
     pub show_suggestions: bool,
     pub lsp_to_install: Option<String>,
     pub lsp_status: LspStatus,
     pub spinner_idx: usize,
+    pub disable_autoformat: bool,
 }
 
 impl VimState {
     pub fn new() -> Self {
+        let mut suggestion_state = ListState::default();
+        suggestion_state.select(Some(0));
+        let keymap_state = ListState::default();
         Self {
             mode: mode::Mode::Normal,
             focus: Focus::Editor,
@@ -53,10 +61,13 @@ impl VimState {
             yank_highlight_line: None,
             suggestions: Vec::new(),
             selected_suggestion: 0,
+            suggestion_state,
+            keymap_state,
             show_suggestions: false,
             lsp_to_install: None,
             lsp_status: LspStatus::None,
             spinner_idx: 0,
+            disable_autoformat: false,
         }
     }
 

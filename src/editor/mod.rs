@@ -461,6 +461,20 @@ impl Editor {
         self.cursor_mut().y = s_y;
         yanked
     }
+
+    pub fn delete_line(&mut self, y: usize) -> String {
+        self.buffer_mut().push_history();
+        let yanked = self.buffer().lines[y].clone();
+        self.buffer_mut().lines.remove(y);
+        if self.buffer().lines.is_empty() {
+            self.buffer_mut().lines.push(String::new());
+        }
+        if self.cursor().y >= self.buffer().lines.len() {
+            self.cursor_mut().y = self.buffer().lines.len().saturating_sub(1);
+        }
+        self.cursor_mut().x = 0;
+        yanked
+    }
 }
 
 #[cfg(test)]
