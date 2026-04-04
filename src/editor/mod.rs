@@ -13,12 +13,12 @@ pub struct Editor {
 
 impl Editor {
     pub fn new() -> Self {
-        let colors = crate::ui::colorscheme::ColorScheme::default_dark();
+        let theme = crate::ui::colorscheme::ColorScheme::new("catppuccin");
         Self {
             buffers: vec![buffer::Buffer::new()],
             cursors: vec![cursor::Cursor::new()],
             active_idx: 0,
-            highlighter: highlighter::Highlighter::new(colors),
+            highlighter: highlighter::Highlighter::new(theme),
         }
     }
 
