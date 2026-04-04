@@ -85,11 +85,30 @@ impl Editor {
     }
 
     pub fn undo(&mut self) -> bool {
-        self.buffer_mut().undo()
+        let res = self.buffer_mut().undo();
+        if res {
+            self.clamp_cursor();
+        }
+        res
     }
 
     pub fn redo(&mut self) -> bool {
-        self.buffer_mut().redo()
+        let res = self.buffer_mut().redo();
+        if res {
+            self.clamp_cursor();
+        }
+        res
+    }
+
+    pub fn clamp_cursor(&mut self) {
+        let num_lines = self.buffer().lines.len();
+        if self.cursor_mut().y >= num_lines {
+            self.cursor_mut().y = num_lines.saturating_sub(1);
+        }
+        let line_len = self.buffer().lines[self.cursor().y].len();
+        if self.cursor_mut().x > line_len {
+            self.cursor_mut().x = line_len;
+        }
     }
 
     pub fn scroll_into_view(&mut self, height: usize) {

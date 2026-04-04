@@ -7,7 +7,7 @@ use std::{env, error::Error, io, path::PathBuf, time::Duration};
 
 use crossterm::{
     cursor::SetCursorStyle,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -81,7 +81,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
+            let event = event::read()?;
+            
+            // Handle Mouse Events
+            if let Event::Mouse(mouse) = &event {
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        editor.move_up();
+                    }
+                    MouseEventKind::ScrollDown => {
+                        editor.move_down();
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Event::Key(key) = event {
                 vim.yank_highlight_line = None;
                 flash_counter = 0;
 
@@ -311,13 +326,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     },
                     _ => {}
                 }
-                
-                // After any potential movement, scroll into view
-                // Determine available height for editor (area - status - command)
-                let area = terminal.size()?;
-                let visible_height = area.height.saturating_sub(2) as usize;
-                editor.scroll_into_view(visible_height);
             }
+
+            // After any potential movement or undo, scroll into view
+            let area = terminal.size()?;
+            let visible_height = area.height.saturating_sub(2) as usize;
+            editor.scroll_into_view(visible_height);
         }
     }
 
