@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Press 'i' for Insert mode, 'v' for Visual mode.".to_string(),
             "Press 'yy' to copy line, 'p/P' to paste.".to_string(),
             "Press 'Home/End' or 'PgUp/PgDn' for line boundaries.".to_string(),
-            "Press 'Ctrl-b' to toggle File Explorer.".to_string(),
+            "Press '\\' to toggle/focus File Explorer.".to_string(),
             "Explorer: a(add), r(rename), d(del), m(move), /(filter), Z(close all)".to_string(),
             "Commands: :bn (next buffer), :bp (prev), :bd (close), :e <file> (open).".to_string(),
         ];
@@ -125,10 +125,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                // Global Toggle Explorer
-                if key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    explorer.toggle();
-                    vim.focus = if explorer.visible { Focus::Explorer } else { Focus::Editor };
+                // Global Toggle Explorer with '\'
+                if key.code == KeyCode::Char('\\') {
+                    if !explorer.visible {
+                        explorer.toggle(); // Open
+                        vim.focus = Focus::Explorer;
+                    } else if vim.focus == Focus::Editor {
+                        vim.focus = Focus::Explorer; // Focus
+                    } else {
+                        explorer.toggle(); // Close
+                        vim.focus = Focus::Editor;
+                    }
                     continue;
                 }
 
