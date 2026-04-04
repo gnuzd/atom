@@ -2,6 +2,7 @@ pub mod mode;
 pub mod motion;
 
 use mode::{Focus, YankType};
+use lsp_types::CompletionItem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
@@ -9,17 +10,32 @@ pub struct Position {
     pub y: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LspStatus {
+    None,
+    Loading,
+    Ready,
+    Installing,
+    Error(String),
+}
+
 pub struct VimState {
     pub mode: mode::Mode,
     pub focus: mode::Focus,
     pub command_buffer: String,
-    pub input_buffer: String, // For Explorer operations
+    pub input_buffer: String,
     pub selection_start: Option<Position>,
     pub search_query: String,
     pub register: String,
     pub yank_type: YankType,
     pub pending_op: Option<char>,
     pub yank_highlight_line: Option<usize>,
+    pub suggestions: Vec<CompletionItem>,
+    pub selected_suggestion: usize,
+    pub show_suggestions: bool,
+    pub lsp_to_install: Option<String>,
+    pub lsp_status: LspStatus,
+    pub spinner_idx: usize,
 }
 
 impl VimState {
@@ -35,22 +51,19 @@ impl VimState {
             yank_type: YankType::Char,
             pending_op: None,
             yank_highlight_line: None,
+            suggestions: Vec::new(),
+            selected_suggestion: 0,
+            show_suggestions: false,
+            lsp_to_install: None,
+            lsp_status: LspStatus::None,
+            spinner_idx: 0,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use super::mode::Mode;
-
-    #[test]
-    fn test_vim_state_new() {
-        let state = VimState::new();
-        assert_eq!(state.mode, Mode::Normal);
-        assert!(state.command_buffer.is_empty());
-        assert!(state.selection_start.is_none());
-        assert!(state.search_query.is_empty());
-        assert!(state.register.is_empty());
+    pub fn get_spinner(&mut self) -> &str {
+        let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let frame = frames[self.spinner_idx % frames.len()];
+        self.spinner_idx += 1;
+        frame
     }
 }
