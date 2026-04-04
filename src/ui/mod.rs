@@ -82,7 +82,6 @@ impl TerminalUi {
                 .constraints([Constraint::Length(3), Constraint::Min(1)])
                 .split(explorer_content_area);
 
-            // Explorer Header Box
             let header_block = Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
@@ -160,31 +159,52 @@ impl TerminalUi {
         // 2. Editor Area
         let buffer = editor.buffer();
         let cursor = editor.cursor();
+        let scroll_y = cursor.scroll_y;
+        let visible_height = main_chunks[1].height as usize;
         
         let editor_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(6), Constraint::Min(1)])
             .split(main_chunks[1]);
 
+        // THE FIX: Full width highlight for active line
+        let current_line_screen_y = cursor.y.saturating_sub(scroll_y);
+        if current_line_screen_y < visible_height {
+            let highlight_rect = Rect {
+                x: main_chunks[1].x,
+                y: main_chunks[1].y + current_line_screen_y as u16,
+                width: main_chunks[1].width,
+                height: 1,
+            };
+            frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+        }
+
         // Line Numbers
         let mut line_numbers = Text::default();
-        for i in 1..=buffer.lines.len() {
-            let is_active = i - 1 == cursor.y;
+        for i in scroll_y..std::cmp::min(scroll_y + visible_height, buffer.lines.len()) {
+            let is_active = i == cursor.y;
             let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
-            line_numbers.lines.push(Line::from(vec![
-                Span::styled(format!("{:>4} ", i), style)
-            ]));
+            
+            // Apply soft background if active
+            let mut line = Line::from(vec![
+                Span::styled(format!("{:>4} ", i + 1), style)
+            ]);
+            if is_active {
+                line = line.style(theme.get("CursorLine"));
+            }
+            line_numbers.lines.push(line);
         }
-        frame.render_widget(Paragraph::new(line_numbers).alignment(Alignment::Right).style(theme.get("Normal")), editor_layout[0]);
+        frame.render_widget(Paragraph::new(line_numbers).alignment(Alignment::Right), editor_layout[0]);
 
         // Code Content
         let mut text = Text::default();
         let search_query = &vim.search_query;
 
-        for (y, line) in buffer.lines.iter().enumerate() {
+        for i in scroll_y..std::cmp::min(scroll_y + visible_height, buffer.lines.len()) {
+            let line = &buffer.lines[i];
             let mut spans = Vec::new();
             let syntax_styles = editor.highlighter.highlight_line(line);
-            let is_current_line = y == cursor.y;
+            let is_current_line = i == cursor.y;
 
             for (x, c) in line.chars().enumerate() {
                 let mut style = syntax_styles.get(x).copied().unwrap_or(theme.get("Normal"));
@@ -196,7 +216,7 @@ impl TerminalUi {
                 if let Some(start) = vim.selection_start {
                     let cur = crate::vim::Position { x: cursor.x, y: cursor.y };
                     let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) { (start.y, start.x, cur.y, cur.x) } else { (cur.y, cur.x, start.y, start.x) };
-                    let is_in_range = if y > s_y && y < e_y { true } else if y == s_y && y == e_y { x >= s_x && x <= e_x } else if y == s_y { x >= s_x } else if y == e_y { x <= e_x } else { false };
+                    let is_in_range = if i > s_y && i < e_y { true } else if i == s_y && i == e_y { x >= s_x && x <= e_x } else if i == s_y { x >= s_x } else if i == e_y { x <= e_x } else { false };
                     if is_in_range { style = theme.get("Visual"); }
                 }
                 if !search_query.is_empty() {
@@ -206,7 +226,7 @@ impl TerminalUi {
                         }
                     }
                 }
-                if vim.yank_highlight_line == Some(y) { style = Style::default().bg(theme.palette.blue).fg(theme.palette.black); }
+                if vim.yank_highlight_line == Some(i) { style = Style::default().bg(theme.palette.blue).fg(theme.palette.black); }
                 spans.push(Span::styled(c.to_string(), style));
             }
             if line.is_empty() { 
@@ -220,7 +240,7 @@ impl TerminalUi {
             }
             text.lines.push(line_obj);
         }
-        frame.render_widget(Paragraph::new(text).style(theme.get("Normal")), editor_layout[1]);
+        frame.render_widget(Paragraph::new(text), editor_layout[1]);
 
         // 3. Status Line
         let (mode_group, mode_label) = match vim.mode {
@@ -273,7 +293,7 @@ impl TerminalUi {
             _ => {
                 frame.render_widget(Paragraph::new("").style(theme.get("Normal")), root_chunks[2]);
                 if vim.focus == Focus::Editor {
-                    frame.set_cursor_position((editor_layout[1].x + cursor.x as u16, editor_layout[1].y + cursor.y as u16));
+                    frame.set_cursor_position((editor_layout[1].x + cursor.x as u16, editor_layout[1].y + current_line_screen_y as u16));
                 }
             }
         }

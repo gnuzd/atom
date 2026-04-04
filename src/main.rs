@@ -311,6 +311,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     },
                     _ => {}
                 }
+                
+                // After any potential movement, scroll into view
+                // Determine available height for editor (area - status - command)
+                let area = terminal.size()?;
+                let visible_height = area.height.saturating_sub(2) as usize;
+                editor.scroll_into_view(visible_height);
             }
         }
     }

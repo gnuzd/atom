@@ -92,6 +92,18 @@ impl Editor {
         self.buffer_mut().redo()
     }
 
+    pub fn scroll_into_view(&mut self, height: usize) {
+        let y = self.cursor().y;
+        let mut scroll_y = self.cursor().scroll_y;
+
+        if y < scroll_y {
+            scroll_y = y;
+        } else if y >= scroll_y + height {
+            scroll_y = y - height + 1;
+        }
+        self.cursor_mut().scroll_y = scroll_y;
+    }
+
     pub fn move_up(&mut self) {
         if self.cursor().y > 0 {
             self.cursor_mut().y -= 1;
