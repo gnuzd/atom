@@ -138,6 +138,8 @@ impl TerminalUi {
             ("w/b/e", "Word movement"),
             ("u", "Undo"),
             ("<C-r>", "Redo"),
+            ("<C-s>", "Save & Format"),
+            ("<Space>b", "Toggle Autoformat"),
             ("dd", "Delete line"),
             ("yy", "Yank line"),
             ("p/P", "Paste after/before"),
@@ -160,6 +162,7 @@ impl TerminalUi {
         items.push(ListItem::new(Line::from(vec![Span::styled("--- INSERT ---", header_style)])));
         let insert_keys = [
             ("<Esc>", "Normal mode"),
+            ("<C-s>", "Save & Format"),
             ("<Tab>", "2 Spaces / CMP Next"),
             ("<Up/Down>", "CMP Nav"),
             ("<C-Space>", "Trigger CMP"),
@@ -412,7 +415,13 @@ impl TerminalUi {
                     style = style.bg(theme.palette.black2);
                 }
 
-                spans.push(Span::styled(c.to_string(), style));
+                if c == '\t' {
+                    for _ in 0..2 {
+                        spans.push(Span::styled(" ", style));
+                    }
+                } else {
+                    spans.push(Span::styled(c.to_string(), style));
+                }
             }
             if line.is_empty() { 
                 let mut style = theme.get("Normal");
@@ -623,7 +632,9 @@ impl TerminalUi {
                     frame.render_widget(Paragraph::new("").style(theme.get("Normal")), root_chunks[2]);
                 }
                 if vim.focus == Focus::Editor {
-                    frame.set_cursor_position((editor_layout[1].x + cursor.x as u16, editor_layout[1].y + current_line_screen_y as u16));
+                    let current_line = &buffer.lines[cursor.y];
+                    let screen_x: u16 = current_line.chars().take(cursor.x).map(|c| if c == '\t' { 2 } else { 1 }).sum();
+                    frame.set_cursor_position((editor_layout[1].x + screen_x, editor_layout[1].y + current_line_screen_y as u16));
                 }
             }
         }

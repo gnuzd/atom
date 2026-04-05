@@ -4,6 +4,7 @@ pub mod motion;
 use mode::{Focus, YankType};
 use lsp_types::CompletionItem;
 use std::time::Instant;
+use crate::config::Config;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
@@ -42,13 +43,13 @@ pub struct VimState {
     pub lsp_to_install: Option<String>,
     pub lsp_status: LspStatus,
     pub spinner_idx: usize,
-    pub disable_autoformat: bool,
+    pub config: Config,
     pub message: Option<String>,
     pub message_time: Option<Instant>,
 }
 
 impl VimState {
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         let mut suggestion_state = ListState::default();
         suggestion_state.select(Some(0));
         let keymap_state = ListState::default();
@@ -71,10 +72,14 @@ impl VimState {
             lsp_to_install: None,
             lsp_status: LspStatus::None,
             spinner_idx: 0,
-            disable_autoformat: false,
+            config,
             message: None,
             message_time: None,
         }
+    }
+
+    pub fn disable_autoformat(&self) -> bool {
+        self.config.disable_autoformat
     }
 
     pub fn set_message(&mut self, text: String) {
