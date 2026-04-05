@@ -36,6 +36,24 @@ impl Palette {
             orange: Color::Rgb(250, 179, 135),
         }
     }
+
+    pub fn gruvbox_material() -> Self {
+        Self {
+            white: Color::Rgb(212, 190, 152),
+            darker_black: Color::Rgb(29, 32, 33),
+            black: Color::Rgb(40, 40, 40),
+            black2: Color::Rgb(50, 48, 47),
+            grey: Color::Rgb(124, 111, 100),
+            grey_fg: Color::Rgb(146, 131, 116),
+            red: Color::Rgb(234, 105, 98),
+            green: Color::Rgb(169, 182, 101),
+            yellow: Color::Rgb(216, 166, 94),
+            blue: Color::Rgb(125, 174, 163),
+            purple: Color::Rgb(211, 134, 155),
+            cyan: Color::Rgb(137, 180, 130),
+            orange: Color::Rgb(231, 138, 78),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +65,7 @@ pub struct ColorScheme {
 impl ColorScheme {
     pub fn new(name: &str) -> Self {
         let palette = match name {
+            "gruvbox-material" => Palette::gruvbox_material(),
             _ => Palette::catppuccin(),
         };
 

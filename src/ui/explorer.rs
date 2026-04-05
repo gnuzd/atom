@@ -256,4 +256,23 @@ impl FileExplorer {
         }
         Ok(())
     }
+
+    pub fn open_in_system_explorer(&self) {
+        if let Some(entry) = self.selected_entry() {
+            let path = if entry.is_dir { 
+                &entry.path 
+            } else { 
+                entry.path.parent().unwrap_or(&entry.path) 
+            };
+            
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg(path).spawn();
+            
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+            
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("explorer").arg(path).spawn();
+        }
+    }
 }

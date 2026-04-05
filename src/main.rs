@@ -45,8 +45,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut editor = Editor::new();
     let config = crate::config::Config::load();
+    let mut editor = Editor::new(&config.colorscheme);
     let mut vim = VimState::new(config);
     let ui = TerminalUi::new();
     let mut explorer = FileExplorer::new();
@@ -466,6 +466,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         KeyCode::Char('d') => { vim.mode = Mode::ExplorerInput(ExplorerInputType::DeleteConfirm); vim.input_buffer.clear(); }
                         KeyCode::Char('m') => { vim.mode = Mode::ExplorerInput(ExplorerInputType::Move); vim.input_buffer.clear(); }
+                        KeyCode::Char('o') => { explorer.open_in_system_explorer(); }
                         KeyCode::Char('/') => { vim.mode = Mode::ExplorerInput(ExplorerInputType::Filter); vim.input_buffer = explorer.filter.clone(); }
                         KeyCode::Char('Z') => { explorer.close_all(); }
                         KeyCode::Char('H') => { explorer.show_hidden = !explorer.show_hidden; explorer.refresh(); }
@@ -558,6 +559,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 None => 0,
                             };
                             vim.keymap_state.select(Some(i));
+                        }
+                        _ => {}
+                    },
+                    Mode::ThemePicker => match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            let i = match vim.theme_state.selected() {
+                                Some(i) => (i + 1).min(1), // 2 themes: 0, 1
+                                None => 0,
+                            };
+                            vim.theme_state.select(Some(i));
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            let i = match vim.theme_state.selected() {
+                                Some(i) => i.saturating_sub(1),
+                                None => 0,
+                            };
+                            vim.theme_state.select(Some(i));
+                        }
+                        KeyCode::Enter => {
+                            let themes = ["gruvbox-material", "catppuccin"];
+                            if let Some(idx) = vim.theme_state.selected() {
+                                let new_theme_name = themes[idx];
+                                editor.highlighter.theme = crate::ui::colorscheme::ColorScheme::new(new_theme_name);
+                                vim.config.colorscheme = new_theme_name.to_string();
+                                let _ = vim.config.save();
+                                vim.set_message(format!("Colorscheme set to {}", new_theme_name));
+                            }
+                            vim.mode = Mode::Normal;
                         }
                         _ => {}
                     },
@@ -687,6 +717,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         KeyCode::Char('t') if vim.pending_op == Some(' ') => {
                             vim.pending_op = Some('t');
+                        }
+                        KeyCode::Char('h') if vim.pending_op == Some('t') => {
+                            vim.mode = Mode::ThemePicker;
+                            let current_idx = match vim.config.colorscheme.as_str() {
+                                "catppuccin" => 1,
+                                _ => 0,
+                            };
+                            vim.theme_state.select(Some(current_idx));
+                            vim.pending_op = None;
                         }
                         KeyCode::Char('t') if vim.pending_op == Some('t') => {
                             if !trouble.visible {
@@ -918,8 +957,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         } 
                                     }
                                     "Mason" | "mason" => { vim.mode = Mode::Mason; }
-                                    _ => { vim.set_message(format!("Unknown command: {}", cmd_parts[0])); }
-                                }
+                                    "colorscheme" | "colo" => {
+                                        if cmd_parts.len() > 1 {
+                                            let new_theme_name = &cmd_parts[1];
+                                            editor.highlighter.theme = crate::ui::colorscheme::ColorScheme::new(new_theme_name);
+                                            vim.config.colorscheme = new_theme_name.clone();
+                                            let _ = vim.config.save();
+                                            vim.set_message(format!("Colorscheme set to {}", new_theme_name));
+                                        } else {
+                                            vim.set_message(format!("Current colorscheme: {}", vim.config.colorscheme));
+                                        }
+                                    }
+                                    _ => { vim.set_message(format!("Unknown command: {}", cmd_parts[0])); }                                }
                                 // Only reset to Normal if we didn't change mode (like to Mason)
                                 if let Mode::Command = vim.mode {
                                     vim.mode = Mode::Normal;

@@ -126,6 +126,7 @@ impl Highlighter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::style::Color;
 
     #[test]
     fn test_highlight_keyword() {
@@ -134,5 +135,22 @@ mod tests {
         let styles = highlighter.highlight_line("fn main() {");
         assert_eq!(styles[0], highlighter.theme.get("Keyword"));
         assert_eq!(styles[1], highlighter.theme.get("Keyword"));
+    }
+
+    #[test]
+    fn test_gruvbox_material_highlights() {
+        let theme = ColorScheme::new("gruvbox-material");
+        let highlighter = Highlighter::new(theme);
+        let styles = highlighter.highlight_line("fn main() {");
+        assert_eq!(styles[0], highlighter.theme.get("Keyword"));
+        // Verify it's actually using gruvbox colors
+        if let Color::Rgb(r, g, b) = highlighter.theme.palette.purple {
+             // gruvbox_material purple is Rgb(211, 134, 155)
+             assert_eq!(r, 211);
+             assert_eq!(g, 134);
+             assert_eq!(b, 155);
+        } else {
+            panic!("Purple should be Rgb");
+        }
     }
 }

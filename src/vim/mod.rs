@@ -40,6 +40,7 @@ pub struct VimState {
     pub suggestion_state: ListState,
     pub keymap_state: ListState,
     pub mason_state: ListState,
+    pub theme_state: ListState,
     pub mason_tab: usize,
     pub mason_filter: String,
     pub show_suggestions: bool,
@@ -60,6 +61,8 @@ impl VimState {
         keymap_state.select(Some(0));
         let mut mason_state = ListState::default();
         mason_state.select(Some(0));
+        let mut theme_state = ListState::default();
+        theme_state.select(Some(0));
 
         Self {
             mode: mode::Mode::Normal,
@@ -77,6 +80,7 @@ impl VimState {
             suggestion_state,
             keymap_state,
             mason_state,
+            theme_state,
             mason_tab: 0,
             mason_filter: String::new(),
             show_suggestions: false,

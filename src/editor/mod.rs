@@ -13,8 +13,8 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new() -> Self {
-        let theme = crate::ui::colorscheme::ColorScheme::new("catppuccin");
+    pub fn new(colorscheme: &str) -> Self {
+        let theme = crate::ui::colorscheme::ColorScheme::new(colorscheme);
         Self {
             buffers: vec![buffer::Buffer::new()],
             cursors: vec![cursor::Cursor::new()],
@@ -484,14 +484,14 @@ mod tests {
 
     #[test]
     fn test_editor_new() {
-        let editor = Editor::new();
+        let editor = Editor::new("catppuccin");
         assert_eq!(editor.buffers.len(), 1);
         assert_eq!(editor.cursors.len(), 1);
     }
 
     #[test]
     fn test_editor_multi_buffer() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffers[0].lines = vec!["Buffer 1".to_string()];
         
         editor.buffers.push(buffer::Buffer::new());
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_editor_movement() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffer_mut().lines = vec!["abc".to_string(), "de".to_string()];
         editor.move_right();
         assert_eq!(editor.cursor().x, 1);
@@ -520,7 +520,7 @@ mod tests {
 
     #[test]
     fn test_editor_line_boundaries() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffer_mut().lines = vec!["hello world".to_string()];
         editor.move_to_line_end();
         assert_eq!(editor.cursor().x, 11);
@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn test_editor_word_movement() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffer_mut().lines = vec!["hello, world rust".to_string()];
         
         editor.move_word_forward();
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_editor_delete_selection() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffer_mut().lines = vec!["hello world".to_string()];
         editor.delete_selection(0, 0, 5, 0); // delete "hello "
         assert_eq!(editor.buffer().lines[0], "world");
@@ -556,7 +556,7 @@ mod tests {
 
     #[test]
     fn test_editor_open_line() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffer_mut().lines = vec!["line 1".to_string()];
         
         editor.open_line_below();
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_editor_paste() {
-        let mut editor = Editor::new();
+        let mut editor = Editor::new("catppuccin");
         editor.buffer_mut().lines = vec!["ab".to_string()];
         editor.cursor_mut().x = 1; // On 'b'
         

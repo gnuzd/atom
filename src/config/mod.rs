@@ -6,12 +6,19 @@ use std::path::PathBuf;
 pub struct Config {
     #[serde(default)]
     pub disable_autoformat: bool,
+    #[serde(default = "default_colorscheme")]
+    pub colorscheme: String,
+}
+
+fn default_colorscheme() -> String {
+    "gruvbox-material".to_string()
 }
 
 impl Config {
     pub fn default() -> Self {
         Self {
             disable_autoformat: false,
+            colorscheme: default_colorscheme(),
         }
     }
 

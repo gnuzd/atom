@@ -231,6 +231,7 @@ impl TerminalUi {
             ("o/O", "Open line below/above"),
             ("\\", "Toggle Explorer"),
             ("<Space>tt", "Toggle Trouble"),
+            ("<Space>th", "Theme Picker"),
             ("?", "Close Help"),
             ("q", "Quit"),
         ];
@@ -271,6 +272,7 @@ impl TerminalUi {
             ("j/k", "Navigate"),
             ("l/Enter", "Expand/Open"),
             ("h", "Collapse"),
+            ("o", "Open in System Explorer"),
             ("a", "Add file/folder"),
             ("r", "Rename"),
             ("d", "Delete"),
@@ -306,6 +308,55 @@ impl TerminalUi {
             .highlight_style(Style::default().bg(theme.palette.black2));
         
         frame.render_stateful_widget(list, inner_area, &mut vim.keymap_state);
+    }
+
+    fn draw_theme_picker(
+        &self,
+        frame: &mut Frame,
+        vim: &mut crate::vim::VimState,
+        theme: &crate::ui::colorscheme::ColorScheme,
+    ) {
+        // TODO: Update this to use Telescope once implemented
+        let area = frame.area();
+        let width = 40;
+        let height = 10;
+        let x = (area.width - width) / 2;
+        let y = (area.height - height) / 2;
+        let picker_area = Rect { x, y, width, height };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" Pick Colorscheme ")
+            .border_style(theme.get("Keyword"))
+            .style(theme.get("Normal"));
+        
+        frame.render_widget(Clear, picker_area);
+        frame.render_widget(block, picker_area);
+
+        let inner_area = picker_area.inner(Margin { horizontal: 2, vertical: 1 });
+        
+        let themes = ["gruvbox-material", "catppuccin"];
+        let items: Vec<ListItem> = themes.iter().enumerate().map(|(i, &name)| {
+            let style = if vim.config.colorscheme == name {
+                theme.get("Keyword").add_modifier(Modifier::BOLD)
+            } else {
+                theme.get("Normal")
+            };
+            
+            let mut line_style = Style::default();
+            if Some(i) == vim.theme_state.selected() {
+                line_style = theme.get("CursorLine");
+            }
+
+            ListItem::new(Line::from(vec![
+                Span::styled(if vim.config.colorscheme == name { "● " } else { "○ " }, style),
+                Span::styled(name, style),
+            ])).style(line_style)
+        }).collect();
+
+        let list = List::new(items);
+        frame.render_stateful_widget(list, inner_area, &mut vim.theme_state);
     }
 
     pub fn draw(
@@ -772,6 +823,10 @@ impl TerminalUi {
 
         if let Mode::Keymaps = vim.mode {
             self.draw_keymaps(frame, vim, theme);
+        }
+
+        if let Mode::ThemePicker = vim.mode {
+            self.draw_theme_picker(frame, vim, theme);
         }
     }
 }

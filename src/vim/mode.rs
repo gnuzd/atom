@@ -9,6 +9,7 @@ pub enum Mode {
     Mason,
     MasonFilter,
     Keymaps,
+    ThemePicker,
     Confirm(ConfirmAction),
 }
 
