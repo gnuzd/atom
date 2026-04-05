@@ -180,23 +180,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let _ = client.connection.sender.send(notification);
                                 ready_exts.push(ext.clone());
                                 vim.lsp_status = LspStatus::Ready;
-                            } else if resp.id == lsp_server::RequestId::from(100) {
-                                if let Some(result) = resp.result {
-                                    if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
-                                        match completions {
-                                            lsp_types::CompletionResponse::Array(items) => {
-                                                vim.suggestions = items;
-                                                vim.show_suggestions = !vim.suggestions.is_empty();
-                                                vim.selected_suggestion = 0;
-                                                vim.suggestion_state.select(Some(0));
-                                            }
-                                            lsp_types::CompletionResponse::List(list) => {
-                                                vim.suggestions = list.items;
-                                                vim.show_suggestions = !vim.suggestions.is_empty();
-                                                vim.selected_suggestion = 0;
-                                                vim.suggestion_state.select(Some(0));
-                                            }
+                            } else {
+                                let is_completion = match &resp.id {
+                                    id if id == &lsp_server::RequestId::from(100) => true,
+                                    // Handle numeric IDs >= 100
+                                    _ => {
+                                        let id_str = resp.id.to_string();
+                                        if let Ok(id_val) = id_str.parse::<i32>() {
+                                            id_val >= 100
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                };
 
+                                if is_completion {
+                                    if let Some(result) = resp.result {
+                                        if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
+                                            match completions {
+                                                lsp_types::CompletionResponse::Array(items) => {
+                                                    vim.suggestions = items;
+                                                    vim.show_suggestions = !vim.suggestions.is_empty();
+                                                    vim.selected_suggestion = 0;
+                                                    vim.suggestion_state.select(Some(0));
+                                                }
+                                                lsp_types::CompletionResponse::List(list) => {
+                                                    vim.suggestions = list.items;
+                                                    vim.show_suggestions = !vim.suggestions.is_empty();
+                                                    vim.selected_suggestion = 0;
+                                                    vim.suggestion_state.select(Some(0));
+                                                }
+
+                                            }
                                         }
                                     }
                                 }

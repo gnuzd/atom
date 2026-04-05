@@ -174,6 +174,7 @@ pub struct LspManager {
     pub root_cache: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
     pub bin_cache: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
     pub versions: Arc<Mutex<HashMap<String, i32>>>,
+    pub id_counter: Arc<Mutex<i32>>,
     pub last_change: Option<Instant>,
     pub pending_change: bool,
 }
@@ -191,6 +192,7 @@ impl LspManager {
             root_cache: Arc::new(Mutex::new(HashMap::new())),
             bin_cache: Arc::new(Mutex::new(HashMap::new())),
             versions: Arc::new(Mutex::new(HashMap::new())),
+            id_counter: Arc::new(Mutex::new(100)),
             last_change: None,
             pending_change: false,
         }
@@ -512,7 +514,12 @@ impl LspManager {
         let clients = self.clients.lock().unwrap();
         if let Some((client, state)) = clients.get(ext) {
             if *state != ClientState::Ready { return Err("LSP not ready".into()); }
-            let id = 100;
+            let id = {
+                let mut counter = self.id_counter.lock().unwrap();
+                let val = *counter;
+                *counter += 1;
+                val
+            };
             let params = CompletionParams {
                 text_document_position: TextDocumentPositionParams {
                     text_document: TextDocumentIdentifier {
