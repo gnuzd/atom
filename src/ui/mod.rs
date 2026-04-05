@@ -194,6 +194,25 @@ impl TerminalUi {
             ])));
         }
 
+        // Command Mode
+        items.push(ListItem::new(Line::from(vec![Span::styled("--- COMMAND ---", header_style)])));
+        let command_keys = [
+            (":w", "Save & Format"),
+            (":Format", "Trigger Format"),
+            (":FormatEnable", "Enable Autoformat"),
+            (":FormatDisable", "Disable Autoformat"),
+            (":q", "Quit/Close"),
+            (":Mason", "LSP Manager"),
+            (":bn/bp", "Next/Prev Buffer"),
+        ];
+        for (k, d) in command_keys {
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!(" {:<12}", k), key_style),
+                Span::styled(" - ", theme.get("Comment")),
+                Span::styled(d, desc_style),
+            ])));
+        }
+
         let list = List::new(items)
             .highlight_style(Style::default().bg(theme.palette.black2));
         
@@ -353,7 +372,7 @@ impl TerminalUi {
         for i in scroll_y..std::cmp::min(scroll_y + visible_height, buffer.lines.len()) {
             let is_active = i == cursor.y;
             let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
-            let mut line = Line::from(vec![Span::styled(format!("{:>4} ", i + 1), style)]);
+            let line = Line::from(vec![Span::styled(format!("{:>4} ", i + 1), style)]);
             // Don't apply background to line number column unless we want it unified
             line_numbers.lines.push(line);
         }
@@ -546,8 +565,14 @@ impl TerminalUi {
         ];
 
         match &vim.lsp_status {
-            LspStatus::Loading | LspStatus::Installing => {
+            LspStatus::Loading => {
                 status_spans.push(Span::styled(format!(" {} Loading... ", vim.get_spinner()), theme.get("Keyword")));
+            }
+            LspStatus::Installing => {
+                status_spans.push(Span::styled(format!(" {} Installing... ", vim.get_spinner()), theme.get("Keyword")));
+            }
+            LspStatus::Formatting => {
+                status_spans.push(Span::styled(format!(" {} Formatting... ", vim.get_spinner()), theme.get("Keyword")));
             }
             LspStatus::Ready => {
                 status_spans.push(Span::styled(" LSP: Ready ", theme.get("String")));
@@ -592,7 +617,11 @@ impl TerminalUi {
                 }
             }
             _ => {
-                frame.render_widget(Paragraph::new("").style(theme.get("Normal")), root_chunks[2]);
+                if let Some(msg) = &vim.message {
+                    frame.render_widget(Paragraph::new(msg.as_str()).style(theme.get("String")), root_chunks[2]);
+                } else {
+                    frame.render_widget(Paragraph::new("").style(theme.get("Normal")), root_chunks[2]);
+                }
                 if vim.focus == Focus::Editor {
                     frame.set_cursor_position((editor_layout[1].x + cursor.x as u16, editor_layout[1].y + current_line_screen_y as u16));
                 }

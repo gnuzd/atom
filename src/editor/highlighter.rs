@@ -32,7 +32,6 @@ impl Highlighter {
             // Strings
             if chars[i] == '"' || chars[i] == '\'' || chars[i] == '`' {
                 let quote = chars[i];
-                let start = i;
                 styles[i] = self.theme.get("String");
                 i += 1;
                 while i < chars.len() && chars[i] != quote {

@@ -76,7 +76,10 @@ impl LspClient {
 
     pub fn send_initialize(&self, root_uri: Url) -> Result<(), Box<dyn std::error::Error>> {
         let params = InitializeParams {
-            root_uri: Some(root_uri),
+            workspace_folders: Some(vec![WorkspaceFolder {
+                uri: root_uri,
+                name: "root".to_string(),
+            }]),
             capabilities: ClientCapabilities {
                 text_document: Some(TextDocumentClientCapabilities {
                     completion: Some(CompletionClientCapabilities {

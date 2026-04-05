@@ -61,6 +61,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 explorer.refresh();
             } else if path.is_file() || !path.exists() {
                 let _ = editor.open_file(path.clone());
+                // Auto-format on startup
+                if !vim.disable_autoformat {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                        if let Some(Ok(formatted)) = lsp_manager.format_document(&ext, &path, editor.buffer().lines.join("\n")) {
+                            editor.buffer_mut().lines = formatted.lines().map(|s| s.to_string()).collect();
+                        }
+                    }
+                }
             }
         }
         if editor.buffers.is_empty() {
@@ -81,6 +89,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut flash_counter = 0;
 
     loop {
+        // 0. Update Message status
+        if let Some(time) = vim.message_time {
+            if time.elapsed().as_secs() >= 3 {
+                vim.message = None;
+                vim.message_time = None;
+            }
+        }
+
+        // Update LSP Status for installation
+        if lsp_manager.is_any_installing() {
+            vim.lsp_status = LspStatus::Installing;
+        } else if let LspStatus::Installing = vim.lsp_status {
+            vim.lsp_status = LspStatus::None;
+        }
+
         // 0. Ensure LSP is active for current buffer
         if let Some(path) = editor.buffer().file_path.clone() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
@@ -141,7 +164,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut ready_exts = Vec::new();
         {
             let clients = lsp_manager.clients.lock().unwrap();
-            for (ext, (client, state)) in clients.iter() {
+            for (ext, (client, _state)) in clients.iter() {
                 while let Ok(msg) = client.receiver().try_recv() {
                     match msg {
                         Message::Response(resp) => {
@@ -244,7 +267,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let _ = lsp_manager_clone.install_server(&lsp_cmd_clone);
                             });
                             vim.lsp_to_install = None;
-                            vim.lsp_status = LspStatus::None;
                         }
                         KeyCode::Char('n') | KeyCode::Esc => { vim.lsp_to_install = None; }
                         _ => {}
@@ -382,7 +404,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             if let Some(entry) = explorer.selected_entry() {
                                 let path = entry.path.clone();
                                 if entry.is_dir { explorer.toggle_expand(); }
-                                else { let _ = editor.open_file(path.clone()); vim.focus = Focus::Editor; }
+                                else { 
+                                    if editor.open_file(path.clone()).is_ok() {
+                                        // Auto-format on open via explorer
+                                        if !vim.disable_autoformat {
+                                            if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                vim.lsp_status = LspStatus::Formatting;
+                                                // Pre-format before first draw
+                                                if let Some(Ok(formatted)) = lsp_manager.format_document(&ext, &path, editor.buffer().lines.join("\n")) {
+                                                    editor.buffer_mut().lines = formatted.lines().map(|s| s.to_string()).collect();
+                                                }
+                                                vim.lsp_status = LspStatus::None;
+                                            }
+                                        }
+                                        vim.focus = Focus::Editor; 
+                                        vim.set_message(format!("Opened \"{}\"", path.display()));
+                                    }
+                                }
                             }
                         }
                         _ => {}
@@ -534,51 +572,132 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char(c) => { vim.command_buffer.push(c); }
                         KeyCode::Backspace => { if vim.command_buffer.is_empty() { vim.mode = Mode::Normal; } else { vim.command_buffer.pop(); } }
                         KeyCode::Enter => {
-                            let cmd_parts: Vec<&str> = vim.command_buffer.split_whitespace().collect();
+                            let cmd_parts: Vec<String> = vim.command_buffer.split_whitespace().map(|s| s.to_string()).collect();
                             if !cmd_parts.is_empty() {
-                                match cmd_parts[0] {
-                                    "q" | "quit" => break,
-                                    "w" | "write" => { 
-                                        if !vim.disable_autoformat {
-                                            let format_data = if let Some(path) = editor.buffer().file_path.clone() {
-                                                if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_string()) {
-                                                    Some((path, ext, editor.buffer().lines.join("\n")))
-                                                } else { None }
-                                            } else { None };
-
-                                            if let Some((path, ext, text)) = format_data {
-                                                if let Some(formatted) = lsp_manager.format_document(&ext, &path, text) {
+                                let format_buffer = |editor: &mut crate::editor::Editor, lsp_manager: &crate::lsp::LspManager, vim: &mut crate::vim::VimState, terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>, ui: &crate::ui::TerminalUi, explorer: &crate::ui::explorer::FileExplorer| -> Result<(), String> {
+                                    if let Some(path) = editor.buffer().file_path.clone() {
+                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                            vim.lsp_status = LspStatus::Formatting;
+                                            // Draw immediately to show "Formatting..."
+                                            let _ = terminal.draw(|f| ui.draw(f, editor, vim, explorer, lsp_manager));
+                                            
+                                            let text = editor.buffer().lines.join("\n");
+                                            match lsp_manager.format_document(&ext, &path, text) {
+                                                Some(Ok(formatted)) => {
                                                     editor.buffer_mut().lines = formatted.lines().map(|s| s.to_string()).collect();
                                                     let _ = lsp_manager.did_change(&ext, &path, editor.buffer().lines.join("\n"));
+                                                    vim.lsp_status = LspStatus::None;
+                                                    return Ok(());
+                                                }
+                                                Some(Err(e)) => {
+                                                    vim.lsp_status = LspStatus::None;
+                                                    return Err(e);
+                                                }
+                                                None => {
+                                                    vim.lsp_status = LspStatus::None;
+                                                    return Err("No formatter available for this file type".to_string());
                                                 }
                                             }
                                         }
-                                        if cmd_parts.len() > 1 { let path = PathBuf::from(cmd_parts[1]); let _ = editor.save_file_as(path); } else { let _ = editor.save_file(); } 
+                                    }
+                                    vim.lsp_status = LspStatus::None;
+                                    Ok(())
+                                };
+
+                                match cmd_parts[0].as_str() {
+                                    "q" | "quit" => break,
+                                    "w" | "write" => { 
+                                        let mut format_info = String::new();
+                                        if !vim.disable_autoformat {
+                                            if let Err(e) = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer) {
+                                                // Only notify if it's a real error, not just "not supported"
+                                                if e != "No formatter available for this file type" {
+                                                    vim.set_message(format!("Error: {}", e));
+                                                }
+                                            } else {
+                                                format_info.push_str("formatted, ");
+                                            }
+                                        }
+                                        let res = if cmd_parts.len() > 1 { 
+                                            let path = PathBuf::from(&cmd_parts[1]); 
+                                            editor.save_file_as(path.clone()).map(|_| path.to_string_lossy().to_string())
+                                        } else { 
+                                            editor.save_file().map(|_| editor.buffer().file_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default())
+                                        };
+                                        if let Ok(path_str) = res {
+                                            let line_count = editor.buffer().lines.len();
+                                            let char_count: usize = editor.buffer().lines.iter().map(|l| l.len() + 1).sum();
+                                            vim.set_message(format!("\"{}\" {} {}L, {}C written", path_str, format_info, line_count, char_count));
+                                        } else {
+                                            vim.set_message("Error: Could not save file".to_string());
+                                        }
                                     }
                                     "wq" => { 
                                         if !vim.disable_autoformat {
-                                            let format_data = if let Some(path) = editor.buffer().file_path.clone() {
-                                                if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_string()) {
-                                                    Some((path, ext, editor.buffer().lines.join("\n")))
-                                                } else { None }
-                                            } else { None };
-
-                                            if let Some((path, ext, text)) = format_data {
-                                                if let Some(formatted) = lsp_manager.format_document(&ext, &path, text) {
-                                                    editor.buffer_mut().lines = formatted.lines().map(|s| s.to_string()).collect();
-                                                }
-                                            }
+                                            let _ = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer);
                                         }
                                         let _ = editor.save_file(); break; 
                                     }
-                                    "FormatDisable" => { vim.disable_autoformat = true; }
-                                    "FormatEnable" => { vim.disable_autoformat = false; }
-                                    "bn" | "bnext" => editor.next_buffer(),
-                                    "bp" | "bprev" => editor.prev_buffer(),
-                                    "bd" | "bdelete" => editor.close_current_buffer(),
-                                    "e" | "edit" => { if cmd_parts.len() > 1 { let path = PathBuf::from(cmd_parts[1]); let _ = editor.open_file(path); } }
+                                    "Format" | "format" => {
+                                        match format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer) {
+                                            Ok(_) => vim.set_message("Formatted".to_string()),
+                                            Err(e) => vim.set_message(e),
+                                        }
+                                    }
+                                    "FormatAll" | "formatall" => {
+                                        vim.lsp_status = LspStatus::Formatting;
+                                        let _ = terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &lsp_manager));
+                                        
+                                        let mut count = 0;
+                                        let original_idx = editor.active_idx;
+                                        let total = editor.buffers.len();
+                                        
+                                        for i in 0..total {
+                                            editor.active_idx = i;
+                                            if let Some(path) = editor.buffer().file_path.clone() {
+                                                if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                    let text = editor.buffer().lines.join("\n");
+                                                    if let Some(Ok(formatted)) = lsp_manager.format_document(&ext, &path, text) {
+                                                        editor.buffer_mut().lines = formatted.lines().map(|s| s.to_string()).collect();
+                                                        let _ = lsp_manager.did_change(&ext, &path, editor.buffer().lines.join("\n"));
+                                                        count += 1;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        editor.active_idx = original_idx;
+                                        vim.lsp_status = LspStatus::None;
+                                        vim.set_message(format!("Formatted {}/{} buffers", count, total));
+                                    }
+                                    "FormatDisable" => { vim.disable_autoformat = true; vim.set_message("Autoformat Disabled".to_string()); }
+                                    "FormatEnable" => { vim.disable_autoformat = false; vim.set_message("Autoformat Enabled".to_string()); }
+                                    "bn" | "bnext" => { editor.next_buffer(); vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len())); }
+                                    "bp" | "bprev" => { editor.prev_buffer(); vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len())); }
+                                    "bd" | "bdelete" => { editor.close_current_buffer(); vim.set_message("Buffer closed".to_string()); }
+                                    "e" | "edit" => { 
+                                        if cmd_parts.len() > 1 { 
+                                            let path = PathBuf::from(&cmd_parts[1]); 
+                                            if editor.open_file(path.clone()).is_ok() {
+                                                // Auto-format on open
+                                                if !vim.disable_autoformat {
+                                                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                        vim.lsp_status = LspStatus::Formatting;
+                                                        // NO draw here yet, we want it to be formatted before first draw
+                                                        if let Some(Ok(formatted)) = lsp_manager.format_document(&ext, &path, editor.buffer().lines.join("\n")) {
+                                                            editor.buffer_mut().lines = formatted.lines().map(|s| s.to_string()).collect();
+                                                        }
+                                                        vim.lsp_status = LspStatus::None;
+                                                    }
+                                                }
+                                                vim.set_message(format!("Opened \"{}\"", path.display()));
+                                            } else {
+                                                vim.set_message(format!("Error: Could not open \"{}\"", path.display()));
+                                            }
+                                        } 
+                                    }
                                     "Mason" | "mason" => { vim.mode = Mode::Mason; }
-                                    _ => {}
+                                    _ => { vim.set_message(format!("Unknown command: {}", cmd_parts[0])); }
                                 }
                             }
                             vim.mode = Mode::Normal;

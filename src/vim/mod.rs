@@ -3,6 +3,7 @@ pub mod motion;
 
 use mode::{Focus, YankType};
 use lsp_types::CompletionItem;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
@@ -16,6 +17,7 @@ pub enum LspStatus {
     Loading,
     Ready,
     Installing,
+    Formatting,
     Error(String),
 }
 
@@ -41,6 +43,8 @@ pub struct VimState {
     pub lsp_status: LspStatus,
     pub spinner_idx: usize,
     pub disable_autoformat: bool,
+    pub message: Option<String>,
+    pub message_time: Option<Instant>,
 }
 
 impl VimState {
@@ -68,7 +72,14 @@ impl VimState {
             lsp_status: LspStatus::None,
             spinner_idx: 0,
             disable_autoformat: false,
+            message: None,
+            message_time: None,
         }
+    }
+
+    pub fn set_message(&mut self, text: String) {
+        self.message = Some(text);
+        self.message_time = Some(Instant::now());
     }
 
     pub fn get_spinner(&mut self) -> &str {
