@@ -77,8 +77,8 @@ impl Editor {
         }
     }
 
-    pub fn save_file(&self) -> io::Result<()> {
-        self.buffer().save()
+    pub fn save_file(&mut self) -> io::Result<()> {
+        self.buffer_mut().save()
     }
 
     pub fn save_file_as(&mut self, path: PathBuf) -> io::Result<()> {

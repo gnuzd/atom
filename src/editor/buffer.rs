@@ -6,6 +6,7 @@ pub struct Buffer {
     pub file_path: Option<PathBuf>,
     pub history: Vec<Vec<String>>,
     pub redo_stack: Vec<Vec<String>>,
+    pub modified: bool,
 }
 
 impl Buffer {
@@ -15,6 +16,7 @@ impl Buffer {
             file_path: None,
             history: Vec::new(),
             redo_stack: Vec::new(),
+            modified: false,
         }
     }
 
@@ -31,13 +33,15 @@ impl Buffer {
             file_path: Some(path),
             history: Vec::new(),
             redo_stack: Vec::new(),
+            modified: false,
         })
     }
 
-    pub fn save(&self) -> io::Result<()> {
+    pub fn save(&mut self) -> io::Result<()> {
         if let Some(path) = &self.file_path {
             let content = self.lines.join("\n");
             fs::write(path, content)?;
+            self.modified = false;
         }
         Ok(())
     }
@@ -46,12 +50,14 @@ impl Buffer {
         let content = self.lines.join("\n");
         fs::write(&path, content)?;
         self.file_path = Some(path);
+        self.modified = false;
         Ok(())
     }
 
     pub fn push_history(&mut self) {
         self.history.push(self.lines.clone());
         self.redo_stack.clear();
+        self.modified = true;
     }
 
     pub fn undo(&mut self) -> bool {

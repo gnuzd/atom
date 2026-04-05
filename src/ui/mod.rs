@@ -11,7 +11,7 @@ use ratatui::{
     Frame,
 };
 use crate::vim::mode::{Mode, ExplorerInputType, Focus};
-use crate::vim::LspStatus;
+use crate::vim::{LspStatus, VimState};
 
 pub struct TerminalUi;
 
@@ -765,5 +765,35 @@ impl TerminalUi {
         if let Mode::Keymaps = vim.mode {
             self.draw_keymaps(frame, vim, theme);
         }
+
+        if let Mode::Confirm(action) = vim.mode {
+            self.draw_confirm(frame, vim, theme, action);
+        }
+    }
+
+    fn draw_confirm(&self, frame: &mut Frame, _vim: &VimState, theme: &crate::ui::colorscheme::ColorScheme, action: crate::vim::mode::ConfirmAction) {
+        let area = frame.area();
+        let msg = match action {
+            crate::vim::mode::ConfirmAction::Quit => " Unsaved changes! Quit anyway? (y/n) ",
+            crate::vim::mode::ConfirmAction::CloseBuffer => " Unsaved changes! Close buffer anyway? (y/n) ",
+        };
+        
+        let width = msg.len() as u16 + 4;
+        let height = 3;
+        let confirm_area = Rect {
+            x: (area.width.saturating_sub(width)) / 2,
+            y: area.height / 2,
+            width,
+            height,
+        };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(theme.get("Keyword"))
+            .style(theme.get("Normal"));
+        
+        frame.render_widget(Clear, confirm_area);
+        frame.render_widget(Paragraph::new(msg).block(block).alignment(Alignment::Center), confirm_area);
     }
 }

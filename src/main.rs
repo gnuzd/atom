@@ -640,7 +640,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Normal => match key.code {
-                        KeyCode::Char('q') => break,
+                        KeyCode::Char('q') => {
+                            if vim.pending_op == Some('?') {
+                                vim.mode = Mode::Keymaps;
+                                vim.keymap_state.select(Some(0));
+                                vim.pending_op = None;
+                            }
+                        }
                         KeyCode::Char('?') => { 
                             vim.mode = Mode::Keymaps;
                             vim.keymap_state.select(Some(0));
@@ -652,7 +658,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('u') => { editor.undo(); }
                         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None); }
+                        KeyCode::Tab => {
+                            if vim.focus != Focus::Explorer {
+                                editor.next_buffer();
+                                vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len()));
+                            }
+                        }
+                        KeyCode::BackTab => {
+                            if vim.focus != Focus::Explorer {
+                                editor.prev_buffer();
+                                vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len()));
+                            }
+                        }
                         KeyCode::Char(' ') => { vim.pending_op = Some(' '); }
+                        KeyCode::Char('x') if vim.pending_op == Some(' ') => {
+                            vim.pending_op = None;
+                            if editor.buffer().modified {
+                                vim.mode = Mode::Confirm(vim::mode::ConfirmAction::CloseBuffer);
+                            } else {
+                                editor.close_current_buffer();
+                            }
+                        }
                         KeyCode::Char('b') if vim.pending_op == Some(' ') => {
                             vim.config.disable_autoformat = !vim.config.disable_autoformat;
                             let _ = vim.config.save();
@@ -814,14 +840,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let cmd_parts: Vec<String> = vim.command_buffer.split_whitespace().map(|s| s.to_string()).collect();
                             if !cmd_parts.is_empty() {
                                 match cmd_parts[0].as_str() {
-                                    "q" | "quit" => break,
+                                    "q" | "quit" => {
+                                        let modified = editor.buffers.iter().any(|b| b.modified);
+                                        if modified {
+                                            vim.mode = Mode::Confirm(vim::mode::ConfirmAction::Quit);
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    "q!" => break,
                                     "w" | "write" => { 
                                         let path_to_save = if cmd_parts.len() > 1 { Some(PathBuf::from(&cmd_parts[1])) } else { None };
                                         save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, path_to_save);
                                     }
                                     "wq" => { 
                                         save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
-                                        break; 
+                                        let modified = editor.buffers.iter().any(|b| b.modified);
+                                        if !modified {
+                                            break;
+                                        } else {
+                                            vim.set_message("Error: Could not save all buffers".to_string());
+                                        }
                                     }
                                     "Format" | "format" => {
                                         match format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble) {
@@ -897,6 +936,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char(c) => { vim.search_query.push(c); }
                         KeyCode::Backspace => { if vim.search_query.is_empty() { vim.mode = Mode::Normal; } else { vim.search_query.pop(); } }
                         KeyCode::Enter => { vim.mode = Mode::Normal; }
+                        _ => {}
+                    },
+                    Mode::Confirm(action) => match key.code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            match action {
+                                vim::mode::ConfirmAction::Quit => break,
+                                vim::mode::ConfirmAction::CloseBuffer => {
+                                    editor.close_current_buffer();
+                                    vim.mode = Mode::Normal;
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                            vim.mode = Mode::Normal;
+                        }
                         _ => {}
                     },
                     _ => {}

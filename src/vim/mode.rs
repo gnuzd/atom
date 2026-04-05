@@ -9,6 +9,13 @@ pub enum Mode {
     Mason,
     MasonFilter,
     Keymaps,
+    Confirm(ConfirmAction),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmAction {
+    Quit,
+    CloseBuffer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
