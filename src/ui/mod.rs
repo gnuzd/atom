@@ -410,7 +410,13 @@ impl TerminalUi {
                 .iter()
                 .enumerate()
                 .map(|(i, entry)| {
-                    let name = entry.path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                    let name = if entry.path == explorer.root {
+                        explorer.root.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or_else(|| explorer.root.to_str().unwrap_or("/"))
+                    } else {
+                        entry.path.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+                    };
                     let mut guide = String::new();
                     for _ in 0..entry.depth { guide.push_str("│ "); }
                     if entry.depth > 0 {

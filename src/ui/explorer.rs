@@ -42,7 +42,16 @@ impl FileExplorer {
     pub fn init_root(&mut self) {
         self.entries.clear();
         if self.filter.is_empty() {
-            self.load_dir(&self.root.clone(), 0, 0);
+            // Add root entry
+            self.entries.push(TreeEntry {
+                path: self.root.clone(),
+                depth: 0,
+                is_dir: true,
+                is_expanded: true,
+                is_last: true,
+                is_ignored: false,
+            });
+            self.load_dir(&self.root.clone(), 1, 1);
         } else {
             self.load_filtered();
         }
@@ -71,7 +80,17 @@ impl FileExplorer {
             }
         }
 
-        self.load_dir_recursive(&self.root.clone(), 0, &visible_paths);
+        // Add root entry first
+        self.entries.push(TreeEntry {
+            path: self.root.clone(),
+            depth: 0,
+            is_dir: true,
+            is_expanded: true,
+            is_last: true,
+            is_ignored: false,
+        });
+
+        self.load_dir_recursive(&self.root.clone(), 1, &visible_paths);
     }
 
     fn load_dir_recursive(&mut self, path: &Path, depth: usize, visible_paths: &HashSet<PathBuf>) {
