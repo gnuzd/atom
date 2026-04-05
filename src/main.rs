@@ -552,8 +552,83 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         _ => {}
                     },
-                    Mode::Mason => match key.code {
-                        KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
+                    Mode::Mason => {
+                        let filtered_packages: Vec<_> = crate::lsp::PACKAGES.iter()
+                            .filter(|p| {
+                                let matches_tab = match vim.mason_tab {
+                                    0 => true,
+                                    1 => p.kind == crate::lsp::PackageKind::Lsp,
+                                    2 => p.kind == crate::lsp::PackageKind::Dap,
+                                    3 => p.kind == crate::lsp::PackageKind::Linter,
+                                    4 => p.kind == crate::lsp::PackageKind::Formatter,
+                                    _ => true,
+                                };
+                                let matches_filter = p.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()) || 
+                                                   p.description.to_lowercase().contains(&vim.mason_filter.to_lowercase());
+                                matches_tab && matches_filter
+                            })
+                            .collect();
+                        
+                        let (mut installed, mut available): (Vec<_>, Vec<_>) = filtered_packages.into_iter().partition(|p| lsp_manager.is_managed(p.cmd));
+                        installed.sort_by_key(|p| p.name);
+                        available.sort_by_key(|p| p.name);
+                        let list_len = 3 + installed.len() + available.len();
+
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let i = match vim.mason_state.selected() {
+                                    Some(i) => (i + 1).min(list_len.saturating_sub(1)),
+                                    None => 0,
+                                };
+                                vim.mason_state.select(Some(i));
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                let i = match vim.mason_state.selected() {
+                                    Some(i) => i.saturating_sub(1),
+                                    None => 0,
+                                };
+                                vim.mason_state.select(Some(i));
+                            }
+                            KeyCode::Char('1') => { vim.mason_tab = 0; vim.mason_state.select(Some(0)); }
+                            KeyCode::Char('2') => { vim.mason_tab = 1; vim.mason_state.select(Some(0)); }
+                            KeyCode::Char('3') => { vim.mason_tab = 2; vim.mason_state.select(Some(0)); }
+                            KeyCode::Char('4') => { vim.mason_tab = 3; vim.mason_state.select(Some(0)); }
+                            KeyCode::Char('5') => { vim.mason_tab = 4; vim.mason_state.select(Some(0)); }
+                            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                vim.mode = Mode::MasonFilter;
+                            }
+                            KeyCode::Char('i') | KeyCode::Enter => {
+                                if let Some(idx) = vim.mason_state.selected() {
+                                    let mut selected_package = None;
+                                    if idx >= 1 && idx < 1 + installed.len() {
+                                        selected_package = Some(installed[idx - 1]);
+                                    } else if idx >= 3 + installed.len() && idx < 3 + installed.len() + available.len() {
+                                        selected_package = Some(available[idx - (3 + installed.len())]);
+                                    }
+                                    
+                                    if let Some(pkg) = selected_package {
+                                        let lsp_manager_clone = lsp_manager.clone();
+                                        let cmd = pkg.cmd.to_string();
+                                        let pkg_name = pkg.name.to_string();
+                                        // Use a sender or just set a flag if we had a shared state for messages
+                                        // For now, the main loop will see is_any_installing()
+                                        std::thread::spawn(move || {
+                                            if let Ok(_) = lsp_manager_clone.install_server(&cmd) {
+                                                // We can't easily set vim.message from here without Mutex, 
+                                                // but is_any_installing will handle the status line.
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    },
+                    Mode::MasonFilter => match key.code {
+                        KeyCode::Esc | KeyCode::Enter => { vim.mode = Mode::Mason; }
+                        KeyCode::Backspace => { vim.mason_filter.pop(); vim.mason_state.select(Some(0)); }
+                        KeyCode::Char(c) => { vim.mason_filter.push(c); vim.mason_state.select(Some(0)); }
                         _ => {}
                     },
                     Mode::Normal => match key.code {
@@ -771,8 +846,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     "Mason" | "mason" => { vim.mode = Mode::Mason; }
                                     _ => { vim.set_message(format!("Unknown command: {}", cmd_parts[0])); }
                                 }
+                                // Only reset to Normal if we didn't change mode (like to Mason)
+                                if let Mode::Command = vim.mode {
+                                    vim.mode = Mode::Normal;
+                                }
+                            } else {
+                                vim.mode = Mode::Normal;
                             }
-                            vim.mode = Mode::Normal;
                             vim.command_buffer.clear();
                         }
                         _ => {}

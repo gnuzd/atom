@@ -39,6 +39,9 @@ pub struct VimState {
     pub selected_suggestion: usize,
     pub suggestion_state: ListState,
     pub keymap_state: ListState,
+    pub mason_state: ListState,
+    pub mason_tab: usize,
+    pub mason_filter: String,
     pub show_suggestions: bool,
     pub lsp_to_install: Option<String>,
     pub lsp_status: LspStatus,
@@ -52,7 +55,11 @@ impl VimState {
     pub fn new(config: Config) -> Self {
         let mut suggestion_state = ListState::default();
         suggestion_state.select(Some(0));
-        let keymap_state = ListState::default();
+        let mut keymap_state = ListState::default();
+        keymap_state.select(Some(0));
+        let mut mason_state = ListState::default();
+        mason_state.select(Some(0));
+
         Self {
             mode: mode::Mode::Normal,
             focus: Focus::Editor,
@@ -68,6 +75,9 @@ impl VimState {
             selected_suggestion: 0,
             suggestion_state,
             keymap_state,
+            mason_state,
+            mason_tab: 0,
+            mason_filter: String::new(),
             show_suggestions: false,
             lsp_to_install: None,
             lsp_status: LspStatus::None,

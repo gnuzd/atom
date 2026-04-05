@@ -7,6 +7,7 @@ pub enum Mode {
     Search,
     ExplorerInput(ExplorerInputType),
     Mason,
+    MasonFilter,
     Keymaps,
 }
 
