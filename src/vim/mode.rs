@@ -10,7 +10,14 @@ pub enum Mode {
     MasonFilter,
     Keymaps,
     ThemePicker,
+    Telescope(TelescopeKind),
     Confirm(ConfirmAction),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TelescopeKind {
+    Files,
+    Words,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -47,7 +47,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = crate::config::Config::load();
     let mut editor = Editor::new(&config.colorscheme);
-    let mut vim = VimState::new(config);
+    let project_root = find_project_root(&env::current_dir().unwrap_or_default());
+    let mut vim = VimState::new(config, project_root);
     let ui = TerminalUi::new();
     let mut explorer = FileExplorer::new();
     let mut trouble = ui::trouble::TroubleList::new();
@@ -591,6 +592,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         _ => {}
                     },
+                    Mode::Telescope(_) => match key.code {
+                        KeyCode::Esc => { vim.telescope.close(); vim.mode = Mode::Normal; }
+                        KeyCode::Char('j') | KeyCode::Down => { vim.telescope.move_down(); }
+                        KeyCode::Char('k') | KeyCode::Up => { vim.telescope.move_up(); }
+                        KeyCode::Enter => {
+                            if let Some(result) = vim.telescope.results.get(vim.telescope.selected_idx) {
+                                let path = result.path.clone();
+                                let line_opt = result.line_number;
+                                
+                                if let Ok(_) = editor.open_file(path) {
+                                    if let Some(line) = line_opt {
+                                        let y = line.saturating_sub(1);
+                                        editor.cursor_mut().y = y;
+                                        editor.cursor_mut().x = 0;
+                                    }
+                                    vim.focus = Focus::Editor;
+                                }
+                            }
+                            vim.telescope.close();
+                            vim.mode = Mode::Normal;
+                        }
+                        KeyCode::Char(c) => {
+                            vim.telescope.query.push(c);
+                            vim.telescope.update_results();
+                        }
+                        KeyCode::Backspace => {
+                            vim.telescope.query.pop();
+                            vim.telescope.update_results();
+                        }
+                        _ => {}
+                    },
                     Mode::Mason => {
                         let filtered_packages: Vec<_> = crate::lsp::PACKAGES.iter()
                             .filter(|p| {
@@ -717,6 +749,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         KeyCode::Char('t') if vim.pending_op == Some(' ') => {
                             vim.pending_op = Some('t');
+                        }
+                        KeyCode::Char('f') if vim.pending_op == Some(' ') => {
+                            vim.pending_op = Some('f');
+                        }
+                        KeyCode::Char('f') if vim.pending_op == Some('f') => {
+                            vim.telescope.open(vim::mode::TelescopeKind::Files, explorer.root.clone());
+                            vim.mode = Mode::Telescope(vim::mode::TelescopeKind::Files);
+                            vim.pending_op = None;
+                        }
+                        KeyCode::Char('g') if vim.pending_op == Some('f') => {
+                            vim.telescope.open(vim::mode::TelescopeKind::Words, explorer.root.clone());
+                            vim.mode = Mode::Telescope(vim::mode::TelescopeKind::Words);
+                            vim.pending_op = None;
                         }
                         KeyCode::Char('h') if vim.pending_op == Some('t') => {
                             vim.mode = Mode::ThemePicker;
@@ -880,6 +925,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             if !cmd_parts.is_empty() {
                                 match cmd_parts[0].as_str() {
                                     "q" | "quit" => {
+                                        let modified = editor.buffer().modified;
+                                        if modified {
+                                            vim.mode = Mode::Confirm(vim::mode::ConfirmAction::CloseBuffer);
+                                        } else {
+                                            if editor.buffers.len() > 1 {
+                                                editor.close_current_buffer();
+                                                vim.mode = Mode::Normal;
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    "q!" => {
+                                        if editor.buffers.len() > 1 {
+                                            editor.close_current_buffer();
+                                            vim.mode = Mode::Normal;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    "qa" | "quitall" => {
                                         let modified = editor.buffers.iter().any(|b| b.modified);
                                         if modified {
                                             vim.mode = Mode::Confirm(vim::mode::ConfirmAction::Quit);
@@ -887,7 +953,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             break;
                                         }
                                     }
-                                    "q!" => break,
+                                    "qa!" => break,
                                     "w" | "write" => { 
                                         let path_to_save = if cmd_parts.len() > 1 { Some(PathBuf::from(&cmd_parts[1])) } else { None };
                                         save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, path_to_save);

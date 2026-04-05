@@ -1,6 +1,7 @@
 pub mod colorscheme;
 pub mod explorer;
 pub mod icons;
+pub mod telescope;
 pub mod trouble;
 
 use ratatui::{
@@ -20,7 +21,7 @@ impl TerminalUi {
         Self
     }
 
-    fn get_file_icon(path: &std::path::Path) -> (&'static str, String) {
+    pub fn get_file_icon(path: &std::path::Path) -> (&'static str, String) {
         if path.is_dir() { return (icons::FOLDER, "TreeExplorerFolderIcon".into()); }
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         match ext {
@@ -827,6 +828,10 @@ impl TerminalUi {
 
         if let Mode::ThemePicker = vim.mode {
             self.draw_theme_picker(frame, vim, theme);
+        }
+
+        if vim.telescope.visible {
+            vim.telescope.draw(frame, theme, vim, editor);
         }
     }
 }

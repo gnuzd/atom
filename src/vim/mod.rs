@@ -51,10 +51,12 @@ pub struct VimState {
     pub config: Config,
     pub message: Option<String>,
     pub message_time: Option<Instant>,
+    pub telescope: crate::ui::telescope::Telescope,
+    pub project_root: std::path::PathBuf,
 }
 
 impl VimState {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, project_root: std::path::PathBuf) -> Self {
         let mut suggestion_state = ListState::default();
         suggestion_state.select(Some(0));
         let mut keymap_state = ListState::default();
@@ -91,6 +93,8 @@ impl VimState {
             config,
             message: None,
             message_time: None,
+            telescope: crate::ui::telescope::Telescope::new(),
+            project_root,
         }
     }
 
