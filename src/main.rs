@@ -355,23 +355,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if item.label.to_lowercase().contains(&prefix) {
                                         unique_items.insert(key);
                                         true
-                                    } else { false }
-                                })
-                                .collect();
+                                        } else { false }
+                                        })
+                                        .collect();
 
-                            if let Some(item) = filtered.get(vim.selected_suggestion % filtered.len().max(1)) {
-                                let insert_text = item.insert_text.as_ref().unwrap_or(&item.label);
-                                let line_mut = &mut editor.buffer_mut().lines[y];
-                                
-                                // Replace prefix
-                                for _ in start_x..x {
-                                    line_mut.remove(start_x);
-                                }
-                                line_mut.insert_str(start_x, insert_text);
-                                editor.cursor_mut().x = start_x + insert_text.len();
-                            }
-                            vim.show_suggestions = false;
-                            continue;
+                                        if let Some(item) = filtered.get(vim.selected_suggestion % filtered.len().max(1)) {
+                                        let mut insert_text = item.insert_text.as_ref().unwrap_or(&item.label).clone();
+
+                                        // Fix "double dot" issue: if we have a dot before cursor and completion starts with dot, strip it
+                                        if insert_text.starts_with('.') && start_x > 0 && chars[start_x-1] == '.' {
+                                        insert_text.remove(0);
+                                        }
+
+                                        let line_mut = &mut editor.buffer_mut().lines[y];
+
+                                        // Replace prefix
+                                        for _ in start_x..x {
+                                        line_mut.remove(start_x);
+                                        }
+                                        line_mut.insert_str(start_x, &insert_text);
+                                        editor.cursor_mut().x = start_x + insert_text.len();
+                                        }
+                                        vim.show_suggestions = false;
+                                        continue;
+
                         }
                         KeyCode::Char(_) | KeyCode::Backspace => { /* Allow to fall through to Insert mode without hiding */ }
                         _ => { vim.show_suggestions = false; }
