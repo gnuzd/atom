@@ -278,8 +278,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Some(path) = &editor.buffer().file_path {
                         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                             let y = editor.cursor().y;
-                            let utf16_x = char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
-                            let _ = lsp_manager.request_completions(ext, path, y, utf16_x);
+                            let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
+                            let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                         }
                     }
                     continue;
@@ -716,6 +716,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             
                             lsp_manager.last_change = Some(std::time::Instant::now());
                             lsp_manager.pending_change = true;
+
+                            // Auto-trigger completion on certain characters
+                            if c == '.' || c == ':' {
+                                if let Some(path) = &editor.buffer().file_path {
+                                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                        let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
+                                        let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::TRIGGER_CHARACTER, Some(c.to_string()));
+                                    }
+                                }
+                            }
                         }
                         KeyCode::Backspace => {
                             let (y, x) = { let cur = editor.cursor(); (cur.y, cur.x) };

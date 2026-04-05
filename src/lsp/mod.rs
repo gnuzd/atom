@@ -508,7 +508,7 @@ impl LspManager {
         Some(Err(last_err))
     }
 
-    pub fn request_completions(&self, ext: &str, path: &Path, line: usize, character: usize) -> Result<i32, Box<dyn std::error::Error>> {
+    pub fn request_completions(&self, ext: &str, path: &Path, line: usize, character: usize, trigger_kind: CompletionTriggerKind, trigger_char: Option<String>) -> Result<i32, Box<dyn std::error::Error>> {
         let clients = self.clients.lock().unwrap();
         if let Some((client, state)) = clients.get(ext) {
             if *state != ClientState::Ready { return Err("LSP not ready".into()); }
@@ -526,8 +526,8 @@ impl LspManager {
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
                 context: Some(CompletionContext {
-                    trigger_kind: CompletionTriggerKind::INVOKED,
-                    trigger_character: None,
+                    trigger_kind,
+                    trigger_character: trigger_char,
                 }),
             };
             client.send_request(id, "textDocument/completion", params)?;
