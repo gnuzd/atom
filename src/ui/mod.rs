@@ -670,21 +670,6 @@ impl TerminalUi {
             }
         }
 
-        // 2.6 LSP Install Prompt
-        if let Some(lsp_cmd) = &vim.lsp_to_install {
-            let prompt_text = format!(" LSP '{}' not found. Install it? (y/n) ", lsp_cmd);
-            let prompt_width = prompt_text.len() as u16 + 4;
-            let prompt_area = Rect {
-                x: (area.width.saturating_sub(prompt_width)) / 2,
-                y: area.height / 2,
-                width: prompt_width,
-                height: 3,
-            };
-            let prompt = Paragraph::new(prompt_text).block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).style(theme.get("Keyword")));
-            frame.render_widget(Clear, prompt_area);
-            frame.render_widget(prompt, prompt_area);
-        }
-
         // 3. Status Line
         let (mode_group, mode_label) = match vim.mode {
             Mode::Normal => ("StatusLineNormal", " NORMAL "),

@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let has_client = lsp_manager.clients.lock().unwrap().contains_key(ext);
                 let is_failed = lsp_manager.failed_exts.lock().unwrap().contains(ext);
                 if !has_client && !is_failed {
-                    if let Some((cmd, _)) = LspManager::get_server_command(ext) {
+                    if let Some((cmd, _)) = lsp_manager.get_server_command(ext) {
                         if lsp_manager.is_installed(cmd) {
                             vim.lsp_status = LspStatus::Loading;
                             let root = find_project_root(&path);
@@ -115,7 +115,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 vim.lsp_status = LspStatus::Error("Start Fail".into());
                             }
                         } else {
-                            vim.lsp_to_install = Some(cmd.to_string());
+                            // Don't auto-prompt, just set a status message once
+                            if vim.lsp_to_install.is_none() || vim.lsp_to_install.as_ref() != Some(&cmd.to_string()) {
+                                vim.lsp_to_install = Some(cmd.to_string());
+                                vim.set_message(format!("LSP '{}' not found. Use :Mason to install.", cmd));
+                            }
                         }
                     }
                 }
@@ -277,24 +281,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let utf16_x = char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                             let _ = lsp_manager.request_completions(ext, path, y, utf16_x);
                         }
-                    }
-                    continue;
-                }
-
-                // Handle LSP Install Prompt
-                if let Some(lsp_cmd) = vim.lsp_to_install.clone() {
-                    match key.code {
-                        KeyCode::Char('y') => {
-                            vim.lsp_status = LspStatus::Installing;
-                            let lsp_cmd_clone = lsp_cmd.clone();
-                            let lsp_manager_clone = lsp_manager.clone();
-                            std::thread::spawn(move || {
-                                let _ = lsp_manager_clone.install_server(&lsp_cmd_clone);
-                            });
-                            vim.lsp_to_install = None;
-                        }
-                        KeyCode::Char('n') | KeyCode::Esc => { vim.lsp_to_install = None; }
-                        _ => {}
                     }
                     continue;
                 }
@@ -610,7 +596,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if let Some(pkg) = selected_package {
                                         let lsp_manager_clone = lsp_manager.clone();
                                         let cmd = pkg.cmd.to_string();
-                                        let pkg_name = pkg.name.to_string();
                                         // Use a sender or just set a flag if we had a shared state for messages
                                         // For now, the main loop will see is_any_installing()
                                         std::thread::spawn(move || {

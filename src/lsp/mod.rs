@@ -248,11 +248,17 @@ impl LspManager {
         !self.installing.lock().unwrap().is_empty()
     }
 
-    pub fn get_server_command(ext: &str) -> Option<(&'static str, &'static [&'static str])> {
+    pub fn get_server_command(&self, ext: &str) -> Option<(&'static str, &'static [&'static str])> {
         match ext {
             "rs" => Some(("rust-analyzer", &[])),
             "py" => Some(("pyright-langserver", &["--stdio"])),
-            "js" | "ts" | "jsx" | "tsx" => Some(("typescript-language-server", &["--stdio"])),
+            "js" | "ts" | "jsx" | "tsx" => {
+                if self.is_installed("vtsls") {
+                    Some(("vtsls", &["--stdio"]))
+                } else {
+                    Some(("typescript-language-server", &["--stdio"]))
+                }
+            }
             "svelte" => Some(("svelteserver", &["--stdio"])),
             _ => None,
         }
@@ -314,7 +320,7 @@ impl LspManager {
         if self.clients.lock().unwrap().contains_key(ext) { return Ok(()); }
         if self.failed_exts.lock().unwrap().contains(ext) { return Err("Already failed".into()); }
 
-        if let Some((cmd, args)) = Self::get_server_command(ext) {
+        if let Some((cmd, args)) = self.get_server_command(ext) {
             let local_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(cmd);
             let final_cmd = if local_bin.exists() {
                 local_bin.to_string_lossy().to_string()
