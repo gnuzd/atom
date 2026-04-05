@@ -619,16 +619,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let path = result.path.clone();
                                 let line_opt = result.line_number;
                                 
-                                let mut found = false;
-                                for i in 0..editor.buffers.len() {
-                                    if editor.buffers[i].file_path.as_ref() == Some(&path) {
-                                        editor.active_idx = i;
-                                        found = true;
-                                        break;
+                                if let Some(idx) = result.buffer_idx {
+                                    if idx < editor.buffers.len() {
+                                        editor.active_idx = idx;
                                     }
-                                }
-                                if !found {
-                                    let _ = editor.open_file(path);
+                                } else {
+                                    let mut found = false;
+                                    for i in 0..editor.buffers.len() {
+                                        if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                            editor.active_idx = i;
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                    if !found {
+                                        let _ = editor.open_file(path);
+                                    }
                                 }
 
                                 if let Some(line) = line_opt {

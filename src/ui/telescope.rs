@@ -15,6 +15,7 @@ pub struct TelescopeResult {
     pub path: PathBuf,
     pub line_number: Option<usize>,
     pub content: Option<String>,
+    pub buffer_idx: Option<usize>,
 }
 
 pub struct Telescope {
@@ -73,7 +74,7 @@ impl Telescope {
 
     fn search_buffers(&mut self, editor: &crate::editor::Editor) {
         self.results.clear();
-        for buffer in &editor.buffers {
+        for (idx, buffer) in editor.buffers.iter().enumerate() {
             if let Some(path) = &buffer.file_path {
                 let path_str = path.to_string_lossy().to_string();
                 if self.query.is_empty() || path_str.to_lowercase().contains(&self.query.to_lowercase()) {
@@ -81,6 +82,7 @@ impl Telescope {
                         path: path.clone(),
                         line_number: None,
                         content: None,
+                        buffer_idx: Some(idx),
                     });
                 }
             } else if self.query.is_empty() {
@@ -88,6 +90,7 @@ impl Telescope {
                     path: PathBuf::from("[No Name]"),
                     line_number: None,
                     content: None,
+                    buffer_idx: Some(idx),
                 });
             }
         }
@@ -113,6 +116,7 @@ impl Telescope {
                         path: entry.path().to_path_buf(),
                         line_number: None,
                         content: None,
+                        buffer_idx: None,
                     });
                 }
             }
@@ -143,6 +147,7 @@ impl Telescope {
                         path,
                         line_number,
                         content,
+                        buffer_idx: None,
                     });
                 }
                 if self.results.len() > 100 { break; }
