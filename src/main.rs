@@ -147,11 +147,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let prefix = if start_x < x { line[start_x..x].to_string() } else { String::new() };
 
                                 if prefix.is_empty() {
-                                    vim.show_suggestions = false;
+                                    // Only hide if the character before cursor is NOT a trigger character
+                                    let is_trigger = x > 0 && {
+                                        let c = chars[x-1];
+                                        c == '.' || c == ':'
+                                    };
+                                    if !is_trigger {
+                                        vim.show_suggestions = false;
+                                    }
                                 } else {
                                     let utf16_x = char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                                     let _ = lsp_manager.request_completions(ext, &path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                                 }
+
                                 lsp_manager.pending_change = false;
                             }
                         }
@@ -181,36 +189,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 ready_exts.push(ext.clone());
                                 vim.lsp_status = LspStatus::Ready;
                             } else {
-                                let is_completion = match &resp.id {
-                                    id if id == &lsp_server::RequestId::from(100) => true,
-                                    // Handle numeric IDs >= 100
-                                    _ => {
-                                        let id_str = resp.id.to_string();
-                                        if let Ok(id_val) = id_str.parse::<i32>() {
-                                            id_val >= 100
-                                        } else {
-                                            false
-                                        }
-                                    }
-                                };
-
-                                if is_completion {
-                                    if let Some(result) = resp.result {
-                                        if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
-                                            match completions {
-                                                lsp_types::CompletionResponse::Array(items) => {
-                                                    vim.suggestions = items;
-                                                    vim.show_suggestions = !vim.suggestions.is_empty();
-                                                    vim.selected_suggestion = 0;
-                                                    vim.suggestion_state.select(Some(0));
-                                                }
-                                                lsp_types::CompletionResponse::List(list) => {
-                                                    vim.suggestions = list.items;
-                                                    vim.show_suggestions = !vim.suggestions.is_empty();
-                                                    vim.selected_suggestion = 0;
-                                                    vim.suggestion_state.select(Some(0));
-                                                }
-
+                                // Any response with id != 1 is assumed to be a completion for now
+                                if let Some(result) = resp.result {
+                                    if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
+                                        match completions {
+                                            lsp_types::CompletionResponse::Array(items) => {
+                                                vim.suggestions = items;
+                                                vim.show_suggestions = !vim.suggestions.is_empty();
+                                                vim.selected_suggestion = 0;
+                                                vim.suggestion_state.select(Some(0));
+                                            }
+                                            lsp_types::CompletionResponse::List(list) => {
+                                                vim.suggestions = list.items;
+                                                vim.show_suggestions = !vim.suggestions.is_empty();
+                                                vim.selected_suggestion = 0;
+                                                vim.suggestion_state.select(Some(0));
                                             }
                                         }
                                     }
@@ -735,6 +728,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             // Auto-trigger completion on certain characters
                             if c == '.' || c == ':' {
+                                vim.show_suggestions = true; // Keep menu open or prepare to show it
                                 if let Some(path) = &editor.buffer().file_path {
                                     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                                         let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
@@ -749,6 +743,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let line = &mut editor.buffer_mut().lines[y];
                                 line.remove(x - 1);
                                 editor.cursor_mut().x -= 1;
+                                
+                                // Auto-trigger completion on backspace if we are in a word
+                                if let Some(path) = &editor.buffer().file_path {
+                                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                        let new_x = editor.cursor().x;
+                                        let line = &editor.buffer().lines[y];
+                                        let chars: Vec<char> = line.chars().collect();
+                                        if new_x > 0 && (chars[new_x-1].is_alphanumeric() || chars[new_x-1] == '_' || chars[new_x-1] == '$' || chars[new_x-1] == '.' || chars[new_x-1] == ':') {
+                                            let utf16_x = crate::lsp::char_to_utf16_offset(line, new_x);
+                                            let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
+                                        }
+                                    }
+                                }
                             } else if y > 0 {
                                 let current_line = editor.buffer_mut().lines.remove(y);
                                 editor.cursor_mut().y -= 1;
