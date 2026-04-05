@@ -1,6 +1,7 @@
 pub mod colorscheme;
 pub mod explorer;
 pub mod icons;
+pub mod trouble;
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect, Margin},
@@ -145,6 +146,7 @@ impl TerminalUi {
             ("p/P", "Paste after/before"),
             ("o/O", "Open line below/above"),
             ("\\", "Toggle Explorer"),
+            ("<Space>tt", "Toggle Trouble"),
             ("?", "Close Help"),
             ("q", "Quit"),
         ];
@@ -228,6 +230,7 @@ impl TerminalUi {
         editor: &crate::editor::Editor,
         vim: &mut crate::vim::VimState,
         explorer: &explorer::FileExplorer,
+        trouble: &trouble::TroubleList,
         lsp_manager: &crate::lsp::LspManager,
     ) {
         let area = frame.area();
@@ -253,6 +256,19 @@ impl TerminalUi {
                 [Constraint::Percentage(0), Constraint::Percentage(100)]
             })
             .split(root_chunks[0]);
+
+        // Further split main_chunks[1] if trouble is visible
+        let editor_trouble_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(if trouble.visible {
+                [Constraint::Percentage(70), Constraint::Percentage(30)]
+            } else {
+                [Constraint::Percentage(100), Constraint::Percentage(0)]
+            })
+            .split(main_chunks[1]);
+
+        let editor_area = editor_trouble_chunks[0];
+        let trouble_area = editor_trouble_chunks[1];
 
         // 1. File Explorer
         if explorer.visible {
@@ -347,24 +363,29 @@ impl TerminalUi {
             frame.render_widget(List::new(items), explorer_layout[1]);
         }
 
+        // 1.5 Trouble List
+        if trouble.visible {
+            trouble.draw(frame, trouble_area, vim, theme);
+        }
+
         // 2. Editor Area
         let buffer = editor.buffer();
         let cursor = editor.cursor();
         let scroll_y = cursor.scroll_y;
-        let visible_height = main_chunks[1].height as usize;
+        let visible_height = editor_area.height as usize;
         
         let editor_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(6), Constraint::Min(1)])
-            .split(main_chunks[1]);
+            .split(editor_area);
 
         // Full width highlight for active line
         let current_line_screen_y = cursor.y.saturating_sub(scroll_y);
         if current_line_screen_y < visible_height {
             let highlight_rect = Rect {
-                x: main_chunks[1].x,
-                y: main_chunks[1].y + current_line_screen_y as u16,
-                width: main_chunks[1].width,
+                x: editor_area.x,
+                y: editor_area.y + current_line_screen_y as u16,
+                width: editor_area.width,
                 height: 1,
             };
             frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
@@ -410,6 +431,29 @@ impl TerminalUi {
                 }
                 if vim.yank_highlight_line == Some(i) { style = Style::default().bg(theme.palette.blue).fg(theme.palette.black); }
                 
+                // Diagnostics undercurl/underline
+                if let Some(path) = &buffer.file_path {
+                    if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                        let diagnostics = lsp_manager.diagnostics.lock().unwrap();
+                        if let Some(diags) = diagnostics.get(&url) {
+                            for diag in diags {
+                                if (i as u32) >= diag.range.start.line && (i as u32) <= diag.range.end.line {
+                                    let s_x = if (i as u32) == diag.range.start.line { diag.range.start.character as usize } else { 0 };
+                                    let e_x = if (i as u32) == diag.range.end.line { diag.range.end.character as usize } else { line.len() };
+                                    if x >= s_x && x < e_x {
+                                        let diag_color = match diag.severity {
+                                            Some(lsp_types::DiagnosticSeverity::ERROR) => theme.palette.red,
+                                            Some(lsp_types::DiagnosticSeverity::WARNING) => theme.palette.yellow,
+                                            _ => theme.palette.blue,
+                                        };
+                                        style = style.underline_color(diag_color).add_modifier(Modifier::UNDERLINED);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Apply CursorLine background to character if it's the current line
                 if is_current_line && style.bg.is_none() {
                     style = style.bg(theme.palette.black2);
@@ -470,7 +514,7 @@ impl TerminalUi {
 
                 let menu_area = Rect {
                     x: menu_x.min(area.right().saturating_sub(menu_width)),
-                    y: menu_y.min(root_chunks[1].y.saturating_sub(menu_height)), 
+                    y: menu_y.min(editor_trouble_chunks[0].bottom().saturating_sub(menu_height)), 
                     width: menu_width,
                     height: menu_height,
                 };

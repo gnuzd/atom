@@ -1,4 +1,4 @@
-use ratatui::style::Style;
+use ratatui::style::{Style, Modifier};
 use crate::ui::colorscheme::ColorScheme;
 
 pub struct Highlighter {
@@ -26,6 +26,26 @@ impl Highlighter {
             if chars[i] == '/' && i + 1 < chars.len() && chars[i+1] == '/' {
                 let style = self.theme.get("Comment");
                 for j in i..chars.len() { styles[j] = style; }
+                
+                // Highlight TODOs in comments
+                let comment_text: String = chars[i..].iter().collect();
+                let todo_keywords = ["TODO", "FIXME", "BUG", "HACK", "NOTE"];
+                for keyword in todo_keywords {
+                    if let Some(pos) = comment_text.find(keyword) {
+                        let keyword_style = match keyword {
+                            "TODO" => self.theme.get("Function"),
+                            "FIXME" | "BUG" => self.theme.get("Identifier"),
+                            "HACK" => self.theme.get("Keyword"),
+                            _ => self.theme.get("Type"),
+                        }.add_modifier(Modifier::BOLD);
+                        
+                        for j in 0..keyword.len() {
+                            if i + pos + j < styles.len() {
+                                styles[i + pos + j] = keyword_style;
+                            }
+                        }
+                    }
+                }
                 break;
             }
 

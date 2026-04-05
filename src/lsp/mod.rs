@@ -17,6 +17,7 @@ pub enum ClientState {
 #[derive(Clone)]
 pub struct LspManager {
     pub clients: Arc<Mutex<HashMap<String, (LspClient, ClientState)>>>,
+    pub diagnostics: Arc<Mutex<HashMap<Url, Vec<Diagnostic>>>>,
     pub failed_exts: Arc<Mutex<HashSet<String>>>,
     pub installed_cache: Arc<Mutex<HashMap<String, bool>>>,
     pub installing: Arc<Mutex<HashSet<String>>>,
@@ -33,6 +34,7 @@ impl LspManager {
     pub fn new() -> Self {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
+            diagnostics: Arc::new(Mutex::new(HashMap::new())),
             failed_exts: Arc::new(Mutex::new(HashSet::new())),
             installed_cache: Arc::new(Mutex::new(HashMap::new())),
             installing: Arc::new(Mutex::new(HashSet::new())),

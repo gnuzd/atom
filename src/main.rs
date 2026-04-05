@@ -18,6 +18,7 @@ use editor::Editor;
 use ui::TerminalUi;
 use vim::{mode::{Mode, YankType, Focus, ExplorerInputType}, VimState, Position, LspStatus};
 use ui::explorer::FileExplorer;
+use ui::trouble::{TroubleType, TroubleItem};
 use lsp::{LspManager, char_to_utf16_offset};
 use lsp_server::Message;
 
@@ -48,6 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut vim = VimState::new(config);
     let ui = TerminalUi::new();
     let mut explorer = FileExplorer::new();
+    let mut trouble = ui::trouble::TroubleList::new();
     let mut lsp_manager = LspManager::new();
 
     // Handle CLI arguments
@@ -160,6 +162,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             for (ext, (client, _state)) in clients.iter() {
                 while let Ok(msg) = client.receiver().try_recv() {
                     match msg {
+                        Message::Notification(notif) => {
+                            if notif.method == "textDocument/publishDiagnostics" {
+                                if let Ok(params) = serde_json::from_value::<lsp_types::PublishDiagnosticsParams>(notif.params) {
+                                    lsp_manager.diagnostics.lock().unwrap().insert(params.uri, params.diagnostics);
+                                }
+                            }
+                        }
                         Message::Response(resp) => {
                             if resp.id == lsp_server::RequestId::from(1) {
                                 let notification = lsp_server::Message::Notification(lsp_server::Notification::new("initialized".to_string(), serde_json::json!({})));
@@ -215,7 +224,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Mode::Insert | Mode::ExplorerInput(_) => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBar)?,
             _ => execute!(terminal.backend_mut(), SetCursorStyle::SteadyBlock)?,
         }
-        terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &lsp_manager))?;
+
+        // Update trouble list if visible
+        if trouble.visible {
+            let todos: Vec<TroubleItem> = if !trouble.scanned {
+                let project_root = explorer.root.clone();
+                trouble.scanned = true;
+                crate::editor::todo::scan_project_todos(&project_root)
+            } else {
+                let mut current_todos: Vec<TroubleItem> = trouble.items.iter()
+                    .filter(|item| matches!(item.item_type, TroubleType::Todo))
+                    .cloned()
+                    .collect();
+                
+                if let Some(path) = &editor.buffer().file_path {
+                    let file_todos = crate::editor::todo::scan_todos(path, &editor.buffer().lines);
+                    current_todos.retain(|item| item.path != *path);
+                    current_todos.extend(file_todos);
+                }
+                current_todos
+            };
+            trouble.update_from_lsp(&lsp_manager.diagnostics.lock().unwrap(), todos);
+        }
+
+        terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &trouble, &lsp_manager))?;
 
         // 3. Handle Events
         if vim.yank_highlight_line.is_some() {
@@ -373,6 +405,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
+                if vim.focus == Focus::Trouble {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => { 
+                            trouble.toggle();
+                            vim.focus = Focus::Editor; 
+                        }
+                        KeyCode::Char('j') | KeyCode::Down => trouble.move_down(),
+                        KeyCode::Char('k') | KeyCode::Up => trouble.move_up(),
+                        KeyCode::Enter => {
+                            if let Some(item) = trouble.selected_item() {
+                                let path = item.path.clone();
+                                let line = item.line;
+                                let col = item.col;
+                                
+                                let mut found = false;
+                                for i in 0..editor.buffers.len() {
+                                    if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                        editor.active_idx = i;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if !found {
+                                    let _ = editor.open_file(path.clone());
+                                }
+                                
+                                editor.cursor_mut().y = line;
+                                editor.cursor_mut().x = col;
+                                vim.focus = Focus::Editor;
+                            }
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 if vim.focus == Focus::Explorer {
                     match key.code {
                         KeyCode::Esc | KeyCode::Char('q') => { vim.focus = Focus::Editor; }
@@ -410,12 +478,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                let format_buffer = |editor: &mut crate::editor::Editor, lsp_manager: &crate::lsp::LspManager, vim: &mut crate::vim::VimState, terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>, ui: &crate::ui::TerminalUi, explorer: &crate::ui::explorer::FileExplorer| -> Result<(), String> {
+                let format_buffer = |editor: &mut crate::editor::Editor, lsp_manager: &crate::lsp::LspManager, vim: &mut crate::vim::VimState, terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>, ui: &crate::ui::TerminalUi, explorer: &crate::ui::explorer::FileExplorer, trouble: &crate::ui::trouble::TroubleList| -> Result<(), String> {
                     if let Some(path) = editor.buffer().file_path.clone() {
                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                             vim.lsp_status = LspStatus::Formatting;
                             // Draw immediately to show "Formatting..."
-                            let _ = terminal.draw(|f| ui.draw(f, editor, vim, explorer, lsp_manager));
+                            let _ = terminal.draw(|f| ui.draw(f, editor, vim, explorer, trouble, lsp_manager));
                             
                             let text = editor.buffer().lines.join("\n");
                             match lsp_manager.format_document(&ext, &path, text) {
@@ -440,10 +508,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Ok(())
                 };
 
-                let save_and_format = |editor: &mut crate::editor::Editor, lsp_manager: &crate::lsp::LspManager, vim: &mut crate::vim::VimState, terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>, ui: &crate::ui::TerminalUi, explorer: &crate::ui::explorer::FileExplorer, path_to_save: Option<PathBuf>| {
+                let save_and_format = |editor: &mut crate::editor::Editor, lsp_manager: &crate::lsp::LspManager, vim: &mut crate::vim::VimState, terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>, ui: &crate::ui::TerminalUi, explorer: &crate::ui::explorer::FileExplorer, trouble: &crate::ui::trouble::TroubleList, path_to_save: Option<PathBuf>| {
                     let mut format_info = String::new();
                     if !vim.config.disable_autoformat {
-                        if let Err(e) = format_buffer(editor, lsp_manager, vim, terminal, ui, explorer) {
+                        if let Err(e) = format_buffer(editor, lsp_manager, vim, terminal, ui, explorer, trouble) {
                             if e != "No formatter available for this file type" {
                                 vim.set_message(format!("Error: {}", e));
                             }
@@ -500,12 +568,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('/') => { vim.mode = Mode::Search; vim.search_query.clear(); }
                         KeyCode::Char('u') => { editor.undo(); }
                         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
-                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, None); }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None); }
                         KeyCode::Char(' ') => { vim.pending_op = Some(' '); }
                         KeyCode::Char('b') if vim.pending_op == Some(' ') => {
                             vim.config.disable_autoformat = !vim.config.disable_autoformat;
                             let _ = vim.config.save();
                             vim.set_message(if vim.config.disable_autoformat { "Autoformat Disabled".to_string() } else { "Autoformat Enabled".to_string() });
+                            vim.pending_op = None;
+                        }
+                        KeyCode::Char('t') if vim.pending_op == Some(' ') => {
+                            vim.pending_op = Some('t');
+                        }
+                        KeyCode::Char('t') if vim.pending_op == Some('t') => {
+                            if !trouble.visible {
+                                trouble.toggle();
+                                vim.focus = Focus::Trouble;
+                            } else if vim.focus == Focus::Trouble {
+                                trouble.toggle();
+                                vim.focus = Focus::Editor;
+                            } else {
+                                vim.focus = Focus::Trouble;
+                            }
                             vim.pending_op = None;
                         }
                         KeyCode::Char('w') => editor.move_word_forward(),
@@ -564,7 +647,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Right => editor.move_right(),
                         KeyCode::PageUp | KeyCode::Home => editor.move_to_line_start(),
                         KeyCode::PageDown | KeyCode::End => editor.move_to_line_end(),
-                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, None); }
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None); }
                         KeyCode::Char(c) => {
                             let (y, x) = { let cur = editor.cursor(); (cur.y, cur.x) };
                             let line = &mut editor.buffer_mut().lines[y];
@@ -624,21 +707,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     "q" | "quit" => break,
                                     "w" | "write" => { 
                                         let path_to_save = if cmd_parts.len() > 1 { Some(PathBuf::from(&cmd_parts[1])) } else { None };
-                                        save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, path_to_save);
+                                        save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, path_to_save);
                                     }
                                     "wq" => { 
-                                        save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, None);
+                                        save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
                                         break; 
                                     }
                                     "Format" | "format" => {
-                                        match format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer) {
+                                        match format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble) {
                                             Ok(_) => vim.set_message("Formatted".to_string()),
                                             Err(e) => vim.set_message(e),
                                         }
                                     }
                                     "FormatAll" | "formatall" => {
                                         vim.lsp_status = LspStatus::Formatting;
-                                        let _ = terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &lsp_manager));
+                                        let _ = terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &trouble, &lsp_manager));
                                         
                                         let mut count = 0;
                                         let original_idx = editor.active_idx;

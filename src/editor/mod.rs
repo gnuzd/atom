@@ -3,6 +3,7 @@ use std::{io, path::PathBuf};
 pub mod buffer;
 pub mod cursor;
 pub mod highlighter;
+pub mod todo;
 
 pub struct Editor {
     pub buffers: Vec<buffer::Buffer>,

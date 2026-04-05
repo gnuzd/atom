@@ -29,4 +29,5 @@ pub enum YankType {
 pub enum Focus {
     Editor,
     Explorer,
+    Trouble,
 }
