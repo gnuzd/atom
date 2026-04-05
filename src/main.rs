@@ -156,6 +156,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         vim.show_suggestions = false;
                                     }
                                 } else {
+                                    let text = editor.buffer().lines.join("\n");
+                                    let _ = lsp_manager.did_change(ext, &path, text);
                                     let utf16_x = char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                                     let _ = lsp_manager.request_completions(ext, &path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                                 }
@@ -189,21 +191,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 ready_exts.push(ext.clone());
                                 vim.lsp_status = LspStatus::Ready;
                             } else {
-                                // Any response with id != 1 is assumed to be a completion for now
-                                if let Some(result) = resp.result {
-                                    if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
-                                        match completions {
-                                            lsp_types::CompletionResponse::Array(items) => {
-                                                vim.suggestions = items;
-                                                vim.show_suggestions = !vim.suggestions.is_empty();
-                                                vim.selected_suggestion = 0;
-                                                vim.suggestion_state.select(Some(0));
-                                            }
-                                            lsp_types::CompletionResponse::List(list) => {
-                                                vim.suggestions = list.items;
-                                                vim.show_suggestions = !vim.suggestions.is_empty();
-                                                vim.selected_suggestion = 0;
-                                                vim.suggestion_state.select(Some(0));
+                                // Extract numeric ID for comparison
+                                let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
+                                if id_val >= 100 && id_val >= vim.last_lsp_id {
+                                    vim.last_lsp_id = id_val;
+
+                                    if let Some(result) = resp.result {
+                                        if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
+                                            match completions {
+                                                lsp_types::CompletionResponse::Array(items) => {
+                                                    vim.suggestions = items;
+                                                    vim.show_suggestions = !vim.suggestions.is_empty();
+                                                    vim.selected_suggestion = 0;
+                                                    vim.suggestion_state.select(Some(0));
+                                                }
+                                                lsp_types::CompletionResponse::List(list) => {
+                                                    vim.suggestions = list.items;
+                                                    vim.show_suggestions = !vim.suggestions.is_empty();
+                                                    vim.selected_suggestion = 0;
+                                                    vim.suggestion_state.select(Some(0));
+                                                }
                                             }
                                         }
                                     }
@@ -728,9 +735,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             // Auto-trigger completion on certain characters
                             if c == '.' || c == ':' {
+                                vim.suggestions.clear(); // Clear old irrelevant suggestions
                                 vim.show_suggestions = true; // Keep menu open or prepare to show it
                                 if let Some(path) = &editor.buffer().file_path {
                                     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                        let text = editor.buffer().lines.join("\n");
+                                        let _ = lsp_manager.did_change(ext, path, text);
                                         let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                                         let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::TRIGGER_CHARACTER, Some(c.to_string()));
                                     }
