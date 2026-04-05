@@ -280,8 +280,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let event = event::read()?;
             if let Event::Mouse(mouse) = &event {
                 match mouse.kind {
-                    MouseEventKind::ScrollUp => { editor.move_up(); }
-                    MouseEventKind::ScrollDown => { editor.move_down(); }
+                    MouseEventKind::ScrollUp => {
+                        if let Mode::Telescope(_) = vim.mode {
+                            vim.telescope.scroll_preview_up(3);
+                        } else {
+                            editor.move_up();
+                        }
+                    }
+                    MouseEventKind::ScrollDown => {
+                        if let Mode::Telescope(_) = vim.mode {
+                            vim.telescope.scroll_preview_down(3);
+                        } else {
+                            editor.move_down();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -594,32 +606,48 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     },
                     Mode::Telescope(_) => match key.code {
                         KeyCode::Esc => { vim.telescope.close(); vim.mode = Mode::Normal; }
-                        KeyCode::Char('j') | KeyCode::Down => { vim.telescope.move_down(); }
-                        KeyCode::Char('k') | KeyCode::Up => { vim.telescope.move_up(); }
+                        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            vim.telescope.scroll_preview_up(10);
+                        }
+                        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            vim.telescope.scroll_preview_down(10);
+                        }
+                        KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => { vim.telescope.move_down(); }
+                        KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => { vim.telescope.move_up(); }
                         KeyCode::Enter => {
                             if let Some(result) = vim.telescope.results.get(vim.telescope.selected_idx) {
                                 let path = result.path.clone();
                                 let line_opt = result.line_number;
                                 
-                                if let Ok(_) = editor.open_file(path) {
-                                    if let Some(line) = line_opt {
-                                        let y = line.saturating_sub(1);
-                                        editor.cursor_mut().y = y;
-                                        editor.cursor_mut().x = 0;
+                                let mut found = false;
+                                for i in 0..editor.buffers.len() {
+                                    if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                        editor.active_idx = i;
+                                        found = true;
+                                        break;
                                     }
-                                    vim.focus = Focus::Editor;
                                 }
+                                if !found {
+                                    let _ = editor.open_file(path);
+                                }
+
+                                if let Some(line) = line_opt {
+                                    let y = line.saturating_sub(1);
+                                    editor.cursor_mut().y = y;
+                                    editor.cursor_mut().x = 0;
+                                }
+                                vim.focus = Focus::Editor;
                             }
                             vim.telescope.close();
                             vim.mode = Mode::Normal;
                         }
                         KeyCode::Char(c) => {
                             vim.telescope.query.push(c);
-                            vim.telescope.update_results();
+                            vim.telescope.update_results(&editor);
                         }
                         KeyCode::Backspace => {
                             vim.telescope.query.pop();
-                            vim.telescope.update_results();
+                            vim.telescope.update_results(&editor);
                         }
                         _ => {}
                     },
@@ -754,13 +782,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             vim.pending_op = Some('f');
                         }
                         KeyCode::Char('f') if vim.pending_op == Some('f') => {
-                            vim.telescope.open(vim::mode::TelescopeKind::Files, explorer.root.clone());
+                            vim.telescope.open(vim::mode::TelescopeKind::Files, explorer.root.clone(), &editor);
                             vim.mode = Mode::Telescope(vim::mode::TelescopeKind::Files);
                             vim.pending_op = None;
                         }
                         KeyCode::Char('g') if vim.pending_op == Some('f') => {
-                            vim.telescope.open(vim::mode::TelescopeKind::Words, explorer.root.clone());
+                            vim.telescope.open(vim::mode::TelescopeKind::Words, explorer.root.clone(), &editor);
                             vim.mode = Mode::Telescope(vim::mode::TelescopeKind::Words);
+                            vim.pending_op = None;
+                        }
+                        KeyCode::Char('b') if vim.pending_op == Some('f') => {
+                            vim.telescope.open(vim::mode::TelescopeKind::Buffers, explorer.root.clone(), &editor);
+                            vim.mode = Mode::Telescope(vim::mode::TelescopeKind::Buffers);
                             vim.pending_op = None;
                         }
                         KeyCode::Char('h') if vim.pending_op == Some('t') => {

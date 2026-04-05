@@ -18,6 +18,7 @@ pub enum Mode {
 pub enum TelescopeKind {
     Files,
     Words,
+    Buffers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

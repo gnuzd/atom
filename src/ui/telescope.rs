@@ -23,6 +23,8 @@ pub struct Telescope {
     pub selected_idx: usize,
     pub visible: bool,
     pub preview_lines: Vec<String>,
+    pub preview_start_line: usize,
+    pub preview_scroll: usize,
     pub kind: TelescopeKind,
     pub search_root: PathBuf,
 }
@@ -35,12 +37,14 @@ impl Telescope {
             selected_idx: 0,
             visible: false,
             preview_lines: Vec::new(),
+            preview_start_line: 0,
+            preview_scroll: 0,
             kind: TelescopeKind::Files,
             search_root: PathBuf::from("."),
         }
     }
 
-    pub fn open(&mut self, kind: TelescopeKind, root: PathBuf) {
+    pub fn open(&mut self, kind: TelescopeKind, root: PathBuf, editor: &crate::editor::Editor) {
         self.kind = kind;
         self.search_root = root;
         self.query.clear();
@@ -48,17 +52,18 @@ impl Telescope {
         self.selected_idx = 0;
         self.visible = true;
         self.preview_lines.clear();
-        self.update_results();
+        self.update_results(editor);
     }
 
     pub fn close(&mut self) {
         self.visible = false;
     }
 
-    pub fn update_results(&mut self) {
+    pub fn update_results(&mut self, editor: &crate::editor::Editor) {
         match self.kind {
             TelescopeKind::Files => self.search_files(),
             TelescopeKind::Words => self.search_words(),
+            TelescopeKind::Buffers => self.search_buffers(editor),
         }
         if self.selected_idx >= self.results.len() {
             self.selected_idx = 0;
@@ -66,8 +71,32 @@ impl Telescope {
         self.update_preview();
     }
 
+    fn search_buffers(&mut self, editor: &crate::editor::Editor) {
+        self.results.clear();
+        for buffer in &editor.buffers {
+            if let Some(path) = &buffer.file_path {
+                let path_str = path.to_string_lossy().to_string();
+                if self.query.is_empty() || path_str.to_lowercase().contains(&self.query.to_lowercase()) {
+                    self.results.push(TelescopeResult {
+                        path: path.clone(),
+                        line_number: None,
+                        content: None,
+                    });
+                }
+            } else if self.query.is_empty() {
+                self.results.push(TelescopeResult {
+                    path: PathBuf::from("[No Name]"),
+                    line_number: None,
+                    content: None,
+                });
+            }
+        }
+    }
+
     fn search_files(&mut self) {
         self.results.clear();
+        if self.query.is_empty() { return; }
+
         let walker = WalkBuilder::new(&self.search_root)
             .hidden(true)
             .git_ignore(true)
@@ -79,7 +108,7 @@ impl Telescope {
                 let path = entry.path().strip_prefix(&self.search_root).unwrap_or(entry.path()).to_path_buf();
                 if path == Path::new("") { continue; }
                 let path_str = path.to_string_lossy().to_string();
-                if self.query.is_empty() || path_str.to_lowercase().contains(&query_lower) {
+                if path_str.to_lowercase().contains(&query_lower) {
                     self.results.push(TelescopeResult {
                         path: entry.path().to_path_buf(),
                         line_number: None,
@@ -123,17 +152,14 @@ impl Telescope {
 
     pub fn update_preview(&mut self) {
         self.preview_lines.clear();
+        self.preview_scroll = 0;
         if let Some(result) = self.results.get(self.selected_idx) {
             if let Ok(content) = std::fs::read_to_string(&result.path) {
-                let lines: Vec<&str> = content.lines().collect();
+                self.preview_lines = content.lines().map(|s| s.to_string()).collect();
                 let target_line = result.line_number.unwrap_or(1).saturating_sub(1);
                 
-                let preview_start = target_line.saturating_sub(15);
-                let preview_end = std::cmp::min(lines.len(), target_line + 30);
-                
-                for i in preview_start..preview_end {
-                    self.preview_lines.push(lines[i].to_string());
-                }
+                // Center the target line in the preview window (assuming default height of ~40)
+                self.preview_scroll = target_line.saturating_sub(15);
             }
         }
     }
@@ -152,6 +178,19 @@ impl Telescope {
         }
     }
 
+    pub fn scroll_preview_up(&mut self, amount: usize) {
+        self.preview_scroll = self.preview_scroll.saturating_sub(amount);
+    }
+
+    pub fn scroll_preview_down(&mut self, amount: usize) {
+        if !self.preview_lines.is_empty() {
+            self.preview_scroll = std::cmp::min(
+                self.preview_scroll + amount,
+                self.preview_lines.len().saturating_sub(1)
+            );
+        }
+    }
+
     pub fn draw(
         &self,
         frame: &mut Frame,
@@ -160,8 +199,8 @@ impl Telescope {
         editor: &crate::editor::Editor,
     ) {
         let area = frame.area();
-        let width = (area.width as f32 * 0.95) as u16;
-        let height = (area.height as f32 * 0.95) as u16;
+        let width = (area.width as f32 * 0.80) as u16;
+        let height = (area.height as f32 * 0.70) as u16;
         let telescope_area = Rect {
             x: (area.width - width) / 2,
             y: (area.height - height) / 2,
@@ -193,6 +232,7 @@ impl Telescope {
         let results_title = match self.kind {
             TelescopeKind::Files => " Results ",
             TelescopeKind::Words => " Grep Results ",
+            TelescopeKind::Buffers => " Open Buffers ",
         };
 
         let results_block = Block::default()
@@ -203,15 +243,25 @@ impl Telescope {
             .style(theme.get("Normal"));
         
         let items: Vec<ListItem> = self.results.iter().enumerate().map(|(i, res)| {
+            let is_selected = i == self.selected_idx;
             let mut style = theme.get("Normal");
-            if i == self.selected_idx {
-                style = theme.get("CursorLine").add_modifier(Modifier::BOLD);
+            let mut item_style = ratatui::style::Style::default();
+            
+            if is_selected {
+                style = style.add_modifier(Modifier::BOLD);
+                item_style = theme.get("CursorLine");
             }
 
             let (icon, icon_group) = crate::ui::TerminalUi::get_file_icon(&res.path);
             let icon_style = theme.get(&icon_group);
             
-            let path_str = res.path.strip_prefix(&vim.project_root).unwrap_or(&res.path).to_string_lossy();
+            let rel_path = res.path.strip_prefix(&self.search_root).unwrap_or(&res.path);
+            let path_str = if rel_path == res.path {
+                rel_path.to_string_lossy().to_string()
+            } else {
+                format!("./{}", rel_path.display())
+            };
+
             let mut spans = vec![
                 Span::raw(" "),
                 Span::styled(icon, icon_style),
@@ -228,7 +278,7 @@ impl Telescope {
                 spans.push(Span::styled(content, theme.get("Comment")));
             }
 
-            ListItem::new(Line::from(spans))
+            ListItem::new(Line::from(spans)).style(item_style)
         }).collect();
 
         frame.render_widget(List::new(items).block(results_block), left_chunks[0]);
@@ -237,6 +287,7 @@ impl Telescope {
         let input_title = match self.kind {
             TelescopeKind::Files => " Find Files ",
             TelescopeKind::Words => " Live Grep ",
+            TelescopeKind::Buffers => " Select Buffer ",
         };
 
         let input_block = Block::default()
@@ -268,8 +319,16 @@ impl Telescope {
         }
 
         // 3. Preview (Right Column - Full Height)
-        let preview_path = self.results.get(self.selected_idx)
-            .map(|r| r.path.strip_prefix(&vim.project_root).unwrap_or(&r.path).to_string_lossy().to_string())
+        let selected_result = self.results.get(self.selected_idx);
+        let preview_path = selected_result
+            .map(|r| {
+                let rel = r.path.strip_prefix(&self.search_root).unwrap_or(&r.path);
+                if rel == r.path {
+                    rel.to_string_lossy().to_string()
+                } else {
+                    format!("./{}", rel.display())
+                }
+            })
             .unwrap_or_default();
         let preview_title = format!(" Preview: {} ", preview_path);
         let preview_block = Block::default()
@@ -279,17 +338,66 @@ impl Telescope {
             .border_style(theme.get("TreeExplorerConnector"))
             .style(theme.get("Normal"));
 
+        let inner_preview_area = preview_block.inner(main_chunks[1]);
+        frame.render_widget(preview_block, main_chunks[1]);
+
+        let preview_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(6), Constraint::Min(1)])
+            .split(inner_preview_area);
+
+        let mut line_numbers = Text::default();
         let mut preview_text = Text::default();
-        for line in &self.preview_lines {
+        let target_line_idx = selected_result.and_then(|r| r.line_number.map(|l| l.saturating_sub(1)));
+
+        let preview_height = inner_preview_area.height as usize;
+        for i in 0..preview_height {
+            let actual_line_idx = self.preview_scroll + i;
+            if actual_line_idx >= self.preview_lines.len() { break; }
+            let line = &self.preview_lines[actual_line_idx];
+            let is_target = Some(actual_line_idx) == target_line_idx;
+            
+            // Highlight active line background in preview
+            if is_target {
+                let highlight_rect = Rect {
+                    x: inner_preview_area.x,
+                    y: inner_preview_area.y + i as u16,
+                    width: inner_preview_area.width,
+                    height: 1,
+                };
+                frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+            }
+
+            // Line numbers column
+            let ln_style = if is_target { theme.get("CursorLineNr") } else { theme.get("LineNr") };
+            line_numbers.lines.push(Line::from(vec![Span::styled(format!("{:>4} ", actual_line_idx + 1), ln_style)]));
+
+            // Code content
             let syntax_styles = editor.highlighter.highlight_line(line);
             let mut spans = Vec::new();
             for (x, c) in line.chars().enumerate() {
-                let style = syntax_styles.get(x).copied().unwrap_or(theme.get("Normal"));
-                spans.push(Span::styled(c.to_string(), style));
+                let mut style = syntax_styles.get(x).copied().unwrap_or(theme.get("Normal"));
+                if is_target && style.bg.is_none() {
+                    style = style.bg(theme.palette.black2);
+                }
+
+                if c == '\t' {
+                    for _ in 0..2 {
+                        spans.push(Span::styled(" ", style));
+                    }
+                } else {
+                    spans.push(Span::styled(c.to_string(), style));
+                }
+            }
+            if line.is_empty() {
+                let mut style = theme.get("Normal");
+                if is_target { style = style.bg(theme.palette.black2); }
+                spans.push(Span::styled(" ", style));
             }
             preview_text.lines.push(Line::from(spans));
         }
 
-        frame.render_widget(Paragraph::new(preview_text).block(preview_block), main_chunks[1]);
+        frame.render_widget(Paragraph::new(line_numbers).alignment(ratatui::layout::Alignment::Right), preview_layout[0]);
+        frame.render_widget(Paragraph::new(preview_text), preview_layout[1]);
     }
 }

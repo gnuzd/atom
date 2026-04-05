@@ -231,6 +231,9 @@ impl TerminalUi {
             ("p/P", "Paste after/before"),
             ("o/O", "Open line below/above"),
             ("\\", "Toggle Explorer"),
+            ("<Space>ff", "Telescope Files"),
+            ("<Space>fg", "Telescope Grep"),
+            ("<Space>fb", "Telescope Buffers"),
             ("<Space>tt", "Toggle Trouble"),
             ("<Space>th", "Theme Picker"),
             ("?", "Close Help"),
@@ -298,6 +301,27 @@ impl TerminalUi {
             (":bn/bp", "Next/Prev Buffer"),
         ];
         for (k, d) in command_keys {
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!(" {:<12}", k), key_style),
+                Span::styled(" - ", theme.get("Comment")),
+                Span::styled(d, desc_style),
+            ])));
+        }
+
+        items.push(ListItem::new(Line::from("")));
+
+        // Telescope
+        items.push(ListItem::new(Line::from(vec![Span::styled("--- TELESCOPE ---", header_style)])));
+        let telescope_keys = [
+            ("<Space>ff", "Find Files"),
+            ("<Space>fg", "Live Grep"),
+            ("<Space>fb", "Select Buffer"),
+            ("<Esc>", "Close Telescope"),
+            ("<Enter>", "Open Selected"),
+            ("j/k/Tab", "Navigate"),
+            ("<C-u/d>", "Scroll Preview"),
+        ];
+        for (k, d) in telescope_keys {
             items.push(ListItem::new(Line::from(vec![
                 Span::styled(format!(" {:<12}", k), key_style),
                 Span::styled(" - ", theme.get("Comment")),
