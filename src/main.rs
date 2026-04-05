@@ -20,6 +20,7 @@ use vim::{mode::{Mode, YankType, Focus, ExplorerInputType}, VimState, Position, 
 use ui::explorer::FileExplorer;
 use ui::trouble::{TroubleType, TroubleItem};
 use lsp::{LspManager, char_to_utf16_offset};
+use lsp_types::CompletionTriggerKind;
 use lsp_server::Message;
 
 fn find_project_root(path: &PathBuf) -> PathBuf {
@@ -149,7 +150,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     vim.show_suggestions = false;
                                 } else {
                                     let utf16_x = char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
-                                    let _ = lsp_manager.request_completions(ext, &path, y, utf16_x);
+                                    let _ = lsp_manager.request_completions(ext, &path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                                 }
                                 lsp_manager.pending_change = false;
                             }
