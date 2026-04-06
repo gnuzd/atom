@@ -246,7 +246,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         vim.last_lsp_id = id_val;
 
                                         if let Some(result) = resp.result {
-                                            if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result) {
+                                            if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result.clone()) {
                                                 match completions {
                                                     lsp_types::CompletionResponse::Array(items) => {
                                                         vim.suggestions = items;
@@ -261,6 +261,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         vim.suggestion_state.select(Some(0));
                                                     }
                                                 }
+                                            } else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result) {
+                                                vim.folding_ranges = ranges;
                                             }
                                         }
                                     }
@@ -278,6 +280,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if path.extension().and_then(|s| s.to_str()) == Some(&ext) {
                     let text = editor.buffer().lines.join("\n");
                     let _ = lsp_manager.did_open(&ext, &path, text, Some(&cmd));
+                    let _ = lsp_manager.request_folding_ranges(&ext, &path);
                 }
             }
         }
@@ -537,6 +540,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                             let text = editor.buffer().lines.join("\n");
                                             let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                         }
                                     }
                                 }
@@ -853,6 +857,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             vim.mode = Mode::Keymaps;
                             vim.keymap_state.select(Some(0));
                         }
+                        KeyCode::Char('g') if vim.pending_op.is_none() => { vim.pending_op = Some('g'); }
+                        KeyCode::Char('c') if vim.pending_op == Some('g') => { vim.pending_op = Some('c'); }
+                        KeyCode::Char('c') if vim.pending_op == Some('c') => {
+                            toggle_comment(&mut editor, &mut vim);
+                            vim.pending_op = None;
+                        }
                         KeyCode::Char('/') if vim.pending_op == Some(' ') => {
                             toggle_comment(&mut editor, &mut vim);
                             vim.pending_op = None;
@@ -875,6 +885,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                         let text = editor.buffer().lines.join("\n");
                                         let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                     }
                                 }
                                 vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len()));
@@ -887,6 +898,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                         let text = editor.buffer().lines.join("\n");
                                         let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                     }
                                 }
                                 vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len()));
@@ -977,7 +989,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::PageUp | KeyCode::Home => { vim.pending_op = None; editor.move_to_line_start(); }
                         KeyCode::PageDown | KeyCode::End => { vim.pending_op = None; editor.move_to_line_end(); }
                         KeyCode::Char('z') if vim.pending_op.is_none() => { vim.pending_op = Some('z'); }
-                        KeyCode::Char('c') if vim.pending_op == Some('z') => { editor.toggle_fold(); vim.pending_op = None; }
+                        KeyCode::Char('c') if vim.pending_op == Some('z') => { editor.toggle_fold(&vim.folding_ranges); vim.pending_op = None; }
                         KeyCode::Char('a') if vim.pending_op == Some('z') => { editor.unfold_all(); vim.pending_op = None; }
                         KeyCode::Char(c) if c.is_ascii_digit() && vim.pending_op.is_none() => {
                             let digit = c.to_digit(10).unwrap() as usize;
@@ -1005,6 +1017,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     },
                     Mode::Visual => match key.code {
                         KeyCode::Esc => { vim.mode = Mode::Normal; vim.selection_start = None; }
+                        KeyCode::Char('g') if vim.pending_op.is_none() => { vim.pending_op = Some('g'); }
+                        KeyCode::Char('c') if vim.pending_op == Some('g') => {
+                            toggle_comment(&mut editor, &mut vim);
+                            vim.mode = Mode::Normal;
+                            vim.selection_start = None;
+                            vim.pending_op = None;
+                        }
                         KeyCode::Char('/') if vim.pending_op == Some(' ') => {
                             toggle_comment(&mut editor, &mut vim);
                             vim.mode = Mode::Normal;
@@ -1243,6 +1262,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                                 let text = editor.buffer().lines.join("\n");
                                                 let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                             }
                                         }
                                         vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len())); 
@@ -1253,6 +1273,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                                 let text = editor.buffer().lines.join("\n");
                                                 let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                             }
                                         }
                                         vim.set_message(format!("Buffer {}/{}", editor.active_idx + 1, editor.buffers.len())); 
@@ -1266,6 +1287,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                                     let text = editor.buffer().lines.join("\n");
                                                     let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                                 }
                                             }
                                         }
@@ -1278,6 +1300,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                                     let text = editor.buffer().lines.join("\n");
                                                     let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
                                                 }
                                             } else {
                                                 vim.set_message(format!("Error: Could not open \"{}\"", path.display()));

@@ -707,8 +707,8 @@ impl TerminalUi {
             let is_current_line = actual_idx == cursor.y;
 
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx) {
-                // Render a nice fold summary line: StartLine ... count ... EndLine
-                // We show it at the first column (remove leading spaces)
+                // Render a nice fold summary line:   Tag ... count lines ... /Tag
+                // Keep indentation of the first line
                 let first_line_full = line.trim_end();
                 let first_line_trimmed = first_line_full.trim_start();
                 let first_line_indent = first_line_full.len() - first_line_trimmed.len();
@@ -716,7 +716,11 @@ impl TerminalUi {
                 let last_line = buffer.lines.get(*end).map(|l| l.trim()).unwrap_or("}");
                 let count = end - actual_idx;
                 
-                spans.clear();
+                // Add indentation spans
+                for _ in 0..first_line_indent {
+                    spans.push(Span::raw(" "));
+                }
+
                 // Re-highlight using the full line but skip indentation
                 let first_line_styles = editor.highlighter.highlight_line(first_line_full);
                 for (x, c) in first_line_trimmed.chars().enumerate() {
