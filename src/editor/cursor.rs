@@ -8,6 +8,21 @@ impl Cursor {
     pub fn new() -> Self {
         Self { x: 0, y: 0, scroll_y: 0 }
     }
+
+    pub fn character_idx_from_utf16(&mut self, line: &str, utf16_offset: usize) {
+        let mut current_utf16 = 0;
+        let mut char_idx = 0;
+        for c in line.chars() {
+            if current_utf16 >= utf16_offset {
+                break;
+            }
+            current_utf16 += c.len_utf16();
+            if current_utf16 <= utf16_offset {
+                char_idx += 1;
+            }
+        }
+        self.x = char_idx;
+    }
 }
 
 #[cfg(test)]

@@ -216,6 +216,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // 1. Process LSP messages
         let mut ready_clients = Vec::new();
+        let mut target_definitions = Vec::new();
         {
             let mut clients_lock = lsp_manager.clients.lock().unwrap();
             for (ext, clients) in clients_lock.iter_mut() {
@@ -239,14 +240,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     ready_clients.push((ext.clone(), cmd.clone()));
                                     vim.lsp_status = LspStatus::Ready;
                                 } else {
-// ... existing completion logic
-                                    // Extract numeric ID for comparison
-                                    let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
-                                    if id_val >= 100 && id_val >= vim.last_lsp_id {
-                                        vim.last_lsp_id = id_val;
-
-                                        if let Some(result) = resp.result {
-                                            if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result.clone()) {
+                                    if let Some(result) = resp.result {
+                                        // 1. Check if it's a completion response (only care about latest)
+                                        if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result.clone()) {
+                                            let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
+                                            if id_val >= vim.last_lsp_id {
+                                                vim.last_lsp_id = id_val;
                                                 match completions {
                                                     lsp_types::CompletionResponse::Array(items) => {
                                                         vim.suggestions = items;
@@ -261,9 +260,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         vim.suggestion_state.select(Some(0));
                                                     }
                                                 }
-                                            } else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result.clone()) {
-                                                vim.folding_ranges = ranges;
-                                            } else if let Ok(definition) = serde_json::from_value::<lsp_types::GotoDefinitionResponse>(result) {
+                                            }
+                                        } 
+                                        // 2. Check if it's a folding range response (always apply)
+                                        else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result.clone()) {
+                                            vim.folding_ranges = ranges;
+                                        }
+                                        // 3. Check if it's a definition response
+                                        else if let Ok(definition) = serde_json::from_value::<lsp_types::GotoDefinitionResponse>(result) {
+                                            let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
+                                            if Some(id_val) == vim.definition_request_id {
+                                                vim.definition_request_id = None;
                                                 let location = match definition {
                                                     lsp_types::GotoDefinitionResponse::Scalar(l) => Some(l),
                                                     lsp_types::GotoDefinitionResponse::Array(a) => a.into_iter().next(),
@@ -272,31 +279,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         range: link.target_range,
                                                     }),
                                                 };
-
                                                 if let Some(loc) = location {
-                                                    if let Ok(path) = loc.uri.to_file_path() {
-                                                        let mut found = false;
-                                                        for i in 0..editor.buffers.len() {
-                                                            if editor.buffers[i].file_path.as_ref() == Some(&path) {
-                                                                editor.active_idx = i;
-                                                                found = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                        if !found {
-                                                            let _ = editor.open_file(path.clone());
-                                                        }
-                                                        
-                                                        editor.cursor_mut().y = loc.range.start.line as usize;
-                                                        editor.cursor_mut().x = loc.range.start.character as usize; // Simplified
-                                                        
-                                                        // Trigger LSP open for the new buffer
-                                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                                                            let text = editor.buffer().lines.join("\n");
-                                                            let _ = lsp_manager.did_open(&ext, &path, text, None);
-                                                            let _ = lsp_manager.request_folding_ranges(&ext, &path);
-                                                        }
-                                                    }
+                                                    target_definitions.push(loc);
                                                 }
                                             }
                                         }
@@ -315,6 +299,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if path.extension().and_then(|s| s.to_str()) == Some(&ext) {
                     let text = editor.buffer().lines.join("\n");
                     let _ = lsp_manager.did_open(&ext, &path, text, Some(&cmd));
+                    let _ = lsp_manager.request_folding_ranges(&ext, &path);
+                }
+            }
+        }
+        for loc in target_definitions {
+            if let Ok(path) = loc.uri.to_file_path() {
+                let mut found = false;
+                for i in 0..editor.buffers.len() {
+                    if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                        editor.active_idx = i;
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    let _ = editor.open_file(path.clone());
+                }
+                
+                editor.cursor_mut().y = loc.range.start.line as usize;
+                let line = editor.buffer().lines[editor.cursor().y].clone();
+                editor.cursor_mut().character_idx_from_utf16(&line, loc.range.start.character as usize);
+                
+                // Trigger LSP open for the new buffer
+                if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                    let text = editor.buffer().lines.join("\n");
+                    let _ = lsp_manager.did_open(&ext, &path, text, None);
                     let _ = lsp_manager.request_folding_ranges(&ext, &path);
                 }
             }
@@ -867,6 +877,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Normal => match key.code {
+                        KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(path) = &editor.buffer().file_path {
+                                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                    let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                    let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], x);
+                                    if let Ok(id) = lsp_manager.request_definition(ext, path, y, utf16_x) {
+                                        vim.definition_request_id = Some(id);
+                                        vim.set_message("Finding definition...".to_string());
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('[') if vim.pending_op == Some('[') => { editor.jump_to_first_line(); vim.pending_op = None; }
+                        KeyCode::Char(']') if vim.pending_op == Some(']') => { editor.jump_to_last_line(); vim.pending_op = None; }
+                        KeyCode::Char('[') if vim.pending_op.is_none() => { vim.pending_op = Some('['); }
+                        KeyCode::Char(']') if vim.pending_op.is_none() => { vim.pending_op = Some(']'); }
                         KeyCode::Char('q') => {
                             if vim.pending_op == Some('?') {
                                 vim.mode = Mode::Keymaps;
@@ -898,15 +924,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('/') => { vim.mode = Mode::Search; vim.search_query.clear(); }
                         KeyCode::Char('u') => { editor.undo(); }
                         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
-                        KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(path) = &editor.buffer().file_path {
-                                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                                    let (y, x) = (editor.cursor().y, editor.cursor().x);
-                                    let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], x);
-                                    let _ = lsp_manager.request_definition(ext, path, y, utf16_x);
-                                }
-                            }
-                        }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None); }
                         KeyCode::Tab => {
                             if vim.focus != Focus::Explorer {
