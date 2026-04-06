@@ -7,6 +7,8 @@ A minimalist, terminal-based IDE built with Rust, Ratatui, and Vim-inspired moti
 - **Vim-inspired Modes:** Supports `Normal`, `Insert`, `Visual`, and `Command` modes.
 - **LSP Integration:**
     - **Automatic Installation:** Built-in LSP manager (`:Mason`) to install and track language servers.
+    - **Go to Definition:** Instantly navigate to function, variable, or component definitions (`gd` or `Ctrl-]`).
+    - **Jumplist:** Helix-style navigation history (`Ctrl-o` for back, `Ctrl-i` for forward).
     - **Auto-completion:** Real-time suggestions with documentation tooltips.
     - **Status Tracking:** Real-time feedback on LSP status (Loading, Installing, Ready).
 - **Advanced Formatting:**
@@ -42,6 +44,9 @@ cargo run
 - `\`: Toggle/Focus **File Explorer**.
 - `?`: Toggle **Keymaps Help**.
 - `h`, `j`, `k`, `l` or **Arrow Keys**: Move the cursor.
+- `gd` or `Ctrl-]`: Go to **Definition**.
+- `Ctrl-o`: Back in **Jumplist**.
+- `Ctrl-i`: Forward in **Jumplist**.
 - `w`, `b`, `e`: Move forward/backward by word (start/end).
 - `o`, `O`: Open new line below/above and enter Insert mode.
 - `p`, `P`: Paste yanked text after/before the cursor.
@@ -62,6 +67,7 @@ cargo run
 #### Command Mode
 
 - `:w`: Save and Format current file.
+- `:gd` or `:definition`: Trigger Go to Definition.
 - `:Format`: Manually trigger formatter.
 - `:FormatAll`: Format all open buffers.
 - `:FormatEnable / :FormatDisable`: Toggle auto-formatting.
@@ -91,7 +97,7 @@ cargo run
 ### LSP & Tooling
 - [x] Auto-completion
 - [ ] Diagnostics (inline errors/warnings)
-- [ ] Go to definition / References
+- [x] Go to definition / References
 - [ ] Hover documentation (expanded)
 - [x] Multi-layer caching for Formatters
 

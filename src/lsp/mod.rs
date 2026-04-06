@@ -759,8 +759,15 @@ impl LspManager {
     }
 }
 
-pub fn char_to_utf16_offset(s: &str, char_idx: usize) -> usize {
-    s.chars().take(char_idx).map(|c| c.len_utf16()).sum()
+pub fn byte_to_utf16_offset(s: &str, byte_idx: usize) -> usize {
+    let mut utf16_offset = 0;
+    for (idx, c) in s.char_indices() {
+        if idx >= byte_idx {
+            break;
+        }
+        utf16_offset += c.len_utf16();
+    }
+    utf16_offset
 }
 
 fn find_project_root_static(path: &Path) -> std::path::PathBuf {

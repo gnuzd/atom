@@ -11,17 +11,14 @@ impl Cursor {
 
     pub fn character_idx_from_utf16(&mut self, line: &str, utf16_offset: usize) {
         let mut current_utf16 = 0;
-        let mut char_idx = 0;
-        for c in line.chars() {
+        for (byte_idx, c) in line.char_indices() {
             if current_utf16 >= utf16_offset {
-                break;
+                self.x = byte_idx;
+                return;
             }
             current_utf16 += c.len_utf16();
-            if current_utf16 <= utf16_offset {
-                char_idx += 1;
-            }
         }
-        self.x = char_idx;
+        self.x = line.len();
     }
 }
 

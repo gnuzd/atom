@@ -89,6 +89,20 @@ impl LspClient {
                         }),
                         ..Default::default()
                     }),
+                    definition: Some(GotoCapability {
+                        dynamic_registration: Some(false),
+                        link_support: Some(true),
+                    }),
+                    implementation: Some(GotoCapability {
+                        dynamic_registration: Some(false),
+                        link_support: Some(true),
+                    }),
+                    folding_range: Some(FoldingRangeClientCapabilities {
+                        dynamic_registration: Some(false),
+                        range_limit: Some(100),
+                        line_folding_only: Some(true),
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 }),
                 ..Default::default()

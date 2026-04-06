@@ -68,6 +68,8 @@ pub struct VimState {
     pub last_git_update: Option<Instant>,
     pub folding_ranges: Vec<lsp_types::FoldingRange>,
     pub definition_request_id: Option<i32>,
+    pub jumplist: Vec<(std::path::PathBuf, Position)>,
+    pub jumplist_idx: usize,
 }
 
 impl VimState {
@@ -117,7 +119,20 @@ impl VimState {
             last_git_update: None,
             folding_ranges: Vec::new(),
             definition_request_id: None,
+            jumplist: Vec::new(),
+            jumplist_idx: 0,
         }
+    }
+
+    pub fn push_jump(&mut self, path: std::path::PathBuf, pos: Position) {
+        if self.jumplist_idx < self.jumplist.len() {
+            self.jumplist.truncate(self.jumplist_idx);
+        }
+        self.jumplist.push((path, pos));
+        if self.jumplist.len() > 100 {
+            self.jumplist.remove(0);
+        }
+        self.jumplist_idx = self.jumplist.len();
     }
 
     pub fn disable_autoformat(&self) -> bool {

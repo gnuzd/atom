@@ -19,7 +19,7 @@ use ui::TerminalUi;
 use vim::{mode::{Mode, YankType, Focus, ExplorerInputType}, VimState, Position, LspStatus};
 use ui::explorer::FileExplorer;
 use ui::trouble::{TroubleType, TroubleItem};
-use lsp::{LspManager, char_to_utf16_offset};
+use lsp::{LspManager, byte_to_utf16_offset};
 use lsp_types::CompletionTriggerKind;
 use lsp_server::Message;
 
@@ -96,10 +96,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         for arg in &args[1..] {
             let path = PathBuf::from(arg).canonicalize().unwrap_or(PathBuf::from(arg));
             if path.is_dir() {
-                explorer.root = path;
+                explorer.root = path.clone();
+                vim.project_root = find_project_root(&path);
                 explorer.refresh();
-            } else if path.is_file() || !path.exists() {
-                let _ = editor.open_file(path.clone());
+            } else {
+                let _ = editor.open_file(path);
             }
         }
         if editor.buffers.is_empty() {
@@ -202,7 +203,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 } else {
                                     let text = editor.buffer().lines.join("\n");
                                     let _ = lsp_manager.did_change(ext, &path, text);
-                                    let utf16_x = char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
+                                    let utf16_x = byte_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                                     let _ = lsp_manager.request_completions(ext, &path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                                 }
 
@@ -233,57 +234,64 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
                             Message::Response(resp) => {
+                                let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
+
                                 if resp.id == lsp_server::RequestId::from(1) {
                                     let notification = lsp_server::Message::Notification(lsp_server::Notification::new("initialized".to_string(), serde_json::json!({})));
                                     let _ = client.connection.sender.send(notification);
                                     *state = lsp::ClientState::Ready;
                                     ready_clients.push((ext.clone(), cmd.clone()));
                                     vim.lsp_status = LspStatus::Ready;
-                                } else {
+                                } else if Some(id_val) == vim.definition_request_id {
+                                    vim.definition_request_id = None;
                                     if let Some(result) = resp.result {
-                                        // 1. Check if it's a completion response (only care about latest)
-                                        if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result.clone()) {
-                                            let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
-                                            if id_val >= vim.last_lsp_id {
-                                                vim.last_lsp_id = id_val;
-                                                match completions {
-                                                    lsp_types::CompletionResponse::Array(items) => {
-                                                        vim.suggestions = items;
-                                                        vim.show_suggestions = !vim.suggestions.is_empty();
-                                                        vim.selected_suggestion = 0;
-                                                        vim.suggestion_state.select(Some(0));
-                                                    }
-                                                    lsp_types::CompletionResponse::List(list) => {
-                                                        vim.suggestions = list.items;
-                                                        vim.show_suggestions = !vim.suggestions.is_empty();
-                                                        vim.selected_suggestion = 0;
-                                                        vim.suggestion_state.select(Some(0));
-                                                    }
+                                        if result.is_null() {
+                                            vim.set_message("Definition not found (server returned null)".to_string());
+                                        } else if let Ok(definition) = serde_json::from_value::<lsp_types::GotoDefinitionResponse>(result.clone()) {
+                                            let location = match definition {
+                                                lsp_types::GotoDefinitionResponse::Scalar(l) => Some(l),
+                                                lsp_types::GotoDefinitionResponse::Array(a) => a.into_iter().next(),
+                                                lsp_types::GotoDefinitionResponse::Link(links) => links.into_iter().next().map(|link| lsp_types::Location {
+                                                    uri: link.target_uri,
+                                                    range: link.target_range,
+                                                }),
+                                            };
+                                            if let Some(loc) = location {
+                                                vim.set_message(format!("Found definition in {}", loc.uri.path()));
+                                                target_definitions.push(loc);
+                                            } else {
+                                                vim.set_message("Definition not found (empty result)".to_string());
+                                            }
+                                        } else {
+                                            vim.set_message("Error: Failed to parse definition response".to_string());
+                                        }
+                                    } else if let Some(error) = resp.error {
+                                        vim.set_message(format!("LSP Error: {}", error.message));
+                                    }
+                                } else if let Some(result) = resp.result {
+                                    // 1. Check if it's a completion response (only care about latest)
+                                    if let Ok(completions) = serde_json::from_value::<lsp_types::CompletionResponse>(result.clone()) {
+                                        if id_val >= vim.last_lsp_id {
+                                            vim.last_lsp_id = id_val;
+                                            match completions {
+                                                lsp_types::CompletionResponse::Array(items) => {
+                                                    vim.suggestions = items;
+                                                    vim.show_suggestions = !vim.suggestions.is_empty();
+                                                    vim.selected_suggestion = 0;
+                                                    vim.suggestion_state.select(Some(0));
+                                                }
+                                                lsp_types::CompletionResponse::List(list) => {
+                                                    vim.suggestions = list.items;
+                                                    vim.show_suggestions = !vim.suggestions.is_empty();
+                                                    vim.selected_suggestion = 0;
+                                                    vim.suggestion_state.select(Some(0));
                                                 }
                                             }
-                                        } 
-                                        // 2. Check if it's a folding range response (always apply)
-                                        else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result.clone()) {
-                                            vim.folding_ranges = ranges;
                                         }
-                                        // 3. Check if it's a definition response
-                                        else if let Ok(definition) = serde_json::from_value::<lsp_types::GotoDefinitionResponse>(result) {
-                                            let id_val = resp.id.to_string().parse::<i32>().unwrap_or(0);
-                                            if Some(id_val) == vim.definition_request_id {
-                                                vim.definition_request_id = None;
-                                                let location = match definition {
-                                                    lsp_types::GotoDefinitionResponse::Scalar(l) => Some(l),
-                                                    lsp_types::GotoDefinitionResponse::Array(a) => a.into_iter().next(),
-                                                    lsp_types::GotoDefinitionResponse::Link(links) => links.into_iter().next().map(|link| lsp_types::Location {
-                                                        uri: link.target_uri,
-                                                        range: link.target_range,
-                                                    }),
-                                                };
-                                                if let Some(loc) = location {
-                                                    target_definitions.push(loc);
-                                                }
-                                            }
-                                        }
+                                    } 
+                                    // 2. Check if it's a folding range response (always apply)
+                                    else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result.clone()) {
+                                        vim.folding_ranges = ranges;
                                     }
                                 }
                             }
@@ -305,29 +313,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         for loc in target_definitions {
             if let Ok(path) = loc.uri.to_file_path() {
-                let mut found = false;
+                let mut found_idx = None;
                 for i in 0..editor.buffers.len() {
                     if editor.buffers[i].file_path.as_ref() == Some(&path) {
-                        editor.active_idx = i;
-                        found = true;
+                        found_idx = Some(i);
                         break;
                     }
                 }
-                if !found {
+                
+                if let Some(idx) = found_idx {
+                    editor.active_idx = idx;
+                } else {
+                    vim.set_message(format!("Opening new file: {}", path.display()));
                     let _ = editor.open_file(path.clone());
                 }
                 
-                editor.cursor_mut().y = loc.range.start.line as usize;
-                let line = editor.buffer().lines[editor.cursor().y].clone();
-                editor.cursor_mut().character_idx_from_utf16(&line, loc.range.start.character as usize);
-                
-                // Trigger LSP open for the new buffer
-                if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                    let text = editor.buffer().lines.join("\n");
-                    let _ = lsp_manager.did_open(&ext, &path, text, None);
-                    let _ = lsp_manager.request_folding_ranges(&ext, &path);
+                let target_y = loc.range.start.line as usize;
+                if target_y < editor.buffer().lines.len() {
+                    editor.cursor_mut().y = target_y;
+                    let line = editor.buffer().lines[target_y].clone();
+                    editor.cursor_mut().character_idx_from_utf16(&line, loc.range.start.character as usize);
+                    vim.set_message(format!("Jumped to line {}", target_y + 1));
+                    
+                    // Trigger LSP open for the new buffer if it wasn't already open
+                    if found_idx.is_none() {
+                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                            let text = editor.buffer().lines.join("\n");
+                            let _ = lsp_manager.did_open(&ext, &path, text, None);
+                            let _ = lsp_manager.request_folding_ranges(&ext, &path);
+                        }
+                    }
+                } else {
+                    vim.set_message(format!("Error: Target line {} exceeds file length", target_y + 1));
                 }
+            } else {
+                vim.set_message("Error: Failed to convert URI to file path".to_string());
             }
+            break; // Important: only jump to the first one
         }
 
         // 2. Render
@@ -397,7 +419,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Some(path) = &editor.buffer().file_path {
                         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                             let y = editor.cursor().y;
-                            let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
+                            let utf16_x = crate::lsp::byte_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                             let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                         }
                     }
@@ -877,16 +899,75 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Normal => match key.code {
+                        KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if vim.jumplist_idx > 0 {
+                                vim.jumplist_idx -= 1;
+                                let (path, pos) = vim.jumplist[vim.jumplist_idx].clone();
+                                let mut found_idx = None;
+                                for i in 0..editor.buffers.len() {
+                                    if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                        found_idx = Some(i);
+                                        break;
+                                    }
+                                }
+                                if let Some(idx) = found_idx {
+                                    editor.active_idx = idx;
+                                } else {
+                                    let _ = editor.open_file(path);
+                                }
+                                editor.cursor_mut().y = pos.y;
+                                editor.cursor_mut().x = pos.x;
+                            }
+                        }
+                        KeyCode::Char('i') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if vim.jumplist_idx < vim.jumplist.len() {
+                                let (path, pos) = vim.jumplist[vim.jumplist_idx].clone();
+                                vim.jumplist_idx += 1;
+                                let mut found_idx = None;
+                                for i in 0..editor.buffers.len() {
+                                    if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                        found_idx = Some(i);
+                                        break;
+                                    }
+                                }
+                                if let Some(idx) = found_idx {
+                                    editor.active_idx = idx;
+                                } else {
+                                    let _ = editor.open_file(path);
+                                }
+                                editor.cursor_mut().y = pos.y;
+                                editor.cursor_mut().x = pos.x;
+                            }
+                        }
                         KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            vim.set_message("Key Ctrl-] detected...".to_string());
                             if let Some(path) = &editor.buffer().file_path {
                                 if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
-                                    let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], x);
-                                    if let Ok(id) = lsp_manager.request_definition(ext, path, y, utf16_x) {
-                                        vim.definition_request_id = Some(id);
-                                        vim.set_message("Finding definition...".to_string());
+                                    
+                                    // FORCE didChange if pending
+                                    if lsp_manager.pending_change {
+                                        let text = editor.buffer().lines.join("\n");
+                                        let _ = lsp_manager.did_change(ext, path, text);
+                                        lsp_manager.pending_change = false;
                                     }
+
+                                    let utf16_x = crate::lsp::byte_to_utf16_offset(&editor.buffer().lines[y], x);
+                                    match lsp_manager.request_definition(ext, path, y, utf16_x) {
+                                        Ok(id) => {
+                                            vim.definition_request_id = Some(id);
+                                            vim.push_jump(path.clone(), Position { x, y });
+                                            vim.set_message(format!("Requesting definition (id: {})...", id));
+                                        }
+                                        Err(e) => {
+                                            vim.set_message(format!("LSP Request Failed: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    vim.set_message("LSP: No file extension found".to_string());
                                 }
+                            } else {
+                                vim.set_message("LSP: No file path found".to_string());
                             }
                         }
                         KeyCode::Char('[') if vim.pending_op == Some('[') => { editor.jump_to_first_line(); vim.pending_op = None; }
@@ -905,6 +986,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             vim.keymap_state.select(Some(0));
                         }
                         KeyCode::Char('g') if vim.pending_op.is_none() => { vim.pending_op = Some('g'); }
+                        KeyCode::Char('d') if vim.pending_op == Some('g') => {
+                            if let Some(path) = &editor.buffer().file_path {
+                                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                    let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                    
+                                    if lsp_manager.pending_change {
+                                        let text = editor.buffer().lines.join("\n");
+                                        let _ = lsp_manager.did_change(ext, path, text);
+                                        lsp_manager.pending_change = false;
+                                    }
+
+                                    let utf16_x = crate::lsp::byte_to_utf16_offset(&editor.buffer().lines[y], x);
+                                    match lsp_manager.request_definition(ext, path, y, utf16_x) {
+                                        Ok(id) => {
+                                            vim.definition_request_id = Some(id);
+                                            vim.push_jump(path.clone(), Position { x, y });
+                                            vim.set_message(format!("Requesting definition (id: {})...", id));
+                                        }
+                                        Err(e) => {
+                                            vim.set_message(format!("LSP Request Failed: {}", e));
+                                        }
+                                    }
+                                }
+                            }
+                            vim.pending_op = None;
+                        }
                         KeyCode::Char('c') if vim.pending_op == Some('g') => { vim.pending_op = Some('c'); }
                         KeyCode::Char('c') if vim.pending_op == Some('c') => {
                             toggle_comment(&mut editor, &mut vim);
@@ -1145,7 +1252,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                                         let text = editor.buffer().lines.join("\n");
                                         let _ = lsp_manager.did_change(ext, path, text);
-                                        let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
+                                        let utf16_x = crate::lsp::byte_to_utf16_offset(&editor.buffer().lines[y], editor.cursor().x);
                                         let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::TRIGGER_CHARACTER, Some(c.to_string()));
                                     }
                                 }
@@ -1165,7 +1272,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let line = &editor.buffer().lines[y];
                                         let chars: Vec<char> = line.chars().collect();
                                         if new_x > 0 && (chars[new_x-1].is_alphanumeric() || chars[new_x-1] == '_' || chars[new_x-1] == '$' || chars[new_x-1] == '.' || chars[new_x-1] == ':') {
-                                            let utf16_x = crate::lsp::char_to_utf16_offset(line, new_x);
+                                            let utf16_x = crate::lsp::byte_to_utf16_offset(line, new_x);
                                             let _ = lsp_manager.request_completions(ext, path, y, utf16_x, CompletionTriggerKind::INVOKED, None);
                                         }
                                     }
@@ -1264,7 +1371,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             vim.set_message("Error: Could not save all buffers".to_string());
                                         }
                                     }
-                                    "Format" | "format" => {
+                                    "gd" | "definition" => {
+                                        if let Some(path) = &editor.buffer().file_path {
+                                            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                                let (y, x) = (editor.cursor().y, editor.cursor().x);
+
+                                                if lsp_manager.pending_change {
+                                                    let text = editor.buffer().lines.join("\n");
+                                                    let _ = lsp_manager.did_change(ext, path, text);
+                                                    lsp_manager.pending_change = false;
+                                                }
+
+                                                let utf16_x = crate::lsp::byte_to_utf16_offset(&editor.buffer().lines[y], x);
+                                                match lsp_manager.request_definition(ext, path, y, utf16_x) {
+                                                    Ok(id) => {
+                                                        vim.definition_request_id = Some(id);
+                                                        vim.push_jump(path.clone(), Position { x, y });
+                                                        vim.set_message(format!("Requesting definition (id: {})...", id));
+                                                    }
+                                                    Err(e) => {
+                                                        vim.set_message(format!("LSP Request Failed: {}", e));
+                                                    }
+                                                }
+                                            } else {
+                                                vim.set_message("LSP: No file extension found".to_string());
+                                            }
+                                        } else {
+                                            vim.set_message("LSP: No file path found".to_string());
+                                        }
+                                    }
+                                    "format" | "Format" => {
+
                                         match format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble) {
                                             Ok(_) => vim.set_message("Formatted".to_string()),
                                             Err(e) => vim.set_message(e),

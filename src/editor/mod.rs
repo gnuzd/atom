@@ -158,11 +158,18 @@ impl Editor {
             }
 
             self.cursor_mut().y = target_y;
-            let y = self.cursor().y;
-            let line_len = self.buffer().lines[y].len();
-            if self.cursor().x > line_len {
-                self.cursor_mut().x = line_len;
+            let current_x = self.cursor().x;
+            let line = &self.buffer().lines[target_y];
+            
+            // Find the closest valid character boundary
+            let mut new_x = 0;
+            for (idx, _) in line.char_indices() {
+                if idx > current_x {
+                    break;
+                }
+                new_x = idx;
             }
+            self.cursor_mut().x = new_x;
         }
     }
 
@@ -182,18 +189,37 @@ impl Editor {
 
             if target_y < buffer.lines.len() {
                 self.cursor_mut().y = target_y;
-                let y = self.cursor().y;
-                let line_len = self.buffer().lines[y].len();
-                if self.cursor().x > line_len {
-                    self.cursor_mut().x = line_len;
+                let current_x = self.cursor().x;
+                let line = &self.buffer().lines[target_y];
+                
+                let mut new_x = 0;
+                for (idx, _) in line.char_indices() {
+                    if idx > current_x {
+                        break;
+                    }
+                    new_x = idx;
                 }
+                self.cursor_mut().x = new_x;
             }
         }
     }
 
     pub fn move_left(&mut self) {
-        if self.cursor().x > 0 {
-            self.cursor_mut().x -= 1;
+        let y = self.cursor().y;
+        let x = self.cursor().x;
+        if x > 0 {
+            if let Some(line) = self.buffer().lines.get(y) {
+                let mut prev_x = 0;
+                for (idx, _) in line.char_indices() {
+                    if idx >= x {
+                        break;
+                    }
+                    prev_x = idx;
+                }
+                self.cursor_mut().x = prev_x;
+            } else {
+                self.cursor_mut().x -= 1;
+            }
         }
     }
 
@@ -201,8 +227,19 @@ impl Editor {
         let y = self.cursor().y;
         let x = self.cursor().x;
         if let Some(line) = self.buffer().lines.get(y) {
+            let mut char_indices = line.char_indices().map(|(i, _)| i);
+            while let Some(idx) = char_indices.next() {
+                if idx == x {
+                    if let Some(next_idx) = char_indices.next() {
+                        self.cursor_mut().x = next_idx;
+                    } else {
+                        self.cursor_mut().x = line.len();
+                    }
+                    return;
+                }
+            }
             if x < line.len() {
-                self.cursor_mut().x += 1;
+                self.cursor_mut().x = line.len();
             }
         }
     }
