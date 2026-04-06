@@ -685,35 +685,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         _ => {}
                     },
-                    Mode::ThemePicker => match key.code {
-                        KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
-                        KeyCode::Char('j') | KeyCode::Down => {
-                            let i = match vim.theme_state.selected() {
-                                Some(i) => (i + 1).min(1), // 2 themes: 0, 1
-                                None => 0,
-                            };
-                            vim.theme_state.select(Some(i));
-                        }
-                        KeyCode::Char('k') | KeyCode::Up => {
-                            let i = match vim.theme_state.selected() {
-                                Some(i) => i.saturating_sub(1),
-                                None => 0,
-                            };
-                            vim.theme_state.select(Some(i));
-                        }
-                        KeyCode::Enter => {
-                            let themes = ["gruvbox-material", "catppuccin"];
-                            if let Some(idx) = vim.theme_state.selected() {
-                                let new_theme_name = themes[idx];
-                                editor.highlighter.theme = crate::ui::colorscheme::ColorScheme::new(new_theme_name);
-                                vim.config.colorscheme = new_theme_name.to_string();
-                                let _ = vim.config.save();
-                                vim.set_message(format!("Colorscheme set to {}", new_theme_name));
-                            }
-                            vim.mode = Mode::Normal;
-                        }
-                        _ => {}
-                    },
                     Mode::Telescope(_) => match key.code {
                         KeyCode::Esc => { vim.telescope.close(); vim.mode = Mode::Normal; }
                         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -726,31 +697,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => { vim.telescope.move_up(); }
                         KeyCode::Enter => {
                             if let Some(result) = vim.telescope.results.get(vim.telescope.selected_idx) {
-                                let path = result.path.clone();
-                                let line_opt = result.line_number;
-                                
-                                if let Some(idx) = result.buffer_idx {
-                                    if idx < editor.buffers.len() {
-                                        editor.active_idx = idx;
+                                match vim.telescope.kind {
+                                    vim::mode::TelescopeKind::Themes => {
+                                        let new_theme_name = result.path.to_string_lossy().to_string();
+                                        editor.highlighter.theme = crate::ui::colorscheme::ColorScheme::new(&new_theme_name);
+                                        vim.config.colorscheme = new_theme_name;
+                                        let _ = vim.config.save();
                                     }
-                                } else {
-                                    let mut found = false;
-                                    for i in 0..editor.buffers.len() {
-                                        if editor.buffers[i].file_path.as_ref() == Some(&path) {
-                                            editor.active_idx = i;
-                                            found = true;
-                                            break;
+                                    vim::mode::TelescopeKind::Buffers => {
+                                        if let Some(idx) = result.buffer_idx {
+                                            if idx < editor.buffers.len() {
+                                                editor.active_idx = idx;
+                                            }
                                         }
                                     }
-                                    if !found {
-                                        let _ = editor.open_file(path);
+                                    _ => {
+                                        let path = result.path.clone();
+                                        let mut found = false;
+                                        for i in 0..editor.buffers.len() {
+                                            if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                                editor.active_idx = i;
+                                                found = true;
+                                                break;
+                                            }
+                                        }
+                                        if !found {
+                                            let _ = editor.open_file(path);
+                                        }
+                                        if let Some(line) = result.line_number {
+                                            editor.cursor_mut().y = line.saturating_sub(1);
+                                            editor.cursor_mut().x = 0;
+                                        }
                                     }
                                 }
-
-                                if let Some(line) = line_opt {
-                                    let y = line.saturating_sub(1);
-                                    editor.cursor_mut().y = y;
-                                    editor.cursor_mut().x = 0;
+                                // Common post-select actions
+                                if let Some(path) = editor.buffer().file_path.clone() {
+                                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                        let text = editor.buffer().lines.join("\n");
+                                        let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                        let _ = lsp_manager.request_folding_ranges(&ext, &path);
+                                    }
                                 }
                                 vim.focus = Focus::Editor;
                             }
@@ -941,12 +927,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             vim.pending_op = None;
                         }
                         KeyCode::Char('h') if vim.pending_op == Some('t') => {
-                            vim.mode = Mode::ThemePicker;
-                            let current_idx = match vim.config.colorscheme.as_str() {
-                                "catppuccin" => 1,
-                                _ => 0,
-                            };
-                            vim.theme_state.select(Some(current_idx));
+                            vim.telescope.open(vim::mode::TelescopeKind::Themes, explorer.root.clone(), &editor);
+                            vim.mode = Mode::Telescope(vim::mode::TelescopeKind::Themes);
                             vim.pending_op = None;
                         }
                         KeyCode::Char('t') if vim.pending_op == Some('t') => {

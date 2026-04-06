@@ -65,11 +65,28 @@ impl Telescope {
             TelescopeKind::Files => self.search_files(),
             TelescopeKind::Words => self.search_words(),
             TelescopeKind::Buffers => self.search_buffers(editor),
+            TelescopeKind::Themes => self.search_themes(),
         }
         if self.selected_idx >= self.results.len() {
             self.selected_idx = 0;
         }
         self.update_preview();
+    }
+
+    fn search_themes(&mut self) {
+        self.results.clear();
+        let themes = vec!["catppuccin", "gruvbox-material"];
+        let query_lower = self.query.to_lowercase();
+        for theme in themes {
+            if self.query.is_empty() || theme.to_lowercase().contains(&query_lower) {
+                self.results.push(TelescopeResult {
+                    path: PathBuf::from(theme),
+                    line_number: None,
+                    content: Some(theme.to_string()),
+                    buffer_idx: None,
+                });
+            }
+        }
     }
 
     fn search_buffers(&mut self, editor: &crate::editor::Editor) {
@@ -159,14 +176,50 @@ impl Telescope {
         self.preview_lines.clear();
         self.preview_scroll = 0;
         if let Some(result) = self.results.get(self.selected_idx) {
-            if let Ok(content) = std::fs::read_to_string(&result.path) {
-                self.preview_lines = content.lines().map(|s| s.to_string()).collect();
-                let target_line = result.line_number.unwrap_or(1).saturating_sub(1);
-                
-                // Center the target line in the preview window (assuming default height of ~40)
-                self.preview_scroll = target_line.saturating_sub(15);
+            match self.kind {
+                TelescopeKind::Themes => {
+                    self.preview_lines = self.get_theme_sample().lines().map(|s| s.to_string()).collect();
+                }
+                _ => {
+                    if let Ok(content) = std::fs::read_to_string(&result.path) {
+                        self.preview_lines = content.lines().map(|s| s.to_string()).collect();
+                        let target_line = result.line_number.unwrap_or(1).saturating_sub(1);
+                        self.preview_scroll = target_line.saturating_sub(15);
+                    }
+                }
             }
         }
+    }
+
+    fn get_theme_sample(&self) -> &str {
+        r#"// Theme Preview Sample
+import { useState } from 'react';
+
+function Counter({ initialCount = 0 }) {
+  const [count, setCount] = useState(initialCount);
+  const [active, setActive] = useState(true);
+
+  const increment = () => {
+    if (active) {
+      setCount(prev => prev + 1);
+    }
+  };
+
+  return (
+    <div className="counter-container">
+      <h1 style={{ color: 'blue' }}>Count: {count}</h1>
+      <button 
+        onClick={increment}
+        disabled={!active}
+      >
+        Increment
+      </button>
+      <p>Status: {active ? 'Active' : 'Paused'}</p>
+    </div>
+  );
+}
+
+export default Counter;"#
     }
 
     pub fn move_up(&mut self) {
@@ -238,6 +291,7 @@ impl Telescope {
             TelescopeKind::Files => " Results ",
             TelescopeKind::Words => " Grep Results ",
             TelescopeKind::Buffers => " Open Buffers ",
+            TelescopeKind::Themes => " Select Theme ",
         };
 
         let results_block = Block::default()
@@ -257,14 +311,19 @@ impl Telescope {
                 item_style = theme.get("CursorLine");
             }
 
-            let (icon, icon_group) = crate::ui::TerminalUi::get_file_icon(&res.path);
-            let icon_style = theme.get(&icon_group);
+            let (icon, icon_style) = match self.kind {
+                TelescopeKind::Themes => (crate::ui::icons::COLOR, theme.get("Type")),
+                _ => {
+                    let (icon, icon_group) = crate::ui::TerminalUi::get_file_icon(&res.path);
+                    (icon, theme.get(&icon_group))
+                }
+            };
             
-            let rel_path = res.path.strip_prefix(&self.search_root).unwrap_or(&res.path);
-            let path_str = if rel_path == res.path {
-                rel_path.to_string_lossy().to_string()
+            let path_str = if self.kind == TelescopeKind::Themes {
+                res.content.clone().unwrap_or_else(|| res.path.to_string_lossy().to_string())
             } else {
-                format!("./{}", rel_path.display())
+                let rel_path = res.path.strip_prefix(&self.search_root).unwrap_or(&res.path);
+                rel_path.to_string_lossy().to_string()
             };
 
             let mut spans = vec![
@@ -274,13 +333,15 @@ impl Telescope {
                 Span::styled(path_str, style)
             ];
             
-            if let Some(line) = res.line_number {
-                spans.push(Span::styled(format!(":{}", line), theme.get("Comment")));
-            }
-            
-            if let Some(content) = &res.content {
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled(content, theme.get("Comment")));
+            if self.kind != TelescopeKind::Themes {
+                if let Some(line) = res.line_number {
+                    spans.push(Span::styled(format!(":{}", line), theme.get("Comment")));
+                }
+                
+                if let Some(content) = &res.content {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(content, theme.get("Comment")));
+                }
             }
 
             ListItem::new(Line::from(spans)).style(item_style)
@@ -293,6 +354,7 @@ impl Telescope {
             TelescopeKind::Files => " Find Files ",
             TelescopeKind::Words => " Live Grep ",
             TelescopeKind::Buffers => " Select Buffer ",
+            TelescopeKind::Themes => " Colorschemes ",
         };
 
         let input_block = Block::default()
@@ -327,11 +389,11 @@ impl Telescope {
         let selected_result = self.results.get(self.selected_idx);
         let preview_path = selected_result
             .map(|r| {
-                let rel = r.path.strip_prefix(&self.search_root).unwrap_or(&r.path);
-                if rel == r.path {
-                    rel.to_string_lossy().to_string()
+                if self.kind == TelescopeKind::Themes {
+                    r.path.to_string_lossy().to_string()
                 } else {
-                    format!("./{}", rel.display())
+                    let rel = r.path.strip_prefix(&self.search_root).unwrap_or(&r.path);
+                    rel.to_string_lossy().to_string()
                 }
             })
             .unwrap_or_default();
@@ -378,7 +440,17 @@ impl Telescope {
             line_numbers.lines.push(Line::from(vec![Span::styled(format!("{:>4} ", actual_line_idx + 1), ln_style)]));
 
             // Code content
-            let syntax_styles = editor.highlighter.highlight_line(line);
+            let syntax_styles = if self.kind == TelescopeKind::Themes {
+                if let Some(res) = selected_result {
+                    let temp_theme = crate::ui::colorscheme::ColorScheme::new(&res.path.to_string_lossy());
+                    let highlighter = crate::editor::highlighter::Highlighter::new(temp_theme);
+                    highlighter.highlight_line(line)
+                } else {
+                    editor.highlighter.highlight_line(line)
+                }
+            } else {
+                editor.highlighter.highlight_line(line)
+            };
             let mut spans = Vec::new();
             for (x, c) in line.chars().enumerate() {
                 let mut style = syntax_styles.get(x).copied().unwrap_or(theme.get("Normal"));
