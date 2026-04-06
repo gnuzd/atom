@@ -535,40 +535,63 @@ impl Editor {
         // 2. Try to find a block to fold starting from current line or searching upwards
         let mut target_line = cursor_y;
         
-        // Search upwards for a line containing an opening brace if current doesn't
-        if !buffer.lines[target_line].contains('{') {
+        // Search upwards for a line containing an opening brace or tag if current doesn't
+        let has_opener = |l: &str| l.contains('{') || (l.contains('<') && !l.contains("</") && !l.trim_start().starts_with("<!"));
+        
+        if !has_opener(&buffer.lines[target_line]) {
             for i in (0..cursor_y).rev() {
-                if buffer.lines[i].contains('{') {
-                    // Check if this block is already folded
-                    if buffer.folded_ranges.iter().any(|(s, e)| i >= *s && i <= *e) {
-                        continue;
-                    }
+                if has_opener(&buffer.lines[i]) {
+                    if buffer.folded_ranges.iter().any(|(s, e)| i >= *s && i <= *e) { continue; }
                     target_line = i;
                     break;
                 }
             }
         }
 
-        // Find matching closing brace
-        if let Some(line) = buffer.lines.get(target_line) {
-            if line.contains('{') {
-                let mut brace_count = 0;
-                let mut found_start = false;
-                for i in target_line..buffer.lines.len() {
-                    for c in buffer.lines[i].chars() {
-                        if c == '{' {
-                            brace_count += 1;
-                            found_start = true;
-                        } else if c == '}' {
-                            brace_count -= 1;
-                        }
+        let line = &buffer.lines[target_line];
+        
+        // Handle HTML/Svelte tags
+        if let Some(tag_start) = line.find('<') {
+            if let Some(tag_end) = line[tag_start+1..].find(|c: char| c == ' ' || c == '>') {
+                let tag_name = &line[tag_start+1..tag_start+1+tag_end];
+                if !tag_name.starts_with('/') && !tag_name.starts_with('!') {
+                    let open_tag = format!("<{}", tag_name);
+                    let close_tag = format!("</{}", tag_name);
+                    let mut tag_count = 0;
+                    
+                    for i in target_line..buffer.lines.len() {
+                        let l = &buffer.lines[i];
+                        tag_count += l.matches(&open_tag).count();
+                        tag_count -= l.matches(&close_tag).count();
                         
-                        if found_start && brace_count == 0 {
-                            // Found the matching end line
+                        if tag_count == 0 {
                             if i > target_line {
                                 buffer.folded_ranges.push((target_line, i));
                                 return;
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle braces if no tag found or didn't return
+        if line.contains('{') {
+            let mut brace_count = 0;
+            let mut found_start = false;
+            for i in target_line..buffer.lines.len() {
+                for c in buffer.lines[i].chars() {
+                    if c == '{' {
+                        brace_count += 1;
+                        found_start = true;
+                    } else if c == '}' {
+                        brace_count -= 1;
+                    }
+                    
+                    if found_start && brace_count == 0 {
+                        if i > target_line {
+                            buffer.folded_ranges.push((target_line, i));
+                            return;
                         }
                     }
                 }

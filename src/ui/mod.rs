@@ -707,7 +707,7 @@ impl TerminalUi {
             let is_current_line = actual_idx == cursor.y;
 
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx) {
-                // Render a nice fold summary line
+                // Render a nice fold summary line: StartLine ... count ... EndLine
                 let first_line = line.trim_end();
                 let last_line = buffer.lines.get(*end).map(|l| l.trim_start()).unwrap_or("}");
                 let count = end - actual_idx;
