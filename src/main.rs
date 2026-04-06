@@ -261,8 +261,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         vim.suggestion_state.select(Some(0));
                                                     }
                                                 }
-                                            } else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result) {
+                                            } else if let Ok(ranges) = serde_json::from_value::<Vec<lsp_types::FoldingRange>>(result.clone()) {
                                                 vim.folding_ranges = ranges;
+                                            } else if let Ok(definition) = serde_json::from_value::<lsp_types::GotoDefinitionResponse>(result) {
+                                                let location = match definition {
+                                                    lsp_types::GotoDefinitionResponse::Scalar(l) => Some(l),
+                                                    lsp_types::GotoDefinitionResponse::Array(a) => a.into_iter().next(),
+                                                    lsp_types::GotoDefinitionResponse::Link(links) => links.into_iter().next().map(|link| lsp_types::Location {
+                                                        uri: link.target_uri,
+                                                        range: link.target_range,
+                                                    }),
+                                                };
+
+                                                if let Some(loc) = location {
+                                                    if let Ok(path) = loc.uri.to_file_path() {
+                                                        let mut found = false;
+                                                        for i in 0..editor.buffers.len() {
+                                                            if editor.buffers[i].file_path.as_ref() == Some(&path) {
+                                                                editor.active_idx = i;
+                                                                found = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if !found {
+                                                            let _ = editor.open_file(path.clone());
+                                                        }
+                                                        
+                                                        editor.cursor_mut().y = loc.range.start.line as usize;
+                                                        editor.cursor_mut().x = loc.range.start.character as usize; // Simplified
+                                                        
+                                                        // Trigger LSP open for the new buffer
+                                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                            let text = editor.buffer().lines.join("\n");
+                                                            let _ = lsp_manager.did_open(&ext, &path, text, None);
+                                                            let _ = lsp_manager.request_folding_ranges(&ext, &path);
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -863,6 +898,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('/') => { vim.mode = Mode::Search; vim.search_query.clear(); }
                         KeyCode::Char('u') => { editor.undo(); }
                         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
+                        KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(path) = &editor.buffer().file_path {
+                                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                    let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                    let utf16_x = crate::lsp::char_to_utf16_offset(&editor.buffer().lines[y], x);
+                                    let _ = lsp_manager.request_definition(ext, path, y, utf16_x);
+                                }
+                            }
+                        }
                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => { save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None); }
                         KeyCode::Tab => {
                             if vim.focus != Focus::Explorer {
