@@ -708,15 +708,19 @@ impl TerminalUi {
 
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx) {
                 // Render a nice fold summary line: StartLine ... count ... EndLine
-                let first_line = line.trim_end();
-                let last_line = buffer.lines.get(*end).map(|l| l.trim_start()).unwrap_or("}");
+                // We show it at the first column (remove leading spaces)
+                let first_line_full = line.trim_end();
+                let first_line_trimmed = first_line_full.trim_start();
+                let first_line_indent = first_line_full.len() - first_line_trimmed.len();
+                
+                let last_line = buffer.lines.get(*end).map(|l| l.trim()).unwrap_or("}");
                 let count = end - actual_idx;
                 
                 spans.clear();
-                // Re-highlight the first line part
-                let first_line_styles = editor.highlighter.highlight_line(first_line);
-                for (x, c) in first_line.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), first_line_styles[x]));
+                // Re-highlight using the full line but skip indentation
+                let first_line_styles = editor.highlighter.highlight_line(first_line_full);
+                for (x, c) in first_line_trimmed.chars().enumerate() {
+                    spans.push(Span::styled(c.to_string(), first_line_styles.get(x + first_line_indent).copied().unwrap_or_default()));
                 }
                 
                 spans.push(Span::styled(format!(" ... {} lines ... ", count), theme.get("Comment").add_modifier(Modifier::BOLD)));
@@ -724,7 +728,7 @@ impl TerminalUi {
                 // Highlight the last line part
                 let last_line_styles = editor.highlighter.highlight_line(last_line);
                 for (x, c) in last_line.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), last_line_styles[x]));
+                    spans.push(Span::styled(c.to_string(), last_line_styles.get(x).copied().unwrap_or_default()));
                 }
             } else {
                 for (x, c) in line.chars().enumerate() {
