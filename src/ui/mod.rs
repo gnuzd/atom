@@ -707,13 +707,13 @@ impl TerminalUi {
             let is_current_line = actual_idx == cursor.y;
 
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx) {
-                // Render a nice fold summary line:   Tag ... count lines ... /Tag
-                // Keep indentation of the first line
+                // Render a nice fold summary line: StartLine ... count lines ... EndLine
                 let first_line_full = line.trim_end();
                 let first_line_trimmed = first_line_full.trim_start();
                 let first_line_indent = first_line_full.len() - first_line_trimmed.len();
                 
-                let last_line = buffer.lines.get(*end).map(|l| l.trim()).unwrap_or("}");
+                let last_line_full = buffer.lines.get(*end).map(|l| l.as_str()).unwrap_or("}");
+                let last_line_trimmed = last_line_full.trim();
                 let count = end - actual_idx;
                 
                 // Add indentation spans
@@ -721,7 +721,7 @@ impl TerminalUi {
                     spans.push(Span::raw(" "));
                 }
 
-                // Re-highlight using the full line but skip indentation
+                // First line content
                 let first_line_styles = editor.highlighter.highlight_line(first_line_full);
                 for (x, c) in first_line_trimmed.chars().enumerate() {
                     spans.push(Span::styled(c.to_string(), first_line_styles.get(x + first_line_indent).copied().unwrap_or_default()));
@@ -729,10 +729,11 @@ impl TerminalUi {
                 
                 spans.push(Span::styled(format!(" ... {} lines ... ", count), theme.get("Comment").add_modifier(Modifier::BOLD)));
                 
-                // Highlight the last line part
-                let last_line_styles = editor.highlighter.highlight_line(last_line);
-                for (x, c) in last_line.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), last_line_styles.get(x).copied().unwrap_or_default()));
+                // Last line content
+                let last_line_styles = editor.highlighter.highlight_line(last_line_full);
+                let last_line_indent = last_line_full.len() - last_line_full.trim_start().len();
+                for (x, c) in last_line_trimmed.chars().enumerate() {
+                    spans.push(Span::styled(c.to_string(), last_line_styles.get(x + last_line_indent).copied().unwrap_or_default()));
                 }
             } else {
                 for (x, c) in line.chars().enumerate() {
@@ -839,8 +840,9 @@ impl TerminalUi {
                 line_obj = line_obj.style(theme.get("CursorLine"));
             }
 
-            // Diagnostic Virtual Text on the right
-            if vim.show_diagnostics {
+            // Diagnostic Virtual Text on the right (skip if folded)
+            let is_folded = buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx);
+            if vim.show_diagnostics && !is_folded {
                 if let Some(path) = &buffer.file_path {
                     if let Ok(url) = lsp_types::Url::from_file_path(path) {
                         let diags_lock = lsp_manager.diagnostics.lock().unwrap();

@@ -990,7 +990,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::PageDown | KeyCode::End => { vim.pending_op = None; editor.move_to_line_end(); }
                         KeyCode::Char('z') if vim.pending_op.is_none() => { vim.pending_op = Some('z'); }
                         KeyCode::Char('c') if vim.pending_op == Some('z') => { editor.toggle_fold(&vim.folding_ranges); vim.pending_op = None; }
-                        KeyCode::Char('a') if vim.pending_op == Some('z') => { editor.unfold_all(); vim.pending_op = None; }
+                        KeyCode::Char('a') if vim.pending_op == Some('z') => { editor.toggle_fold(&vim.folding_ranges); vim.pending_op = None; }
                         KeyCode::Char(c) if c.is_ascii_digit() && vim.pending_op.is_none() => {
                             let digit = c.to_digit(10).unwrap() as usize;
                             if let Some(count) = vim.count {
