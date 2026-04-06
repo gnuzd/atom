@@ -673,7 +673,7 @@ impl LspManager {
     pub fn request_completions(&self, ext: &str, path: &Path, line: usize, character: usize, trigger_kind: CompletionTriggerKind, trigger_char: Option<String>) -> Result<i32, Box<dyn std::error::Error>> {
         let clients_lock = self.clients.lock().unwrap();
         if let Some(clients) = clients_lock.get(ext) {
-            if let Some((client, state, _)) = clients.iter().find(|(_, s, _)| *s == ClientState::Ready) {
+            if let Some((client, _, _)) = clients.iter().find(|(_, s, _)| *s == ClientState::Ready) {
                 let id = {
                     let mut counter = self.id_counter.lock().unwrap();
                     let val = *counter;

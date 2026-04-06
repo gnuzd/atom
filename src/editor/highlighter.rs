@@ -119,7 +119,7 @@ impl Highlighter {
                 
                 let mut style = self.theme.get("Normal");
                 if keywords.contains(&word.as_str()) {
-                    style = self.theme.get("Identifier"); // Using red for keywords as per screenshot
+                    style = self.theme.get("Keyword");
                 } else if word.starts_with('$') || word.starts_with('@') || word.starts_with('#') {
                     style = self.theme.get("Identifier");
                 } else if builtins.contains(&word.as_str()) {
