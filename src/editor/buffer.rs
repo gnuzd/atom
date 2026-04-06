@@ -1,4 +1,5 @@
 use std::{fs, io, path::PathBuf};
+use crate::git::GitSign;
 
 #[derive(Clone)]
 pub struct Buffer {
@@ -8,6 +9,7 @@ pub struct Buffer {
     pub redo_stack: Vec<Vec<String>>,
     pub modified: bool,
     pub folded_ranges: Vec<(usize, usize)>,
+    pub git_signs: Vec<(usize, GitSign)>,
 }
 
 impl Buffer {
@@ -19,6 +21,7 @@ impl Buffer {
             redo_stack: Vec::new(),
             modified: false,
             folded_ranges: Vec::new(),
+            git_signs: Vec::new(),
         }
     }
 
@@ -37,6 +40,7 @@ impl Buffer {
             redo_stack: Vec::new(),
             modified: false,
             folded_ranges: Vec::new(),
+            git_signs: Vec::new(),
         })
     }
 

@@ -111,6 +111,10 @@ impl ColorScheme {
         hl.insert("StatusLineGitMod".into(), Style::default().fg(palette.blue).bg(palette.black2));
         hl.insert("StatusLineGitDel".into(), Style::default().fg(palette.red).bg(palette.black2));
 
+        hl.insert("GitSignsAdd".into(), Style::default().fg(palette.green));
+        hl.insert("GitSignsChange".into(), Style::default().fg(palette.yellow));
+        hl.insert("GitSignsDelete".into(), Style::default().fg(palette.red));
+
         hl.insert("StatusLineDiagnosticError".into(), Style::default().fg(palette.red).bg(palette.black2));
         hl.insert("StatusLineDiagnosticWarn".into(), Style::default().fg(palette.yellow).bg(palette.black2));
         hl.insert("StatusLineDiagnosticInfo".into(), Style::default().fg(palette.blue).bg(palette.black2));

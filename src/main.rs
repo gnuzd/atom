@@ -3,6 +3,7 @@ pub mod editor;
 pub mod lsp;
 pub mod ui;
 pub mod vim;
+pub mod git;
 
 use std::{env, error::Error, io, path::PathBuf, time::Duration};
 
@@ -98,9 +99,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if path.is_dir() {
                 explorer.root = path.clone();
                 vim.project_root = find_project_root(&path);
+                vim.reinit_git();
                 explorer.refresh();
             } else {
-                let _ = editor.open_file(path);
+                let _ = editor.open_file(path.clone());
+                if let Some(buf) = editor.buffers.last_mut() {
+                    let content = buf.lines.join("\n");
+                    buf.git_signs = vim.git_manager.get_signs(&path, &content);
+                }
             }
         }
         if editor.buffers.is_empty() {
@@ -132,6 +138,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Update Git Info (every 5 seconds)
         if vim.last_git_update.is_none() || vim.last_git_update.unwrap().elapsed() > Duration::from_secs(5) {
             vim.git_info = update_git_info(&vim.project_root);
+            
+            // Update Git Signs for all buffers
+            for buffer in &mut editor.buffers {
+                if let Some(path) = &buffer.file_path {
+                    let content = buffer.lines.join("\n");
+                    buffer.git_signs = vim.git_manager.get_signs(path, &content);
+                }
+            }
+            
             vim.last_git_update = Some(std::time::Instant::now());
         }
 
@@ -179,7 +194,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Some(path) = editor.buffer().file_path.clone() {
                         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                             if lsp_manager.is_ready(ext) {
-                                let _ = lsp_manager.did_change(ext, &path, editor.buffer().lines.join("\n"));
+                                let content = editor.buffer().lines.join("\n");
+                                let _ = lsp_manager.did_change(ext, &path, content.clone());
+                                
+                                // Update Git Signs immediately on change
+                                editor.buffer_mut().git_signs = vim.git_manager.get_signs(&path, &content);
+
                                 let (y, x) = (editor.cursor().y, editor.cursor().x);
                                 let line = &editor.buffer().lines[y];
                                 
@@ -326,6 +346,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     vim.set_message(format!("Opening new file: {}", path.display()));
                     let _ = editor.open_file(path.clone());
+                    // Initialize git signs
+                    if let Some(buf) = editor.buffers.last_mut() {
+                        let content = buf.lines.join("\n");
+                        buf.git_signs = vim.git_manager.get_signs(&path, &content);
+                    }
                 }
                 
                 let target_y = loc.range.start.line as usize;
@@ -413,6 +438,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if let Event::Key(key) = event {
                 vim.yank_highlight_line = None;
                 flash_counter = 0;
+
+                // Handle Blame Popup dismissal
+                if vim.blame_popup.is_some() {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            vim.blame_popup = None;
+                            continue;
+                        }
+                        _ => {
+                            vim.blame_popup = None;
+                        }
+                    }
+                }
 
                 // Global Ctrl-Space for completion
                 if key.code == KeyCode::Char(' ') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -604,6 +642,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     if editor.open_file(path.clone()).is_ok() {
                                         vim.focus = Focus::Editor; 
                                         vim.set_message(format!("Opened \"{}\"", path.display()));
+                                        
+                                        // Initialize git signs
+                                        if let Some(buf) = editor.buffers.last_mut() {
+                                            let content = buf.lines.join("\n");
+                                            buf.git_signs = vim.git_manager.get_signs(&path, &content);
+                                        }
+
                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                             let text = editor.buffer().lines.join("\n");
                                             let _ = lsp_manager.did_open(&ext, &path, text, None);
@@ -671,8 +716,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         vim.set_message(format!("\"{}\" {} {}L, {}C written", path_str, format_info, line_count, char_count));
                         
                         if let Some(path) = editor.buffer().file_path.clone() {
+                            // Update Git Signs
+                            let text = editor.buffer().lines.join("\n");
+                            editor.buffer_mut().git_signs = vim.git_manager.get_signs(&path, &text);
+                            
                             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                                let text = editor.buffer().lines.join("\n");
                                 let _ = lsp_manager.did_save(&ext, &path, text);
                             }
                         }
@@ -972,6 +1020,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         KeyCode::Char('[') if vim.pending_op == Some('[') => { editor.jump_to_first_line(); vim.pending_op = None; }
                         KeyCode::Char(']') if vim.pending_op == Some(']') => { editor.jump_to_last_line(); vim.pending_op = None; }
+                        KeyCode::Char('g') if vim.pending_op == Some('[') => { editor.jump_to_prev_hunk(); vim.pending_op = None; }
+                        KeyCode::Char('g') if vim.pending_op == Some(']') => { editor.jump_to_next_hunk(); vim.pending_op = None; }
                         KeyCode::Char('[') if vim.pending_op.is_none() => { vim.pending_op = Some('['); }
                         KeyCode::Char(']') if vim.pending_op.is_none() => { vim.pending_op = Some(']'); }
                         KeyCode::Char('q') => {
@@ -1068,9 +1118,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                         KeyCode::Char('b') if vim.pending_op == Some(' ') => {
+                            vim.pending_op = Some('b');
+                        }
+                        KeyCode::Char('b') if vim.pending_op == Some('b') => {
                             vim.config.disable_autoformat = !vim.config.disable_autoformat;
                             let _ = vim.config.save();
                             vim.set_message(if vim.config.disable_autoformat { "Autoformat Disabled".to_string() } else { "Autoformat Enabled".to_string() });
+                            vim.pending_op = None;
+                        }
+                        KeyCode::Char('l') if vim.pending_op == Some('b') => {
+                            if let Some(path) = &editor.buffer().file_path {
+                                vim.blame_popup = vim.git_manager.get_blame(path, editor.cursor().y);
+                            }
                             vim.pending_op = None;
                         }
                         KeyCode::Char('t') if vim.pending_op == Some(' ') => {

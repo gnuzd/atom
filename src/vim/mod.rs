@@ -65,6 +65,8 @@ pub struct VimState {
     pub relative_number: bool,
     pub show_diagnostics: bool,
     pub git_info: Option<GitInfo>,
+    pub git_manager: crate::git::GitManager,
+    pub blame_popup: Option<String>,
     pub last_git_update: Option<Instant>,
     pub folding_ranges: Vec<lsp_types::FoldingRange>,
     pub definition_request_id: Option<i32>,
@@ -111,11 +113,13 @@ impl VimState {
             message: None,
             message_time: None,
             telescope: crate::ui::telescope::Telescope::new(),
-            project_root,
+            project_root: project_root.clone(),
             count: None,
             relative_number: true,
             show_diagnostics: true,
             git_info: None,
+            git_manager: crate::git::GitManager::new(&project_root),
+            blame_popup: None,
             last_git_update: None,
             folding_ranges: Vec::new(),
             definition_request_id: None,
@@ -149,5 +153,10 @@ impl VimState {
         let frame = frames[self.spinner_idx % frames.len()];
         self.spinner_idx += 1;
         frame
+    }
+
+    pub fn reinit_git(&mut self) {
+        self.git_manager = crate::git::GitManager::new(&self.project_root);
+        self.last_git_update = None; // Force update
     }
 }

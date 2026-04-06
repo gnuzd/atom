@@ -229,8 +229,10 @@ impl TerminalUi {
             ("<C-s>", "Save & Format"),
             ("<Space>n", "Toggle Relative Num"),
             ("<Space>/", "Toggle Comment"),
+            ("[g / ]g", "Prev/Next Git Hunk"),
+            ("<Space>bl", "Show Git Blame (Popup)"),
             ("zc / za", "Fold / Unfold"),
-            ("<Space>b", "Toggle Autoformat"),
+            ("<Space>bb", "Toggle Autoformat"),
             ("dd", "Delete line"),
             ("yy", "Yank line"),
             ("p/P", "Paste after/before"),
@@ -554,7 +556,7 @@ impl TerminalUi {
         
         let editor_layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(7), Constraint::Min(1)])
+            .constraints([Constraint::Length(8), Constraint::Min(1)])
             .split(editor_area);
 
         // Find cursor screen y
@@ -593,6 +595,21 @@ impl TerminalUi {
             };
 
             let mut spans = Vec::new();
+
+            // Git Sign
+            let git_sign = buffer.git_signs.iter().find(|(line, _)| *line == actual_idx).map(|(_, s)| s);
+            if let Some(sign) = git_sign {
+                let (symbol, style_name) = match sign {
+                    crate::git::GitSign::Add => (icons::GIT_ADD, "GitSignsAdd"),
+                    crate::git::GitSign::Change => (icons::GIT_MOD, "GitSignsChange"),
+                    crate::git::GitSign::Delete => (icons::GIT_DEL, "GitSignsDelete"),
+                    crate::git::GitSign::TopDelete => (icons::GIT_DEL, "GitSignsDelete"),
+                    crate::git::GitSign::ChangeDelete => (icons::GIT_MOD, "GitSignsChange"),
+                };
+                spans.push(Span::styled(symbol, theme.get(style_name)));
+            } else {
+                spans.push(Span::raw(" "));
+            }
 
             // Diagnostic Icon in gutter
             if vim.show_diagnostics {
@@ -850,6 +867,25 @@ impl TerminalUi {
         }
         frame.render_widget(Paragraph::new(text), editor_layout[1]);
 
+        // Blame Popup
+        if let Some(blame) = &vim.blame_popup {
+            let popup_width = (blame.len() as u16) + 4;
+            let popup_height = 3;
+            let x = (editor_layout[1].x + cursor.x as u16).min(area.right().saturating_sub(popup_width));
+            let y = (editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16).saturating_sub(popup_height);
+            
+            let popup_area = Rect { x, y, width: popup_width, height: popup_height };
+            
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(theme.get("TreeExplorerConnector"))
+                .style(theme.get("Normal"));
+            
+            frame.render_widget(Clear, popup_area);
+            frame.render_widget(Paragraph::new(blame.clone()).block(block).alignment(Alignment::Center), popup_area);
+        }
+
         // 2.5 Completion Menu (Floating)
         if vim.show_suggestions && !vim.suggestions.is_empty() {
             // Filter suggestions based on current word prefix
@@ -972,9 +1008,22 @@ impl TerminalUi {
         // Section B: Git
         if let Some(git) = &vim.git_info {
             status_spans.push(Span::styled(format!(" {} {} ", icons::GIT_BRANCH, git.branch), theme.get("StatusLineB")));
-            if git.added > 0 { status_spans.push(Span::styled(format!("{}{} ", icons::GIT_ADD, git.added), theme.get("StatusLineGitAdd"))); }
-            if git.modified > 0 { status_spans.push(Span::styled(format!("{}{} ", icons::GIT_MOD, git.modified), theme.get("StatusLineGitMod"))); }
-            if git.removed > 0 { status_spans.push(Span::styled(format!("{}{} ", icons::GIT_DEL, git.removed), theme.get("StatusLineGitDel"))); }
+            
+            // Buffer-level git signs stats
+            let mut buf_added = 0;
+            let mut buf_modified = 0;
+            let mut buf_removed = 0;
+            for (_, sign) in &buffer.git_signs {
+                match sign {
+                    crate::git::GitSign::Add => buf_added += 1,
+                    crate::git::GitSign::Change | crate::git::GitSign::ChangeDelete => buf_modified += 1,
+                    crate::git::GitSign::Delete | crate::git::GitSign::TopDelete => buf_removed += 1,
+                }
+            }
+
+            if buf_added > 0 { status_spans.push(Span::styled(format!(" {}{} ", icons::GIT_ADD, buf_added), theme.get("StatusLineGitAdd"))); }
+            if buf_modified > 0 { status_spans.push(Span::styled(format!(" {}{} ", icons::GIT_MOD, buf_modified), theme.get("StatusLineGitMod"))); }
+            if buf_removed > 0 { status_spans.push(Span::styled(format!(" {}{} ", icons::GIT_DEL, buf_removed), theme.get("StatusLineGitDel"))); }
         }
 
         // Section C: Filename

@@ -667,6 +667,54 @@ impl Editor {
     pub fn unfold_all(&mut self) {
         self.buffer_mut().folded_ranges.clear();
     }
+
+    pub fn jump_to_next_hunk(&mut self) {
+        let cursor_y = self.cursor().y;
+        let buffer = self.buffer();
+        if buffer.git_signs.is_empty() { return; }
+
+        let mut hunk_starts: Vec<usize> = Vec::new();
+        let mut last_line = None;
+        for (line, _) in &buffer.git_signs {
+            if last_line.is_none() || *line > last_line.unwrap() + 1 {
+                hunk_starts.push(*line);
+            }
+            last_line = Some(*line);
+        }
+
+        if let Some(&next_hunk) = hunk_starts.iter().find(|&&s| s > cursor_y) {
+            self.cursor_mut().y = next_hunk;
+            self.cursor_mut().x = 0;
+        } else if let Some(&first_hunk) = hunk_starts.first() {
+            // Wrap around
+            self.cursor_mut().y = first_hunk;
+            self.cursor_mut().x = 0;
+        }
+    }
+
+    pub fn jump_to_prev_hunk(&mut self) {
+        let cursor_y = self.cursor().y;
+        let buffer = self.buffer();
+        if buffer.git_signs.is_empty() { return; }
+
+        let mut hunk_starts: Vec<usize> = Vec::new();
+        let mut last_line = None;
+        for (line, _) in &buffer.git_signs {
+            if last_line.is_none() || *line > last_line.unwrap() + 1 {
+                hunk_starts.push(*line);
+            }
+            last_line = Some(*line);
+        }
+
+        if let Some(&prev_hunk) = hunk_starts.iter().rev().find(|&&s| s < cursor_y) {
+            self.cursor_mut().y = prev_hunk;
+            self.cursor_mut().x = 0;
+        } else if let Some(&last_hunk) = hunk_starts.last() {
+            // Wrap around
+            self.cursor_mut().y = last_hunk;
+            self.cursor_mut().x = 0;
+        }
+    }
 }
 
 #[cfg(test)]
