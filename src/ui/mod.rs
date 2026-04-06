@@ -1016,10 +1016,7 @@ impl TerminalUi {
         let modified_icon = if buffer.modified { " ●" } else { "" };
         status_spans.push(Span::styled(format!(" {}{} ", file_name, modified_icon), theme.get("StatusLineC")));
 
-        // Filler
-        status_spans.push(Span::raw(" ".repeat(root_chunks[1].width as usize)));
-
-        // Calculate Right Sections first to know how much space to subtract from filler
+        // Calculate Right Sections
         let mut right_spans = Vec::new();
 
         // Section X: LSP Diagnostics
@@ -1080,8 +1077,9 @@ impl TerminalUi {
         let right_width: usize = right_spans.iter().map(|s| s.content.chars().count()).sum();
         let filler_width = (root_chunks[1].width as usize).saturating_sub(left_width).saturating_sub(right_width);
         
-        status_spans.truncate(status_spans.len() - 1); // Remove placeholder filler
-        status_spans.push(Span::styled(" ".repeat(filler_width), theme.get("StatusLine")));
+        if filler_width > 0 {
+            status_spans.push(Span::styled(" ".repeat(filler_width), theme.get("StatusLine")));
+        }
         status_spans.extend(right_spans);
         
         frame.render_widget(Paragraph::new(Line::from(status_spans)).style(theme.get("StatusLine")), root_chunks[1]);
