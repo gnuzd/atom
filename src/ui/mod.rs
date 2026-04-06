@@ -744,8 +744,9 @@ impl TerminalUi {
                         // Indent guide logic for non-tab characters
                         let is_indent_pos = x > 0 && x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
                         if is_indent_pos {
-
-                            spans.push(Span::styled("┆", theme.get("Comment").add_modifier(Modifier::DIM)));
+                            let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                            indent_style.bg = style.bg; // Keep the same background as current character would have
+                            spans.push(Span::styled("┆", indent_style));
                         } else {
                             spans.push(Span::styled(c.to_string(), style));
                         }
@@ -773,13 +774,17 @@ impl TerminalUi {
                 if prev_indent > 0 {
                     let mut new_spans = Vec::new();
                     let indent_char = "┆";
-                    let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                    let mut base_style = theme.get("Normal");
+                    if is_current_line { base_style = base_style.bg(theme.palette.black2); }
+                    
+                    let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                    indent_style.bg = base_style.bg;
                     
                     for j in 0..prev_indent {
                         if j > 0 && j % 2 == 0 {
                             new_spans.push(Span::styled(indent_char, indent_style));
                         } else {
-                            new_spans.push(Span::raw(" "));
+                            new_spans.push(Span::styled(" ", base_style));
                         }
                     }
                     if !new_spans.is_empty() { spans = new_spans; }

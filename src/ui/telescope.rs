@@ -408,6 +408,14 @@ export default Counter;"#
         let inner_preview_area = preview_block.inner(main_chunks[1]);
         frame.render_widget(preview_block, main_chunks[1]);
 
+        // Fill background inside border for themes
+        if self.kind == TelescopeKind::Themes {
+            if let Some(res) = selected_result {
+                let temp_theme = crate::ui::colorscheme::ColorScheme::new(&res.path.to_string_lossy());
+                frame.render_widget(Block::default().style(temp_theme.get("Normal")), inner_preview_area);
+            }
+        }
+
         let preview_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(6), Constraint::Min(1)])

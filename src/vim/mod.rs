@@ -67,6 +67,7 @@ pub struct VimState {
     pub git_info: Option<GitInfo>,
     pub last_git_update: Option<Instant>,
     pub folding_ranges: Vec<lsp_types::FoldingRange>,
+    pub definition_request_id: Option<i32>,
 }
 
 impl VimState {
@@ -115,6 +116,7 @@ impl VimState {
             git_info: None,
             last_git_update: None,
             folding_ranges: Vec::new(),
+            definition_request_id: None,
         }
     }
 
