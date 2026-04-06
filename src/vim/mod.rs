@@ -66,6 +66,7 @@ pub struct VimState {
     pub show_diagnostics: bool,
     pub git_info: Option<GitInfo>,
     pub last_git_update: Option<Instant>,
+    pub folding_ranges: Vec<lsp_types::FoldingRange>,
 }
 
 impl VimState {
@@ -113,6 +114,7 @@ impl VimState {
             show_diagnostics: true,
             git_info: None,
             last_git_update: None,
+            folding_ranges: Vec::new(),
         }
     }
 

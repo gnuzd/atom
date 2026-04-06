@@ -670,6 +670,30 @@ impl LspManager {
         diagnostics
     }
 
+    pub fn request_folding_ranges(&self, ext: &str, path: &Path) -> Result<i32, Box<dyn std::error::Error>> {
+        let clients_lock = self.clients.lock().unwrap();
+        if let Some(clients) = clients_lock.get(ext) {
+            if let Some((client, _, _)) = clients.iter().find(|(_, s, _)| *s == ClientState::Ready) {
+                let id = {
+                    let mut counter = self.id_counter.lock().unwrap();
+                    let val = *counter;
+                    *counter += 1;
+                    val
+                };
+                let params = FoldingRangeParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: Self::path_to_uri(path),
+                    },
+                    work_done_progress_params: Default::default(),
+                    partial_result_params: Default::default(),
+                };
+                client.send_request(id, "textDocument/foldingRange", params)?;
+                return Ok(id);
+            }
+        }
+        Err("No ready LSP client".into())
+    }
+
     pub fn request_completions(&self, ext: &str, path: &Path, line: usize, character: usize, trigger_kind: CompletionTriggerKind, trigger_char: Option<String>) -> Result<i32, Box<dyn std::error::Error>> {
         let clients_lock = self.clients.lock().unwrap();
         if let Some(clients) = clients_lock.get(ext) {

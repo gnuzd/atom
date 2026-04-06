@@ -522,7 +522,7 @@ impl Editor {
         yanked
     }
 
-    pub fn toggle_fold(&mut self) {
+    pub fn toggle_fold(&mut self, lsp_ranges: &[lsp_types::FoldingRange]) {
         let cursor_y = self.cursor().y;
         let buffer = self.buffer_mut();
         
@@ -532,12 +532,53 @@ impl Editor {
             return;
         }
 
-        // 2. Try to find a block to fold starting from current line or searching upwards
-        let mut target_line = cursor_y;
-        
-        // Search upwards for a line containing an opening brace or tag if current doesn't
+        // 2. Use LSP ranges if available
+        if !lsp_ranges.is_empty() {
+            // Find the best range for current cursor position
+            // Prioritize ranges that start on current line, then look upwards
+            let mut best_range = None;
+            for r in lsp_ranges {
+                let start = r.start_line as usize;
+                let end = r.end_line as usize;
+                
+                if start == cursor_y && end > start {
+                    best_range = Some((start, end));
+                    break;
+                }
+            }
+
+            if let Some((s, e)) = best_range {
+                buffer.folded_ranges.push((s, e));
+                return;
+            }
+        }
+
+        // 3. Fallback to Indent-based folding (simulating nvim-ufo behavior)
+        let get_indent = |line: &str| {
+            if line.trim().is_empty() { return usize::MAX; }
+            line.chars().take_while(|c| c.is_whitespace()).count()
+        };
+
+        let current_indent = get_indent(&buffer.lines[cursor_y]);
+        if current_indent != usize::MAX {
+            let mut end_line = cursor_y;
+            for i in cursor_y + 1..buffer.lines.len() {
+                let indent = get_indent(&buffer.lines[i]);
+                if indent != usize::MAX && indent <= current_indent {
+                    break;
+                }
+                end_line = i;
+            }
+
+            if end_line > cursor_y {
+                buffer.folded_ranges.push((cursor_y, end_line));
+                return;
+            }
+        }
+
+        // 4. Smart fallback to Tags/Braces (existing logic but slightly improved)
         let has_opener = |l: &str| l.contains('{') || (l.contains('<') && !l.contains("</") && !l.trim_start().starts_with("<!"));
-        
+        let mut target_line = cursor_y;
         if !has_opener(&buffer.lines[target_line]) {
             for i in (0..cursor_y).rev() {
                 if has_opener(&buffer.lines[i]) {
@@ -549,8 +590,7 @@ impl Editor {
         }
 
         let line = &buffer.lines[target_line];
-        
-        // Handle HTML/Svelte tags
+        // ... (rest of the tag/brace logic stays similar but we'll wrap it)
         if let Some(tag_start) = line.find('<') {
             if let Some(tag_end) = line[tag_start+1..].find(|c: char| c == ' ' || c == '>') {
                 let tag_name = &line[tag_start+1..tag_start+1+tag_end];
@@ -558,41 +598,29 @@ impl Editor {
                     let open_tag = format!("<{}", tag_name);
                     let close_tag = format!("</{}", tag_name);
                     let mut tag_count = 0;
-                    
                     for i in target_line..buffer.lines.len() {
                         let l = &buffer.lines[i];
                         tag_count += l.matches(&open_tag).count();
                         tag_count -= l.matches(&close_tag).count();
-                        
-                        if tag_count == 0 {
-                            if i > target_line {
-                                buffer.folded_ranges.push((target_line, i));
-                                return;
-                            }
+                        if tag_count == 0 && i > target_line {
+                            buffer.folded_ranges.push((target_line, i));
+                            return;
                         }
                     }
                 }
             }
         }
 
-        // Handle braces if no tag found or didn't return
         if line.contains('{') {
             let mut brace_count = 0;
             let mut found_start = false;
             for i in target_line..buffer.lines.len() {
                 for c in buffer.lines[i].chars() {
-                    if c == '{' {
-                        brace_count += 1;
-                        found_start = true;
-                    } else if c == '}' {
-                        brace_count -= 1;
-                    }
-                    
-                    if found_start && brace_count == 0 {
-                        if i > target_line {
-                            buffer.folded_ranges.push((target_line, i));
-                            return;
-                        }
+                    if c == '{' { brace_count += 1; found_start = true; }
+                    else if c == '}' { brace_count -= 1; }
+                    if found_start && brace_count == 0 && i > target_line {
+                        buffer.folded_ranges.push((target_line, i));
+                        return;
                     }
                 }
             }
