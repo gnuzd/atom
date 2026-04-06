@@ -1073,7 +1073,7 @@ impl TerminalUi {
         let percent = if total_lines > 0 { (cursor.y + 1) * 100 / total_lines } else { 0 };
         let pos_text = format!(" {:>2}% {}:{} ", percent, cursor.y + 1, cursor.x + 1);
         let buf_text = format!("(Buffer {}/{}) ", editor.active_idx + 1, editor.buffers.len());
-        right_spans.push(Span::styled(format!("{}{}", pos_text, buf_text), Style::default().fg(theme.palette.black).bg(mode_color).add_modifier(Modifier::BOLD)));
+        right_spans.push(Span::styled(format!("{}{}", pos_text, buf_text), theme.get("StatusLineZ")));
 
         // Combine all
         let left_width: usize = status_spans.iter().map(|s| s.content.chars().count()).sum();
