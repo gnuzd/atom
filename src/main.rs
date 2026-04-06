@@ -37,6 +37,40 @@ fn find_project_root(path: &PathBuf) -> PathBuf {
     path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| env::current_dir().unwrap_or_default())
 }
 
+fn update_git_info(project_root: &PathBuf) -> Option<vim::GitInfo> {
+    use std::process::Command;
+    
+    let branch = Command::new("git")
+        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(project_root)
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).trim().to_string()) } else { None })?;
+
+    let status = Command::new("git")
+        .args(&["status", "--porcelain"])
+        .current_dir(project_root)
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).to_string()) } else { None })
+        .unwrap_or_default();
+
+    let mut info = vim::GitInfo {
+        branch,
+        added: 0,
+        modified: 0,
+        removed: 0,
+    };
+
+    for line in status.lines() {
+        if line.starts_with('A') || line.starts_with("??") { info.added += 1; }
+        else if line.starts_with('M') || line.starts_with(" M") { info.modified += 1; }
+        else if line.starts_with('D') || line.starts_with(" D") { info.removed += 1; }
+    }
+
+    Some(info)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
@@ -92,6 +126,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 vim.message = None;
                 vim.message_time = None;
             }
+        }
+
+        // Update Git Info (every 5 seconds)
+        if vim.last_git_update.is_none() || vim.last_git_update.unwrap().elapsed() > Duration::from_secs(5) {
+            vim.git_info = update_git_info(&vim.project_root);
+            vim.last_git_update = Some(std::time::Instant::now());
         }
 
         // Update LSP Status for installation

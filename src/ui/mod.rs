@@ -990,42 +990,99 @@ impl TerminalUi {
         }
 
         // 3. Status Line
-        let (mode_group, mode_label) = match vim.mode {
-            Mode::Normal => ("StatusLineNormal", " NORMAL "),
-            Mode::Insert => ("StatusLineInsert", " INSERT "),
-            Mode::Visual => ("StatusLineVisual", " VISUAL "),
-            Mode::Command => ("StatusLineCommand", " COMMAND "),
-            _ => ("StatusLine", " OTHER "),
+        let (mode_color, mode_label) = match vim.mode {
+            Mode::Normal => (theme.palette.blue, " NORMAL "),
+            Mode::Insert => (theme.palette.green, " INSERT "),
+            Mode::Visual => (theme.palette.purple, " VISUAL "),
+            Mode::Command => (theme.palette.yellow, " COMMAND "),
+            _ => (theme.palette.blue, " NORMAL "),
         };
 
-        let file_name = buffer.file_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("[No Name]");
-        
-        let mut status_spans = vec![
-            Span::styled(mode_label, theme.get(mode_group)),
-            Span::styled(format!(" {} ", file_name), theme.get("StatusLineFile")),
-        ];
+        let mut status_spans = Vec::new();
 
-        match &vim.lsp_status {
-            LspStatus::Loading => {
-                status_spans.push(Span::styled(format!(" {} Loading... ", vim.get_spinner()), theme.get("Keyword")));
-            }
-            LspStatus::Installing => {
-                status_spans.push(Span::styled(format!(" {} Installing... ", vim.get_spinner()), theme.get("Keyword")));
-            }
-            LspStatus::Formatting => {
-                status_spans.push(Span::styled(format!(" {} Formatting... ", vim.get_spinner()), theme.get("Keyword")));
-            }
-            LspStatus::Ready => {
-                status_spans.push(Span::styled(" LSP: Ready ", theme.get("String")));
-            }
-            LspStatus::Error(e) => {
-                status_spans.push(Span::styled(format!(" LSP Error: {} ", e), theme.get("Identifier")));
-            }
-            _ => {}
+        // Section A: Mode
+        status_spans.push(Span::styled(mode_label, Style::default().fg(theme.palette.black).bg(mode_color).add_modifier(Modifier::BOLD)));
+
+        // Section B: Git
+        if let Some(git) = &vim.git_info {
+            status_spans.push(Span::styled(format!(" {} {} ", icons::GIT_BRANCH, git.branch), theme.get("StatusLineB")));
+            if git.added > 0 { status_spans.push(Span::styled(format!("{}{} ", icons::GIT_ADD, git.added), theme.get("StatusLineGitAdd"))); }
+            if git.modified > 0 { status_spans.push(Span::styled(format!("{}{} ", icons::GIT_MOD, git.modified), theme.get("StatusLineGitMod"))); }
+            if git.removed > 0 { status_spans.push(Span::styled(format!("{}{} ", icons::GIT_DEL, git.removed), theme.get("StatusLineGitDel"))); }
         }
 
-        status_spans.push(Span::styled(" ", theme.get("StatusLine"))); // Filler
-        status_spans.push(Span::styled(format!(" {}:{} (Buffer {}/{}) ", cursor.y + 1, cursor.x + 1, editor.active_idx + 1, editor.buffers.len()), theme.get("StatusLinePos")));
+        // Section C: Filename
+        let file_name = buffer.file_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("[No Name]");
+        let modified_icon = if buffer.modified { " ●" } else { "" };
+        status_spans.push(Span::styled(format!(" {}{} ", file_name, modified_icon), theme.get("StatusLineC")));
+
+        // Filler
+        status_spans.push(Span::raw(" ".repeat(root_chunks[1].width as usize)));
+
+        // Calculate Right Sections first to know how much space to subtract from filler
+        let mut right_spans = Vec::new();
+
+        // Section X: LSP Diagnostics
+        if vim.show_diagnostics {
+            if let Some(path) = &buffer.file_path {
+                if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                    let diagnostics = lsp_manager.diagnostics.lock().unwrap();
+                    if let Some(server_diags) = diagnostics.get(&url) {
+                        let mut e = 0; let mut w = 0; let mut i = 0; let mut h = 0;
+                        for diags in server_diags.values() {
+                            for diag in diags {
+                                match diag.severity {
+                                    Some(DiagnosticSeverity::ERROR) => e += 1,
+                                    Some(DiagnosticSeverity::WARNING) => w += 1,
+                                    Some(DiagnosticSeverity::INFORMATION) => i += 1,
+                                    Some(DiagnosticSeverity::HINT) => h += 1,
+                                    _ => {}
+                                }
+                            }
+                        }
+                        if e > 0 { right_spans.push(Span::styled(format!(" {} {} ", icons::ERROR, e), theme.get("StatusLineDiagnosticError"))); }
+                        if w > 0 { right_spans.push(Span::styled(format!(" {} {} ", icons::WARNING, w), theme.get("StatusLineDiagnosticWarn"))); }
+                        if i > 0 { right_spans.push(Span::styled(format!(" {} {} ", icons::INFO, i), theme.get("StatusLineDiagnosticInfo"))); }
+                        if h > 0 { right_spans.push(Span::styled(format!(" {} {} ", icons::HINT, h), theme.get("StatusLineDiagnosticHint"))); }
+                    }
+                }
+            }
+        }
+
+        // Section Y: LSP Name
+        let lsp_name = if let Some(path) = &buffer.file_path {
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                let clients = lsp_manager.clients.lock().unwrap();
+                if let Some(ext_clients) = clients.get(ext) {
+                    let names: Vec<_> = ext_clients.iter().map(|(_, _, name)| name.as_str()).collect();
+                    if names.is_empty() { "No LSP".to_string() } else { names.join(",") }
+                } else { "No LSP".to_string() }
+            } else { "No LSP".to_string() }
+        } else { "No LSP".to_string() };
+
+        let lsp_status_text = match &vim.lsp_status {
+            LspStatus::Loading | LspStatus::Installing | LspStatus::Formatting => format!(" {} {} ", vim.get_spinner(), lsp_name),
+            LspStatus::Ready => format!(" {} ", lsp_name),
+            LspStatus::Error(_) => format!(" LSP Error "),
+            _ => format!(" {} ", lsp_name),
+        };
+        right_spans.push(Span::styled(lsp_status_text, theme.get("StatusLineY")));
+
+        // Section Z: Position & Buffers
+        let total_lines = buffer.lines.len();
+        let percent = if total_lines > 0 { (cursor.y + 1) * 100 / total_lines } else { 0 };
+        let pos_text = format!(" {:>2}% {}:{} ", percent, cursor.y + 1, cursor.x + 1);
+        let buf_text = format!("(Buffer {}/{}) ", editor.active_idx + 1, editor.buffers.len());
+        right_spans.push(Span::styled(format!("{}{}", pos_text, buf_text), Style::default().fg(theme.palette.black).bg(mode_color).add_modifier(Modifier::BOLD)));
+
+        // Combine all
+        let left_width: usize = status_spans.iter().map(|s| s.content.chars().count()).sum();
+        let right_width: usize = right_spans.iter().map(|s| s.content.chars().count()).sum();
+        let filler_width = (root_chunks[1].width as usize).saturating_sub(left_width).saturating_sub(right_width);
+        
+        status_spans.truncate(status_spans.len() - 1); // Remove placeholder filler
+        status_spans.push(Span::styled(" ".repeat(filler_width), theme.get("StatusLine")));
+        status_spans.extend(right_spans);
         
         frame.render_widget(Paragraph::new(Line::from(status_spans)).style(theme.get("StatusLine")), root_chunks[1]);
 

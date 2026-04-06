@@ -45,3 +45,7 @@ pub const ERROR: &str = "󰅚";
 pub const WARNING: &str = "󰀪";
 pub const INFO: &str = "󰋽";
 pub const HINT: &str = "󰌶";
+pub const GIT_BRANCH: &str = "";
+pub const GIT_ADD: &str = "+";
+pub const GIT_MOD: &str = "~";
+pub const GIT_DEL: &str = "-";

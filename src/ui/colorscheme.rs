@@ -98,8 +98,23 @@ impl ColorScheme {
         hl.insert("StatusLineInsert".into(), Style::default().fg(palette.black).bg(palette.green).add_modifier(Modifier::BOLD));
         hl.insert("StatusLineVisual".into(), Style::default().fg(palette.black).bg(palette.purple).add_modifier(Modifier::BOLD));
         hl.insert("StatusLineCommand".into(), Style::default().fg(palette.black).bg(palette.yellow).add_modifier(Modifier::BOLD));
-        hl.insert("StatusLineFile".into(), Style::default().fg(palette.white).bg(palette.grey).add_modifier(Modifier::BOLD));
-        hl.insert("StatusLinePos".into(), Style::default().fg(palette.white).bg(palette.grey));
+        
+        hl.insert("StatusLineA".into(), Style::default().fg(palette.black).bg(palette.blue).add_modifier(Modifier::BOLD));
+        hl.insert("StatusLineB".into(), Style::default().fg(palette.white).bg(palette.grey));
+        hl.insert("StatusLineC".into(), Style::default().fg(palette.white).bg(palette.black2));
+        
+        hl.insert("StatusLineX".into(), Style::default().fg(palette.white).bg(palette.black2));
+        hl.insert("StatusLineY".into(), Style::default().fg(palette.white).bg(palette.grey));
+        hl.insert("StatusLineZ".into(), Style::default().fg(palette.black).bg(palette.blue).add_modifier(Modifier::BOLD));
+
+        hl.insert("StatusLineGitAdd".into(), Style::default().fg(palette.green).bg(palette.grey));
+        hl.insert("StatusLineGitMod".into(), Style::default().fg(palette.blue).bg(palette.grey));
+        hl.insert("StatusLineGitDel".into(), Style::default().fg(palette.red).bg(palette.grey));
+
+        hl.insert("StatusLineDiagnosticError".into(), Style::default().fg(palette.red).bg(palette.black2));
+        hl.insert("StatusLineDiagnosticWarn".into(), Style::default().fg(palette.yellow).bg(palette.black2));
+        hl.insert("StatusLineDiagnosticInfo".into(), Style::default().fg(palette.blue).bg(palette.black2));
+        hl.insert("StatusLineDiagnosticHint".into(), Style::default().fg(palette.purple).bg(palette.black2));
 
         // Explorer
         hl.insert("TreeExplorerRoot".into(), Style::default().fg(palette.green).add_modifier(Modifier::BOLD));

@@ -24,6 +24,14 @@ pub enum LspStatus {
 
 use ratatui::widgets::ListState;
 
+#[derive(Debug, Clone, Default)]
+pub struct GitInfo {
+    pub branch: String,
+    pub added: usize,
+    pub modified: usize,
+    pub removed: usize,
+}
+
 pub struct VimState {
     pub mode: mode::Mode,
     pub focus: mode::Focus,
@@ -56,6 +64,8 @@ pub struct VimState {
     pub count: Option<usize>,
     pub relative_number: bool,
     pub show_diagnostics: bool,
+    pub git_info: Option<GitInfo>,
+    pub last_git_update: Option<Instant>,
 }
 
 impl VimState {
@@ -101,6 +111,8 @@ impl VimState {
             count: None,
             relative_number: true,
             show_diagnostics: true,
+            git_info: None,
+            last_git_update: None,
         }
     }
 
