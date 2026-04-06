@@ -53,6 +53,9 @@ pub struct VimState {
     pub message_time: Option<Instant>,
     pub telescope: crate::ui::telescope::Telescope,
     pub project_root: std::path::PathBuf,
+    pub count: Option<usize>,
+    pub relative_number: bool,
+    pub show_diagnostics: bool,
 }
 
 impl VimState {
@@ -95,6 +98,9 @@ impl VimState {
             message_time: None,
             telescope: crate::ui::telescope::Telescope::new(),
             project_root,
+            count: None,
+            relative_number: true,
+            show_diagnostics: true,
         }
     }
 

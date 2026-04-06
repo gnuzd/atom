@@ -112,21 +112,52 @@ impl Editor {
         }
     }
 
+    pub fn get_screen_to_buffer_lines(&self) -> Vec<usize> {
+        let buffer = self.buffer();
+        let mut screen_to_buffer_lines = Vec::new();
+        let mut i = 0;
+        while i < buffer.lines.len() {
+            screen_to_buffer_lines.push(i);
+            if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == i) {
+                i = *end + 1;
+            } else {
+                i += 1;
+            }
+        }
+        screen_to_buffer_lines
+    }
+
     pub fn scroll_into_view(&mut self, height: usize) {
+        let screen_lines = self.get_screen_to_buffer_lines();
         let y = self.cursor().y;
         let mut scroll_y = self.cursor().scroll_y;
 
-        if y < scroll_y {
-            scroll_y = y;
-        } else if y >= scroll_y + height {
-            scroll_y = y - height + 1;
+        // Find cursor position in screen space
+        let screen_y = screen_lines.iter().position(|&idx| idx == y).unwrap_or(0);
+
+        if screen_y < scroll_y {
+            scroll_y = screen_y;
+        } else if screen_y >= scroll_y + height {
+            scroll_y = screen_y - height + 1;
         }
         self.cursor_mut().scroll_y = scroll_y;
     }
 
     pub fn move_up(&mut self) {
         if self.cursor().y > 0 {
-            self.cursor_mut().y -= 1;
+            let mut target_y = self.cursor().y - 1;
+            
+            // Jump over folded ranges if necessary
+            let buffer = self.buffer();
+            while target_y > 0 {
+                if let Some((start, _)) = buffer.folded_ranges.iter().find(|(s, e)| target_y > *s && target_y <= *e) {
+                    target_y = *start;
+                } else {
+                    break;
+                }
+            }
+
+            self.cursor_mut().y = target_y;
             let y = self.cursor().y;
             let line_len = self.buffer().lines[y].len();
             if self.cursor().x > line_len {
@@ -137,11 +168,25 @@ impl Editor {
 
     pub fn move_down(&mut self) {
         if self.cursor().y < self.buffer().lines.len() - 1 {
-            self.cursor_mut().y += 1;
-            let y = self.cursor().y;
-            let line_len = self.buffer().lines[y].len();
-            if self.cursor().x > line_len {
-                self.cursor_mut().x = line_len;
+            let mut target_y = self.cursor().y + 1;
+
+            // Jump over folded ranges if necessary
+            let buffer = self.buffer();
+            while target_y < buffer.lines.len() {
+                if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, e)| target_y > *s && target_y <= *e) {
+                    target_y = *end + 1;
+                } else {
+                    break;
+                }
+            }
+
+            if target_y < buffer.lines.len() {
+                self.cursor_mut().y = target_y;
+                let y = self.cursor().y;
+                let line_len = self.buffer().lines[y].len();
+                if self.cursor().x > line_len {
+                    self.cursor_mut().x = line_len;
+                }
             }
         }
     }
@@ -475,6 +520,64 @@ impl Editor {
         }
         self.cursor_mut().x = 0;
         yanked
+    }
+
+    pub fn toggle_fold(&mut self) {
+        let cursor_y = self.cursor().y;
+        let buffer = self.buffer_mut();
+        
+        // 1. If current line is already the start of a fold, unfold it
+        if let Some(pos) = buffer.folded_ranges.iter().position(|(start, _)| *start == cursor_y) {
+            buffer.folded_ranges.remove(pos);
+            return;
+        }
+
+        // 2. Try to find a block to fold starting from current line or searching upwards
+        let mut target_line = cursor_y;
+        
+        // Search upwards for a line containing an opening brace if current doesn't
+        if !buffer.lines[target_line].contains('{') {
+            for i in (0..cursor_y).rev() {
+                if buffer.lines[i].contains('{') {
+                    // Check if this block is already folded
+                    if buffer.folded_ranges.iter().any(|(s, e)| i >= *s && i <= *e) {
+                        continue;
+                    }
+                    target_line = i;
+                    break;
+                }
+            }
+        }
+
+        // Find matching closing brace
+        if let Some(line) = buffer.lines.get(target_line) {
+            if line.contains('{') {
+                let mut brace_count = 0;
+                let mut found_start = false;
+                for i in target_line..buffer.lines.len() {
+                    for c in buffer.lines[i].chars() {
+                        if c == '{' {
+                            brace_count += 1;
+                            found_start = true;
+                        } else if c == '}' {
+                            brace_count -= 1;
+                        }
+                        
+                        if found_start && brace_count == 0 {
+                            // Found the matching end line
+                            if i > target_line {
+                                buffer.folded_ranges.push((target_line, i));
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn unfold_all(&mut self) {
+        self.buffer_mut().folded_ranges.clear();
     }
 }
 

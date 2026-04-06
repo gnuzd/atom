@@ -7,6 +7,7 @@ pub struct Buffer {
     pub history: Vec<Vec<String>>,
     pub redo_stack: Vec<Vec<String>>,
     pub modified: bool,
+    pub folded_ranges: Vec<(usize, usize)>,
 }
 
 impl Buffer {
@@ -17,6 +18,7 @@ impl Buffer {
             history: Vec::new(),
             redo_stack: Vec::new(),
             modified: false,
+            folded_ranges: Vec::new(),
         }
     }
 
@@ -34,6 +36,7 @@ impl Buffer {
             history: Vec::new(),
             redo_stack: Vec::new(),
             modified: false,
+            folded_ranges: Vec::new(),
         })
     }
 

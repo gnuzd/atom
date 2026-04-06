@@ -88,6 +88,9 @@ impl ColorScheme {
         hl.insert("Type".into(), Style::default().fg(palette.yellow));
         hl.insert("Variable".into(), Style::default().fg(palette.white));
         hl.insert("Identifier".into(), Style::default().fg(palette.red));
+        hl.insert("Tag".into(), Style::default().fg(palette.orange));
+        hl.insert("Attribute".into(), Style::default().fg(palette.cyan));
+        hl.insert("Property".into(), Style::default().fg(palette.blue));
 
         // Statusline
         hl.insert("StatusLine".into(), Style::default().fg(palette.white).bg(palette.black2));

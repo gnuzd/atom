@@ -1,4 +1,4 @@
-use ratatui::style::{Style, Modifier};
+use ratatui::style::Style;
 use crate::ui::colorscheme::ColorScheme;
 
 pub struct Highlighter {
@@ -26,55 +26,83 @@ impl Highlighter {
             if chars[i] == '/' && i + 1 < chars.len() && chars[i+1] == '/' {
                 let style = self.theme.get("Comment");
                 for j in i..chars.len() { styles[j] = style; }
-                
-                // Highlight TODOs in comments
-                let comment_text: String = chars[i..].iter().collect();
-                let todo_keywords = ["TODO", "FIXME", "BUG", "HACK", "NOTE"];
-                for keyword in todo_keywords {
-                    if let Some(pos) = comment_text.find(keyword) {
-                        let keyword_style = match keyword {
-                            "TODO" => self.theme.get("Function"),
-                            "FIXME" | "BUG" => self.theme.get("Identifier"),
-                            "HACK" => self.theme.get("Keyword"),
-                            _ => self.theme.get("Type"),
-                        }.add_modifier(Modifier::BOLD);
-                        
-                        for j in 0..keyword.len() {
-                            if i + pos + j < styles.len() {
-                                styles[i + pos + j] = keyword_style;
-                            }
-                        }
-                    }
-                }
                 break;
             }
 
-            // Strings
+            // Strings (Highest priority after comments)
             if chars[i] == '"' || chars[i] == '\'' || chars[i] == '`' {
                 let quote = chars[i];
-                styles[i] = self.theme.get("String");
+                let style = self.theme.get("String");
+                styles[i] = style;
                 i += 1;
                 while i < chars.len() && chars[i] != quote {
                     if chars[i] == '\\' && i + 1 < chars.len() {
-                        styles[i] = self.theme.get("Constant");
-                        styles[i+1] = self.theme.get("Constant");
+                        styles[i] = style;
+                        styles[i+1] = style;
                         i += 2;
                     } else {
-                        styles[i] = self.theme.get("String");
+                        styles[i] = style;
                         i += 1;
                     }
                 }
                 if i < chars.len() {
-                    styles[i] = self.theme.get("String");
+                    styles[i] = style;
                     i += 1;
                 }
                 continue;
             }
 
+            // Basic HTML/XML Tag and Attribute Highlighting
+            if chars[i] == '<' {
+                let j = i + 1;
+                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '/' || chars[j] == '!') {
+                    styles[i] = self.theme.get("Keyword"); // <
+                    i += 1;
+                    
+                    // Parse tag name
+                    let start = i;
+                    while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == ':' || chars[i] == '-' || chars[i] == '/') {
+                        i += 1;
+                    }
+                    let tag_name_style = self.theme.get("Tag");
+                    for k in start..i { styles[k] = tag_name_style; }
+
+                    // Parse attributes
+                    while i < chars.len() && chars[i] != '>' {
+                        if chars[i].is_alphabetic() {
+                            let attr_start = i;
+                            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '-') {
+                                i += 1;
+                            }
+                            let attr_style = self.theme.get("Attribute");
+                            for k in attr_start..i { styles[k] = attr_style; }
+                        } else if chars[i] == '"' || chars[i] == '\'' {
+                            // Re-use string logic inside tag
+                            let quote = chars[i];
+                            let s_style = self.theme.get("String");
+                            styles[i] = s_style;
+                            i += 1;
+                            while i < chars.len() && chars[i] != quote {
+                                styles[i] = s_style;
+                                i += 1;
+                            }
+                            if i < chars.len() { styles[i] = s_style; i += 1; }
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    if i < chars.len() && chars[i] == '>' {
+                        styles[i] = self.theme.get("Keyword");
+                        i += 1;
+                    }
+                    continue;
+                }
+            }
+
             // Numbers
             if chars[i].is_ascii_digit() {
                 let style = self.theme.get("Constant");
-                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == '_' || chars[i] == 'x' || chars[i] == 'b' || chars[i] == 'o' || (chars[i] >= 'a' && chars[i] <= 'f') || (chars[i] >= 'A' && chars[i] <= 'F')) {
+                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == 'x') {
                     styles[i] = style;
                     i += 1;
                 }
@@ -82,26 +110,26 @@ impl Highlighter {
             }
 
             // Words (Keywords, Types, Functions, etc.)
-            if chars[i].is_alphabetic() || chars[i] == '_' || chars[i] == '$' {
+            if chars[i].is_alphabetic() || chars[i] == '_' || chars[i] == '$' || chars[i] == '@' || chars[i] == '#' {
                 let start = i;
-                while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '$') {
+                while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '$' || chars[i] == '@' || chars[i] == '#') {
                     i += 1;
                 }
                 let word: String = chars[start..i].iter().collect();
                 
                 let mut style = self.theme.get("Normal");
                 if keywords.contains(&word.as_str()) {
-                    style = self.theme.get("Keyword");
+                    style = self.theme.get("Identifier"); // Using red for keywords as per screenshot
+                } else if word.starts_with('$') || word.starts_with('@') || word.starts_with('#') {
+                    style = self.theme.get("Identifier");
                 } else if builtins.contains(&word.as_str()) {
-                    style = self.theme.get("Function");
+                    style = self.theme.get("Type");
                 } else if types.contains(&word.as_str()) {
                     style = self.theme.get("Type");
                 } else if chars.get(i) == Some(&'(') {
                     style = self.theme.get("Function");
                 } else if word.chars().next().unwrap().is_uppercase() {
-                    style = self.theme.get("Type");
-                } else if word.to_uppercase() == word && word.len() > 1 && word.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    style = self.theme.get("Constant");
+                    style = self.theme.get("Tag"); // Components like <Header />
                 }
 
                 for j in start..i { styles[j] = style; }
@@ -111,7 +139,7 @@ impl Highlighter {
             // Symbols
             let symbols = ['=', '+', '-', '*', '/', '%', '<', '>', '&', '|', '^', '!', '?', ':', ';', ',', '.', '(', ')', '[', ']', '{', '}'];
             if symbols.contains(&chars[i]) {
-                styles[i] = self.theme.get("Keyword"); // Using Keyword color for symbols often looks good
+                styles[i] = self.theme.get("Normal");
                 i += 1;
                 continue;
             }

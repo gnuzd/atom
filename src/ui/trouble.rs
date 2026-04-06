@@ -71,21 +71,23 @@ impl TroubleList {
         self.items.get(self.selected_idx)
     }
 
-    pub fn update_from_lsp(&mut self, diagnostics: &HashMap<Url, Vec<Diagnostic>>, todos: Vec<TroubleItem>) {
+    pub fn update_from_lsp(&mut self, diagnostics: &HashMap<Url, HashMap<String, Vec<Diagnostic>>>, todos: Vec<TroubleItem>) {
         let mut new_items = Vec::new();
 
         // Add LSP diagnostics
-        for (url, diags) in diagnostics {
+        for (url, server_diags) in diagnostics {
             if let Ok(path) = url.to_file_path() {
-                for diag in diags {
-                    new_items.push(TroubleItem {
-                        path: path.clone(),
-                        line: diag.range.start.line as usize,
-                        col: diag.range.start.character as usize,
-                        message: diag.message.clone(),
-                        severity: diag.severity,
-                        item_type: TroubleType::Diagnostic(diag.clone()),
-                    });
+                for diags in server_diags.values() {
+                    for diag in diags {
+                        new_items.push(TroubleItem {
+                            path: path.clone(),
+                            line: diag.range.start.line as usize,
+                            col: diag.range.start.character as usize,
+                            message: diag.message.clone(),
+                            severity: diag.severity,
+                            item_type: TroubleType::Diagnostic(diag.clone()),
+                        });
+                    }
                 }
             }
         }
@@ -172,10 +174,21 @@ impl TroubleList {
             };
 
             let line_text = format!("  {:>3}:{:>2} ", item.line + 1, item.col + 1);
+            let mut message = item.message.clone();
+            if let TroubleType::Diagnostic(diag) = &item.item_type {
+                if let Some(code) = &diag.code {
+                    let code_str = match code {
+                        lsp_types::NumberOrString::Number(n) => n.to_string(),
+                        lsp_types::NumberOrString::String(s) => s.clone(),
+                    };
+                    message = format!("{} [{}]", message, code_str);
+                }
+            }
+
             let spans = vec![
                 Span::styled(line_text, theme.get("LineNr")),
                 Span::styled(format!("{} ", icon), icon_style),
-                Span::styled(&item.message, theme.get("Normal")),
+                Span::styled(message, theme.get("Normal")),
             ];
 
             list_items.push(ListItem::new(Line::from(spans)).style(style));

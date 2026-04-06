@@ -8,6 +8,25 @@ use crate::lsp::client::LspClient;
 use lsp_types::*;
 use std::process::Command;
 
+#[derive(serde::Deserialize)]
+struct EslintMessage {
+    line: u32,
+    column: u32,
+    #[serde(rename = "endLine")]
+    end_line: Option<u32>,
+    #[serde(rename = "endColumn")]
+    end_column: Option<u32>,
+    severity: i32,
+    message: String,
+    #[serde(rename = "ruleId")]
+    rule_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct EslintResult {
+    messages: Vec<EslintMessage>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageKind {
     Lsp,
@@ -81,6 +100,14 @@ pub const PACKAGES: &[Package] = &[
         description: "Fast ESLint daemon",
         install_cmd: "npm",
         install_args: &["install", "eslint_d"],
+    },
+    Package {
+        name: "eslint-lsp",
+        cmd: "vscode-eslint-language-server",
+        kind: PackageKind::Lsp,
+        description: "ESLint Language Server",
+        install_cmd: "npm",
+        install_args: &["install", "vscode-langservers-extracted"],
     },
     Package {
         name: "tailwindcss-language-server",
@@ -164,8 +191,8 @@ pub enum ClientState {
 
 #[derive(Clone)]
 pub struct LspManager {
-    pub clients: Arc<Mutex<HashMap<String, (LspClient, ClientState)>>>,
-    pub diagnostics: Arc<Mutex<HashMap<Url, Vec<Diagnostic>>>>,
+    pub clients: Arc<Mutex<HashMap<String, Vec<(LspClient, ClientState, String)>>>>,
+    pub diagnostics: Arc<Mutex<HashMap<Url, HashMap<String, Vec<Diagnostic>>>>>,
     pub failed_exts: Arc<Mutex<HashSet<String>>>,
     pub installed_cache: Arc<Mutex<HashMap<String, bool>>>,
     pub installing: Arc<Mutex<HashSet<String>>>,
@@ -208,7 +235,7 @@ impl LspManager {
     }
 
     pub fn is_ready(&self, ext: &str) -> bool {
-        self.clients.lock().unwrap().get(ext).map(|(_, s)| *s == ClientState::Ready).unwrap_or(false)
+        self.clients.lock().unwrap().get(ext).map(|clients| clients.iter().any(|(_, s, _)| *s == ClientState::Ready)).unwrap_or(false)
     }
 
     pub fn is_managed(&self, server_cmd: &str) -> bool {
@@ -241,7 +268,7 @@ impl LspManager {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
-        
+
         self.installed_cache.lock().unwrap().insert(server_cmd.to_string(), status);
         status
     }
@@ -250,20 +277,26 @@ impl LspManager {
         !self.installing.lock().unwrap().is_empty()
     }
 
-    pub fn get_server_command(&self, ext: &str) -> Option<(&'static str, &'static [&'static str])> {
+    pub fn get_server_commands(&self, ext: &str) -> Vec<(&'static str, &'static [&'static str])> {
+        let mut servers = Vec::new();
         match ext {
-            "rs" => Some(("rust-analyzer", &[])),
-            "py" => Some(("pyright-langserver", &["--stdio"])),
+            "rs" => servers.push(("rust-analyzer", &[] as &[&str])),
+            "py" => servers.push(("pyright-langserver", &["--stdio"])),
             "js" | "ts" | "jsx" | "tsx" => {
                 if self.is_installed("vtsls") {
-                    Some(("vtsls", &["--stdio"]))
+                    servers.push(("vtsls", &["--stdio"]));
                 } else {
-                    Some(("typescript-language-server", &["--stdio"]))
+                    servers.push(("typescript-language-server", &["--stdio"]));
+                }
+
+                if self.is_installed("eslint-lsp") {
+                    servers.push(("vscode-eslint-language-server", &["--stdio"]));
                 }
             }
-            "svelte" => Some(("svelteserver", &["--stdio"])),
-            _ => None,
+            "svelte" => servers.push(("svelteserver", &["--stdio"])),
+            _ => {}
         }
+        servers
     }
 
     pub fn get_install_command(server_cmd: &str) -> Option<(&'static str, Vec<String>)> {
@@ -307,8 +340,7 @@ impl LspManager {
                     }
                     self.installed_cache.lock().unwrap().insert(server_cmd.to_string(), true);
                     return Ok(());
-                }
- else {
+                } else {
                     return Err(format!("Installation failed with status: {}", status).into());
                 }
             }
@@ -319,10 +351,20 @@ impl LspManager {
     }
 
     pub fn start_client(&mut self, ext: &str, root_path: std::path::PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-        if self.clients.lock().unwrap().contains_key(ext) { return Ok(()); }
         if self.failed_exts.lock().unwrap().contains(ext) { return Err("Already failed".into()); }
 
-        if let Some((cmd, args)) = self.get_server_command(ext) {
+        let commands = self.get_server_commands(ext);
+        for (cmd, args) in commands {
+            // Check if this specific command is already running for this extension
+            {
+                let clients = self.clients.lock().unwrap();
+                if let Some(ext_clients) = clients.get(ext) {
+                    if ext_clients.iter().any(|(_, _, c)| c == cmd) {
+                        continue;
+                    }
+                }
+            }
+
             let local_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(cmd);
             let final_cmd = if local_bin.exists() {
                 local_bin.to_string_lossy().to_string()
@@ -332,66 +374,109 @@ impl LspManager {
 
             match LspClient::start(&final_cmd, args) {
                 Ok(client) => {
-                    let root_uri = Url::from_directory_path(root_path).unwrap();
+                    let root_uri = Url::from_directory_path(&root_path).unwrap();
                     client.send_initialize(root_uri)?;
-                    self.clients.lock().unwrap().insert(ext.to_string(), (client, ClientState::Starting));
+                    let mut clients = self.clients.lock().unwrap();
+                    clients.entry(ext.to_string()).or_default().push((client, ClientState::Starting, cmd.to_string()));
                 }
                 Err(e) => {
-                    self.failed_exts.lock().unwrap().insert(ext.to_string());
-                    return Err(e);
+                    // Don't mark extension as failed if only one server fails (e.g. eslint_d fails but typescript-lsp works)
+                    // Unless it's the only server.
+                    // For now let's just log or ignore.
+                    eprintln!("Failed to start LSP {}: {}", cmd, e);
                 }
             }
         }
         Ok(())
     }
 
-    pub fn did_open(&self, ext: &str, path: &Path, text: String) -> Result<(), Box<dyn std::error::Error>> {
-        let clients = self.clients.lock().unwrap();
-        if let Some((client, _)) = clients.get(ext) {
-            let params = DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: Url::from_file_path(path).unwrap(),
-                    language_id: match ext {
-                        "rs" => "rust",
-                        "py" => "python",
-                        "js" => "javascript",
-                        "ts" => "typescript",
-                        "jsx" => "javascriptreact",
-                        "tsx" => "typescriptreact",
-                        "svelte" => "svelte",
-                        _ => ext,
-                    }.to_string(),
-                    version: 0,
-                    text,
-                },
-            };
-            client.send_notification("textDocument/didOpen", params)?;
+
+    fn path_to_uri(path: &Path) -> Url {
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap_or_default().join(path)
+        };
+        Url::from_file_path(abs_path).unwrap_or_else(|_| Url::parse("file:///").unwrap())
+    }
+
+    pub fn did_open(&self, ext: &str, path: &Path, text: String, target_cmd: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let clients_lock = self.clients.lock().unwrap();
+        if let Some(clients) = clients_lock.get(ext) {
+            for (client, state, cmd) in clients {
+                if *state != ClientState::Ready { continue; }
+                if let Some(target) = target_cmd {
+                    if target != cmd { continue; }
+                }
+                
+                let params = DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: Self::path_to_uri(path),
+                        language_id: match ext {
+                            "rs" => "rust",
+                            "py" => "python",
+                            "js" => "javascript",
+                            "ts" => "typescript",
+                            "jsx" => "javascriptreact",
+                            "tsx" => "typescriptreact",
+                            "svelte" => "svelte",
+                            _ => ext,
+                        }.to_string(),
+                        version: 0,
+                        text: text.clone(),
+                    },
+                };
+                let _ = client.send_notification("textDocument/didOpen", params);
+            }
         }
+        self.refresh_linters(ext, path, &text);
         Ok(())
     }
 
     pub fn did_change(&self, ext: &str, path: &Path, text: String) -> Result<(), Box<dyn std::error::Error>> {
-        let clients = self.clients.lock().unwrap();
-        if let Some((client, state)) = clients.get(ext) {
-            if *state != ClientState::Ready { return Ok(()); }
-            
+        let clients_lock = self.clients.lock().unwrap();
+        if let Some(clients) = clients_lock.get(ext) {
             let mut versions = self.versions.lock().unwrap();
             let version = versions.entry(path.to_string_lossy().to_string()).or_insert(0);
             *version += 1;
 
-            let params = DidChangeTextDocumentParams {
-                text_document: VersionedTextDocumentIdentifier {
-                    uri: Url::from_file_path(path).unwrap(),
-                    version: *version,
-                },
-                content_changes: vec![TextDocumentContentChangeEvent {
-                    range: None,
-                    range_length: None,
-                    text,
-                }],
-            };
-            client.send_notification("textDocument/didChange", params)?;
+            for (client, state, _) in clients {
+                if *state != ClientState::Ready { continue; }
+                
+                let params = DidChangeTextDocumentParams {
+                    text_document: VersionedTextDocumentIdentifier {
+                        uri: Self::path_to_uri(path),
+                        version: *version,
+                    },
+                    content_changes: vec![TextDocumentContentChangeEvent {
+                        range: None,
+                        range_length: None,
+                        text: text.clone(),
+                    }],
+                };
+                let _ = client.send_notification("textDocument/didChange", params);
+            }
         }
+        self.refresh_linters(ext, path, &text);
+        Ok(())
+    }
+
+    pub fn did_save(&self, ext: &str, path: &Path, text: String) -> Result<(), Box<dyn std::error::Error>> {
+        let clients_lock = self.clients.lock().unwrap();
+        if let Some(clients) = clients_lock.get(ext) {
+            for (client, state, _) in clients {
+                if *state != ClientState::Ready { continue; }
+
+                let params = DidSaveTextDocumentParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: Self::path_to_uri(path),
+                    },
+                    text: None,
+                };
+                let _ = client.send_notification("textDocument/didSave", params);
+            }
+        }
+        self.refresh_linters(ext, path, &text);
         Ok(())
     }
 
@@ -510,37 +595,113 @@ impl LspManager {
         Some(Err(last_err))
     }
 
-    pub fn request_completions(&self, ext: &str, path: &Path, line: usize, character: usize, trigger_kind: CompletionTriggerKind, trigger_char: Option<String>) -> Result<i32, Box<dyn std::error::Error>> {
-        let clients = self.clients.lock().unwrap();
-        if let Some((client, state)) = clients.get(ext) {
-            if *state != ClientState::Ready { return Err("LSP not ready".into()); }
-            let id = {
-                let mut counter = self.id_counter.lock().unwrap();
-                let val = *counter;
-                *counter += 1;
-                val
-            };
-            let params = CompletionParams {
-                text_document_position: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: Url::from_file_path(path).unwrap(),
-                    },
-                    position: lsp_types::Position {
-                        line: line as u32,
-                        character: character as u32,
-                    },
-                },
-                work_done_progress_params: Default::default(),
-                partial_result_params: Default::default(),
-                context: Some(CompletionContext {
-                    trigger_kind,
-                    trigger_character: trigger_char,
-                }),
-            };
-            client.send_request(id, "textDocument/completion", params)?;
-            return Ok(id);
+    pub fn refresh_linters(&self, ext: &str, path: &Path, text: &str) {
+        match ext {
+            "js" | "ts" | "jsx" | "tsx" => {
+                if self.is_installed("eslint_d") {
+                    let diags = self.run_eslint_d(path, text);
+                    let uri = Self::path_to_uri(path);
+                    let mut diagnostics = self.diagnostics.lock().unwrap();
+                    let file_diags = diagnostics.entry(uri).or_default();
+                    file_diags.insert("eslint_d".to_string(), diags);
+                }
+            }
+            _ => {}
         }
-        Err("No LSP client".into())
+    }
+
+    fn run_eslint_d(&self, path: &Path, text: &str) -> Vec<Diagnostic> {
+        let local_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join("eslint_d");
+        let cmd = if local_bin.exists() {
+            local_bin.to_string_lossy().to_string()
+        } else {
+            "eslint_d".to_string()
+        };
+
+        let mut child = if let Ok(c) = Command::new(cmd)
+            .args(&["--stdin", "--stdin-filename", path.to_str().unwrap_or(""), "--format", "json"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn() { c } else { return Vec::new(); };
+
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = std::io::Write::write_all(&mut stdin, text.as_bytes());
+        }
+
+        let output = if let Ok(o) = child.wait_with_output() { o } else { return Vec::new(); };
+        if !output.status.success() && output.stdout.is_empty() { return Vec::new(); }
+
+        let results: Vec<EslintResult> = if let Ok(r) = serde_json::from_slice(&output.stdout) { r } else { return Vec::new(); };
+        
+        let mut diagnostics = Vec::new();
+        for result in results {
+            for msg in result.messages {
+                let range = Range {
+                    start: lsp_types::Position {
+                        line: msg.line.saturating_sub(1),
+                        character: msg.column.saturating_sub(1),
+                    },
+                    end: lsp_types::Position {
+                        line: msg.end_line.unwrap_or(msg.line).saturating_sub(1),
+                        character: msg.end_column.unwrap_or(msg.column + 1).saturating_sub(1),
+                    },
+                };
+
+                let severity = match msg.severity {
+                    1 => Some(DiagnosticSeverity::WARNING),
+                    2 => Some(DiagnosticSeverity::ERROR),
+                    _ => Some(DiagnosticSeverity::INFORMATION),
+                };
+
+                diagnostics.push(Diagnostic {
+                    range,
+                    severity,
+                    code: msg.rule_id.map(|id| NumberOrString::String(id)),
+                    source: Some("eslint".to_string()),
+                    message: msg.message,
+                    related_information: None,
+                    tags: None,
+                    data: None,
+                    code_description: None,
+                });
+            }
+        }
+        diagnostics
+    }
+
+    pub fn request_completions(&self, ext: &str, path: &Path, line: usize, character: usize, trigger_kind: CompletionTriggerKind, trigger_char: Option<String>) -> Result<i32, Box<dyn std::error::Error>> {
+        let clients_lock = self.clients.lock().unwrap();
+        if let Some(clients) = clients_lock.get(ext) {
+            if let Some((client, state, _)) = clients.iter().find(|(_, s, _)| *s == ClientState::Ready) {
+                let id = {
+                    let mut counter = self.id_counter.lock().unwrap();
+                    let val = *counter;
+                    *counter += 1;
+                    val
+                };
+                let params = CompletionParams {
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier {
+                            uri: Self::path_to_uri(path),
+                        },
+                        position: lsp_types::Position {
+                            line: line as u32,
+                            character: character as u32,
+                        },
+                    },
+                    work_done_progress_params: Default::default(),
+                    partial_result_params: Default::default(),
+                    context: Some(CompletionContext {
+                        trigger_kind,
+                        trigger_character: trigger_char,
+                    }),
+                };
+                client.send_request(id, "textDocument/completion", params)?;
+                return Ok(id);
+            }
+        }
+        Err("No ready LSP client".into())
     }
 }
 

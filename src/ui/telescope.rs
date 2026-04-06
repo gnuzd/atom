@@ -391,7 +391,13 @@ impl Telescope {
                         spans.push(Span::styled(" ", style));
                     }
                 } else {
-                    spans.push(Span::styled(c.to_string(), style));
+                    // Indent guide logic for non-tab characters
+                    let is_indent_pos = x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
+                    if is_indent_pos {
+                        spans.push(Span::styled("┆", theme.get("Comment").add_modifier(Modifier::DIM)));
+                    } else {
+                        spans.push(Span::styled(c.to_string(), style));
+                    }
                 }
             }
             if line.is_empty() {
