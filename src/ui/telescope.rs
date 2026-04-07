@@ -75,7 +75,7 @@ impl Telescope {
 
     fn search_themes(&mut self) {
         self.results.clear();
-        let themes = vec!["catppuccin", "gruvbox-material"];
+        let themes = vec!["catppuccin", "gruvbox-material", "ayu-dark", "onedark"];
         let query_lower = self.query.to_lowercase();
         for theme in themes {
             if self.query.is_empty() || theme.to_lowercase().contains(&query_lower) {

@@ -816,7 +816,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 match vim.telescope.kind {
                                     vim::mode::TelescopeKind::Themes => {
                                         let new_theme_name = result.path.to_string_lossy().to_string();
-                                        editor.highlighter.theme = crate::ui::colorscheme::ColorScheme::new(&new_theme_name);
+                                        editor.set_theme(&new_theme_name);
                                         vim.config.colorscheme = new_theme_name;
                                         let _ = vim.config.save();
                                     }
@@ -1634,7 +1634,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     "colorscheme" | "colo" => {
                                         if cmd_parts.len() > 1 {
                                             let new_theme_name = &cmd_parts[1];
-                                            editor.highlighter.theme = crate::ui::colorscheme::ColorScheme::new(new_theme_name);
+                                            editor.set_theme(new_theme_name);
                                             vim.config.colorscheme = new_theme_name.clone();
                                             let _ = vim.config.save();
                                             vim.set_message(format!("Colorscheme set to {}", new_theme_name));

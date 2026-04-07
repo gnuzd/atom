@@ -22,39 +22,75 @@ impl Palette {
     pub fn catppuccin() -> Self {
         Self {
             white: Color::Rgb(217, 224, 238),
-            darker_black: Color::Rgb(22, 22, 34),
-            black: Color::Rgb(30, 30, 46),
-            black2: Color::Rgb(24, 24, 37),
-            grey: Color::Rgb(49, 50, 68),
-            grey_fg: Color::Rgb(88, 91, 112),
+            darker_black: Color::Rgb(25, 24, 40),
+            black: Color::Rgb(30, 29, 45),
+            black2: Color::Rgb(40, 39, 55),
+            grey: Color::Rgb(47, 46, 62),
+            grey_fg: Color::Rgb(56, 55, 71),
             red: Color::Rgb(243, 139, 168),
-            green: Color::Rgb(166, 227, 161),
-            yellow: Color::Rgb(249, 226, 175),
+            green: Color::Rgb(171, 233, 179),
+            yellow: Color::Rgb(250, 227, 176),
             blue: Color::Rgb(137, 180, 250),
             purple: Color::Rgb(203, 166, 247),
             cyan: Color::Rgb(137, 220, 235),
-            orange: Color::Rgb(250, 179, 135),
+            orange: Color::Rgb(248, 189, 150),
         }
     }
 
     pub fn gruvbox_material() -> Self {
         Self {
-            white: Color::Rgb(212, 190, 152),
-            darker_black: Color::Rgb(29, 32, 33),
-            black: Color::Rgb(40, 40, 40),
-            black2: Color::Rgb(50, 48, 47),
-            grey: Color::Rgb(124, 111, 100),
-            grey_fg: Color::Rgb(146, 131, 116),
-            red: Color::Rgb(234, 105, 98),
+            white: Color::Rgb(199, 184, 157),
+            darker_black: Color::Rgb(26, 29, 30),
+            black: Color::Rgb(30, 33, 34),
+            black2: Color::Rgb(44, 47, 48),
+            grey: Color::Rgb(54, 57, 58),
+            grey_fg: Color::Rgb(64, 67, 68),
+            red: Color::Rgb(236, 107, 100),
             green: Color::Rgb(169, 182, 101),
-            yellow: Color::Rgb(216, 166, 94),
+            yellow: Color::Rgb(224, 192, 128),
             blue: Color::Rgb(125, 174, 163),
             purple: Color::Rgb(211, 134, 155),
-            cyan: Color::Rgb(137, 180, 130),
+            cyan: Color::Rgb(134, 177, 127),
             orange: Color::Rgb(231, 138, 78),
         }
     }
-}
+
+    pub fn ayu_dark() -> Self {
+        Self {
+            white: Color::Rgb(191, 198, 212), // base05/base07 mix
+            darker_black: Color::Rgb(11, 14, 20),
+            black: Color::Rgb(11, 14, 20),   // base00
+            black2: Color::Rgb(28, 31, 37),  // base01
+            grey: Color::Rgb(36, 39, 45),    // base02
+            grey_fg: Color::Rgb(43, 46, 52), // base03
+            red: Color::Rgb(240, 113, 116),  // base0D in ayu is red-ish
+            green: Color::Rgb(170, 216, 76),
+            yellow: Color::Rgb(255, 238, 153),
+            blue: Color::Rgb(86, 195, 249),
+            purple: Color::Rgb(255, 180, 84),
+            cyan: Color::Rgb(149, 230, 203),
+            orange: Color::Rgb(255, 180, 84),
+        }
+    }
+
+    pub fn onedark() -> Self {
+        Self {
+            white: Color::Rgb(171, 178, 191), // base05
+            darker_black: Color::Rgb(27, 31, 39),
+            black: Color::Rgb(30, 34, 42),    // base00
+            black2: Color::Rgb(37, 41, 49),   // base01 (#252931)
+            grey: Color::Rgb(84, 88, 98),     // base03
+            grey_fg: Color::Rgb(86, 92, 100), // base04
+            red: Color::Rgb(224, 108, 117),
+            green: Color::Rgb(152, 195, 121),
+            yellow: Color::Rgb(229, 192, 123),
+            blue: Color::Rgb(97, 175, 239),
+            purple: Color::Rgb(198, 120, 221),
+            cyan: Color::Rgb(86, 182, 194),
+            orange: Color::Rgb(209, 154, 102),
+        }
+    }
+    }
 
 #[derive(Debug, Clone)]
 pub struct ColorScheme {
@@ -66,6 +102,8 @@ impl ColorScheme {
     pub fn new(name: &str) -> Self {
         let palette = match name {
             "gruvbox-material" => Palette::gruvbox_material(),
+            "ayu-dark" => Palette::ayu_dark(),
+            "onedark" => Palette::onedark(),
             _ => Palette::catppuccin(),
         };
 

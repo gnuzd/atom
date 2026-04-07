@@ -70,6 +70,14 @@ impl Editor {
         self.last_syntax_text = text;
     }
 
+    pub fn set_theme(&mut self, name: &str) {
+        let theme = crate::ui::colorscheme::ColorScheme::new(name);
+        self.highlighter.theme = theme;
+        // Reset last_syntax_text to force a refresh even if content hasn't changed
+        self.last_syntax_text = String::new();
+        self.refresh_syntax();
+    }
+
     pub fn buffer(&self) -> &buffer::Buffer {
         &self.buffers[self.active_idx]
     }

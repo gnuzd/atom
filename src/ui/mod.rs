@@ -797,8 +797,9 @@ impl TerminalUi {
                     }
 
                     // Apply CursorLine background to character if it's the current line
-                    if is_current_line && style.bg.is_none() {
-                        style = style.bg(theme.palette.black2);
+                    // Removed: manual background application to style
+                    if is_current_line && style.bg == Some(theme.palette.black) {
+                        style.bg = None;
                     }
 
                     if c == '\t' {
@@ -809,8 +810,7 @@ impl TerminalUi {
                         // Indent guide logic for non-tab characters
                         let is_indent_pos = x > 0 && x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
                         if is_indent_pos {
-                            let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
-                            indent_style.bg = style.bg; // Keep the same background as current character would have
+                            let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
                             spans.push(Span::styled("┆", indent_style));
                         } else {
                             spans.push(Span::styled(c.to_string(), style));
@@ -819,9 +819,7 @@ impl TerminalUi {
                 }
             }
             if line.is_empty() { 
-                let mut style = theme.get("Normal");
-                if is_current_line { style = style.bg(theme.palette.black2); }
-                spans.push(Span::styled(" ", style)); 
+                spans.push(Span::styled(" ", theme.get("Normal"))); 
             }
 
             // Indent Blankline Visualization for totally empty lines
@@ -839,11 +837,9 @@ impl TerminalUi {
                 if prev_indent > 0 {
                     let mut new_spans = Vec::new();
                     let indent_char = "┆";
-                    let mut base_style = theme.get("Normal");
-                    if is_current_line { base_style = base_style.bg(theme.palette.black2); }
+                    let base_style = theme.get("Normal");
                     
-                    let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
-                    indent_style.bg = base_style.bg;
+                    let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
                     
                     for j in 0..prev_indent {
                         if j > 0 && j % 2 == 0 {
