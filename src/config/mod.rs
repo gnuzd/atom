@@ -8,10 +8,16 @@ pub struct Config {
     pub disable_autoformat: bool,
     #[serde(default = "default_colorscheme")]
     pub colorscheme: String,
+    #[serde(default = "default_wrap")]
+    pub wrap: bool,
 }
 
 fn default_colorscheme() -> String {
     "gruvbox-material".to_string()
+}
+
+fn default_wrap() -> bool {
+    true
 }
 
 impl Config {
@@ -19,6 +25,7 @@ impl Config {
         Self {
             disable_autoformat: false,
             colorscheme: default_colorscheme(),
+            wrap: true,
         }
     }
 

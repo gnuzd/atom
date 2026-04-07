@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect, Margin},
     style::{Modifier, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, BorderType, List, ListItem, Padding, Paragraph, Clear},
+    widgets::{Block, Borders, BorderType, List, ListItem, Padding, Paragraph, Clear, Table, Row, Cell},
     Frame,
 };
 use lsp_types::DiagnosticSeverity;
@@ -239,32 +239,51 @@ impl TerminalUi {
         theme: &crate::ui::colorscheme::ColorScheme,
     ) {
         let area = frame.area();
-        let width = 50;
-        let height = 25;
-        let x = area.width.saturating_sub(width + 2);
-        let y = area.height.saturating_sub(height + 2);
-        let keymap_area = Rect { x, y, width, height: height.min(area.height - 2) };
+        let width = (area.width as f32 * 0.4) as u16;
+        let height = (area.height as f32 * 0.6) as u16;
+        let keymap_area = Rect { 
+            x: (area.width - width) / 2, 
+            y: (area.height - height) / 2, 
+            width, 
+            height 
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(" Keymaps Help ")
-            .border_style(theme.get("TreeExplorerConnector"))
+            .border_style(theme.get("Keyword"))
             .style(theme.get("Normal"));
         
         frame.render_widget(Clear, keymap_area);
         frame.render_widget(block, keymap_area);
 
         let inner_area = keymap_area.inner(Margin { horizontal: 2, vertical: 1 });
-        
-        let mut items = Vec::new();
-        let header_style = Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.blue);
-        let key_style = theme.get("Keyword");
-        let desc_style = theme.get("Normal");
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Filter
+                Constraint::Length(1), // Divider
+                Constraint::Min(1),    // List
+            ])
+            .split(inner_area);
 
-        // Normal Mode
-        items.push(ListItem::new(Line::from(vec![Span::styled("--- NORMAL ---", header_style)])));
-        let normal_keys = [
+        // Filter
+        let filter_prompt = " Filter: ";
+        frame.render_widget(Paragraph::new(Line::from(vec![
+            Span::styled(filter_prompt, theme.get("Comment")),
+            Span::styled(&vim.keymap_filter, theme.get("Normal")),
+        ])), chunks[0]);
+        
+        frame.set_cursor_position((
+            chunks[0].x + filter_prompt.len() as u16 + vim.keymap_filter.len() as u16,
+            chunks[0].y,
+        ));
+
+        frame.render_widget(Paragraph::new("─".repeat(chunks[1].width as usize)).style(theme.get("Comment")), chunks[1]);
+
+        let all_keys = vec![
+            ("--- NORMAL ---", ""),
             ("i", "Insert mode"),
             ("v", "Visual mode"),
             (":", "Command mode"),
@@ -293,20 +312,7 @@ impl TerminalUi {
             ("<Space>th", "Theme Picker"),
             ("?", "Close Help"),
             ("q", "Quit"),
-        ];
-        for (k, d) in normal_keys {
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<12}", k), key_style),
-                Span::styled(" - ", theme.get("Comment")),
-                Span::styled(d, desc_style),
-            ])));
-        }
-
-        items.push(ListItem::new(Line::from("")));
-
-        // Insert Mode
-        items.push(ListItem::new(Line::from(vec![Span::styled("--- INSERT ---", header_style)])));
-        let insert_keys = [
+            ("--- INSERT ---", ""),
             ("<Esc>", "Normal mode"),
             ("<C-s>", "Save & Format"),
             ("<Tab>", "2 Spaces / CMP Next"),
@@ -314,80 +320,74 @@ impl TerminalUi {
             ("<C-Space>", "Trigger CMP"),
             ("<C-n/p>", "CMP Next/Prev"),
             ("<Enter>", "Select CMP / New Line"),
-        ];
-        for (k, d) in insert_keys {
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<12}", k), key_style),
-                Span::styled(" - ", theme.get("Comment")),
-                Span::styled(d, desc_style),
-            ])));
-        }
-
-        items.push(ListItem::new(Line::from("")));
-
-        // Explorer
-        items.push(ListItem::new(Line::from(vec![Span::styled("--- EXPLORER ---", header_style)])));
-        let explorer_keys = [
-            ("j/k", "Navigate"),
-            ("l/Enter", "Expand/Open"),
-            ("h", "Collapse"),
-            ("o", "Open in System Explorer"),
-            ("a", "Add file/folder"),
-            ("r", "Rename"),
+            ("--- EXPLORER ---", ""),
+            ("Enter", "Open File"),
+            ("a", "Create File/Dir"),
             ("d", "Delete"),
-        ];
-        for (k, d) in explorer_keys {
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<12}", k), key_style),
-                Span::styled(" - ", theme.get("Comment")),
-                Span::styled(d, desc_style),
-            ])));
-        }
-
-        // Command Mode
-        items.push(ListItem::new(Line::from(vec![Span::styled("--- COMMAND ---", header_style)])));
-        let command_keys = [
-            (":w", "Save & Format"),
-            (":Format", "Trigger Format"),
-            (":FormatEnable", "Enable Autoformat"),
-            (":FormatDisable", "Disable Autoformat"),
-            (":q", "Quit/Close"),
-            (":Mason", "LSP Manager"),
-            (":bn/bp", "Next/Prev Buffer"),
-        ];
-        for (k, d) in command_keys {
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<12}", k), key_style),
-                Span::styled(" - ", theme.get("Comment")),
-                Span::styled(d, desc_style),
-            ])));
-        }
-
-        items.push(ListItem::new(Line::from("")));
-
-        // Telescope
-        items.push(ListItem::new(Line::from(vec![Span::styled("--- TELESCOPE ---", header_style)])));
-        let telescope_keys = [
+            ("r", "Rename"),
+            ("y", "Copy Path"),
+            ("H", "Toggle Hidden"),
+            ("--- COMMAND ---", ""),
+            (":w / :write", "Save & Format"),
+            (":q / :quit", "Close current buffer/Quit"),
+            (":q!", "Quit without saving"),
+            (":qa", "Close all & Quit"),
+            (":wq", "Save and Quit"),
+            (":wa", "Save all buffers"),
+            (":e / :edit", "Open a file"),
+            (":bd / :bdelete", "Close current buffer"),
+            (":bn / :bnext", "Go to next buffer"),
+            (":bp / :bprev", "Go to previous buffer"),
+            (":colorscheme", "Switch theme"),
+            (":Mason", "Manage LSPs & Parsers"),
+            (":Trouble", "Toggle trouble list"),
+            (":format / :Format", "Format current buffer"),
+            (":FormatAll", "Format all buffers"),
+            (":FormatEnable", "Enable autoformat"),
+            (":FormatDisable", "Disable autoformat"),
+            (":Reload / :e!", "Reload file from disk"),
+            (":gd", "Go to definition"),
+            (":LspInfo", "Show LSP status"),
+            (":LspRestart", "Restart LSP server"),
+            ("--- TELESCOPE ---", ""),
             ("<Space>ff", "Find Files"),
             ("<Space>fg", "Live Grep"),
             ("<Space>fb", "Select Buffer"),
             ("<Esc>", "Close Telescope"),
             ("<Enter>", "Open Selected"),
-            ("j/k/Tab", "Navigate"),
+            ("Up/Down / Tab / S-Tab", "Navigate"),
             ("<C-u/d>", "Scroll Preview"),
         ];
-        for (k, d) in telescope_keys {
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!(" {:<12}", k), key_style),
-                Span::styled(" - ", theme.get("Comment")),
-                Span::styled(d, desc_style),
-            ])));
-        }
 
-        let list = List::new(items)
-            .highlight_style(Style::default().bg(theme.palette.black2));
+        let filter = vim.keymap_filter.to_lowercase();
+        let rows: Vec<Row> = all_keys.iter()
+            .filter(|(k, d)| {
+                filter.is_empty() || k.to_lowercase().contains(&filter) || d.to_lowercase().contains(&filter)
+            })
+            .map(|(k, d)| {
+                if k.starts_with("---") {
+                    Row::new(vec![
+                        Cell::from(Span::styled(*k, Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.blue))),
+                        Cell::from(""),
+                    ])
+                } else {
+                    Row::new(vec![
+                        Cell::from(Span::styled(*k, theme.get("Keyword"))),
+                        Cell::from(Span::styled(*d, theme.get("Normal"))),
+                    ])
+                }
+            })
+            .collect();
+
+        let table = Table::new(rows, [Constraint::Percentage(30), Constraint::Percentage(70)])
+            .header(Row::new(vec![
+                Cell::from(Span::styled(" Key", Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.orange))),
+                Cell::from(Span::styled(" Description", Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.orange))),
+            ]).bottom_margin(1))
+            .row_highlight_style(theme.get("CursorLine"))
+            .highlight_symbol(" ");
         
-        frame.render_stateful_widget(list, inner_area, &mut vim.keymap_state);
+        frame.render_stateful_widget(table, chunks[2], &mut vim.keymap_state);
     }
 
     pub fn draw(
@@ -599,17 +599,23 @@ impl TerminalUi {
         let scroll_y = cursor.scroll_y;
         let visible_height = editor_area.height as usize;
 
-        // Map screen lines to actual buffer lines, skipping folded ranges
-        let screen_to_buffer_lines = editor.get_screen_to_buffer_lines();
-        
         let editor_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(8), Constraint::Min(1)])
             .split(editor_area);
 
+        let editor_width = editor_layout[1].width as usize;
+        let screen_to_buffer_lines = editor.get_screen_to_buffer_lines(editor_width, vim.config.wrap);
+
         // Find cursor screen y
-        let cursor_screen_y = screen_to_buffer_lines.iter().position(|&idx| idx == cursor.y)
-            .map(|pos| pos.saturating_sub(scroll_y));
+        let cursor_screen_y = screen_to_buffer_lines.iter().position(|&(idx, row)| {
+            if idx != cursor.y { return false; }
+            if !vim.config.wrap { return true; }
+            let line = &buffer.lines[idx];
+            let cursor_pos_in_line = line.chars().take(cursor.x).map(|c| if c == '\t' { 2 } else { 1 }).sum::<usize>();
+            let cursor_row = cursor_pos_in_line / editor_width;
+            row == cursor_row
+        }).map(|pos| pos.saturating_sub(scroll_y));
 
         // Full width highlight for active line
         if let Some(y) = cursor_screen_y {
@@ -627,62 +633,72 @@ impl TerminalUi {
         // Line Numbers
         let mut line_numbers = Text::default();
         for i in scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len()) {
-            let actual_idx = screen_to_buffer_lines[i];
+            let (actual_idx, row) = screen_to_buffer_lines[i];
+            let is_first_row = row == 0;
             let is_active = actual_idx == cursor.y;
             let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
             
-            let display_num = if vim.relative_number {
-                if is_active {
-                    format!("{:>3} ", actual_idx + 1)
+            let display_num = if is_first_row {
+                if vim.relative_number {
+                    if is_active {
+                        format!("{:>3} ", actual_idx + 1)
+                    } else {
+                        let cursor_actual_screen_y = screen_to_buffer_lines.iter().position(|&(idx, _)| idx == cursor.y).unwrap_or(0);
+                        let diff = (i as i32 - cursor_actual_screen_y as i32).abs();
+                        format!("{:>3} ", diff)
+                    }
                 } else {
-                    let diff = (i as i32 - cursor_screen_y.unwrap_or(0) as i32).abs();
-                    format!("{:>3} ", diff)
+                    format!("{:>3} ", actual_idx + 1)
                 }
             } else {
-                format!("{:>3} ", actual_idx + 1)
+                "    ".to_string()
             };
 
             let mut spans = Vec::new();
 
-            // Git Sign
-            let git_sign = buffer.git_signs.iter().find(|(line, _)| *line == actual_idx).map(|(_, s)| s);
-            if let Some(sign) = git_sign {
-                let (symbol, style_name) = match sign {
-                    crate::git::GitSign::Add => (icons::GIT_ADD, "GitSignsAdd"),
-                    crate::git::GitSign::Change => (icons::GIT_MOD, "GitSignsChange"),
-                    crate::git::GitSign::Delete => (icons::GIT_DEL, "GitSignsDelete"),
-                    crate::git::GitSign::TopDelete => (icons::GIT_DEL, "GitSignsDelete"),
-                    crate::git::GitSign::ChangeDelete => (icons::GIT_MOD, "GitSignsChange"),
-                };
-                spans.push(Span::styled(symbol, theme.get(style_name)));
-            } else {
-                spans.push(Span::raw(" "));
-            }
+            // Git Sign (Only on first row)
+            if is_first_row {
+                let git_sign = buffer.git_signs.iter().find(|(line, _)| *line == actual_idx).map(|(_, s)| s);
+                if let Some(sign) = git_sign {
+                    let (symbol, style_name) = match sign {
+                        crate::git::GitSign::Add => (icons::GIT_ADD, "GitSignsAdd"),
+                        crate::git::GitSign::Change => (icons::GIT_MOD, "GitSignsChange"),
+                        crate::git::GitSign::Delete => (icons::GIT_DEL, "GitSignsDelete"),
+                        crate::git::GitSign::TopDelete => (icons::GIT_DEL, "GitSignsDelete"),
+                        crate::git::GitSign::ChangeDelete => (icons::GIT_MOD, "GitSignsChange"),
+                    };
+                    spans.push(Span::styled(symbol, theme.get(style_name)));
+                } else {
+                    spans.push(Span::raw(" "));
+                }
 
-            // Diagnostic Icon in gutter
-            if vim.show_diagnostics {
-                if let Some(path) = &buffer.file_path {
-                    if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                        let diagnostics = lsp_manager.diagnostics.lock().unwrap();
-                        if let Some(server_diags) = diagnostics.get(&url) {
-                            let mut line_diag = None;
-                            for diags in server_diags.values() {
-                                for diag in diags {
-                                    if diag.range.start.line as usize == actual_idx {
-                                        if line_diag.is_none() || diag.severity < line_diag.as_ref().and_then(|d: &&lsp_types::Diagnostic| d.severity) {
-                                            line_diag = Some(diag);
+                // Diagnostic Icon in gutter
+                if vim.show_diagnostics {
+                    if let Some(path) = &buffer.file_path {
+                        if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                            let diagnostics = lsp_manager.diagnostics.lock().unwrap();
+                            if let Some(server_diags) = diagnostics.get(&url) {
+                                let mut line_diag = None;
+                                for diags in server_diags.values() {
+                                    for diag in diags {
+                                        if diag.range.start.line as usize == actual_idx {
+                                            if line_diag.is_none() || diag.severity < line_diag.as_ref().and_then(|d: &&lsp_types::Diagnostic| d.severity) {
+                                                line_diag = Some(diag);
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            if let Some(diag) = line_diag {
-                                let (icon, color) = match diag.severity {
-                                    Some(DiagnosticSeverity::ERROR) => (icons::ERROR, theme.palette.red),
-                                    Some(DiagnosticSeverity::WARNING) => (icons::WARNING, theme.palette.yellow),
-                                    _ => ("●", theme.palette.blue),
-                                };
-                                spans.push(Span::styled(format!("{} ", icon), Style::default().fg(color)));
+                                if let Some(diag) = line_diag {
+                                    let (icon, color) = match diag.severity {
+                                        Some(DiagnosticSeverity::ERROR) => (icons::ERROR, theme.palette.red),
+                                        Some(DiagnosticSeverity::WARNING) => (icons::WARNING, theme.palette.yellow),
+                                        _ => ("●", theme.palette.blue),
+                                    };
+                                    spans.push(Span::styled(format!("{} ", icon), Style::default().fg(color)));
+                                } else {
+                                    spans.push(Span::raw("  "));
+                                }
                             } else {
                                 spans.push(Span::raw("  "));
                             }
@@ -696,12 +712,12 @@ impl TerminalUi {
                     spans.push(Span::raw("  "));
                 }
             } else {
-                spans.push(Span::raw("  "));
+                spans.push(Span::raw("    "));
             }
 
             spans.push(Span::styled(display_num, style));
 
-            if buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx) {
+            if is_first_row && buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx) {
                 spans.push(Span::styled(" >", theme.get("Keyword")));
             } else {
                 spans.push(Span::raw("  "));
@@ -716,114 +732,126 @@ impl TerminalUi {
         let search_query = &vim.search_query;
 
         for i in scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len()) {
-            let actual_idx = screen_to_buffer_lines[i];
+            let (actual_idx, row) = screen_to_buffer_lines[i];
+            let is_first_row = row == 0;
             let line = &buffer.lines[actual_idx];
             let mut spans = Vec::new();
             let syntax_styles = editor.syntax_styles.get(actual_idx);
             let is_current_line = actual_idx == cursor.y;
 
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx) {
-                // Render a nice fold summary line: StartLine ... count lines ... EndLine
-                let first_line_full = line.trim_end();
-                let first_line_trimmed = first_line_full.trim_start();
-                let first_line_indent = first_line_full.len() - first_line_trimmed.len();
-                
-                let last_line_full = buffer.lines.get(*end).map(|l| l.as_str()).unwrap_or("}");
-                let last_line_trimmed = last_line_full.trim();
-                let count = end - actual_idx;
-                
-                // Add indentation spans
-                for _ in 0..first_line_indent {
-                    spans.push(Span::raw(" "));
-                }
+                // Folds don't wrap for now
+                if row == 0 {
+                    // Render a nice fold summary line: StartLine ... count lines ... EndLine
+                    let first_line_full = line.trim_end();
+                    let first_line_trimmed = first_line_full.trim_start();
+                    let first_line_indent = first_line_full.len() - first_line_trimmed.len();
+                    
+                    let last_line_full = buffer.lines.get(*end).map(|l| l.as_str()).unwrap_or("}");
+                    let last_line_trimmed = last_line_full.trim();
+                    let count = end - actual_idx;
+                    
+                    // Add indentation spans
+                    for _ in 0..first_line_indent {
+                        spans.push(Span::raw(" "));
+                    }
 
-                // First line content
-                let first_line_styles = editor.syntax_styles.get(actual_idx);
-                for (x, c) in first_line_trimmed.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), first_line_styles.and_then(|s| s.get(x + first_line_indent)).copied().unwrap_or_default()));
-                }
-                
-                spans.push(Span::styled(format!(" ... {} lines ... ", count), theme.get("Comment").add_modifier(Modifier::BOLD)));
-                
-                // Last line content
-                let last_line_styles = editor.syntax_styles.get(*end);
-                let last_line_indent = last_line_full.len() - last_line_full.trim_start().len();
-                for (x, c) in last_line_trimmed.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), last_line_styles.and_then(|s| s.get(x + last_line_indent)).copied().unwrap_or_default()));
+                    // First line content
+                    let first_line_styles = editor.syntax_styles.get(actual_idx);
+                    for (x, c) in first_line_trimmed.chars().enumerate() {
+                        let style = first_line_styles.and_then(|s: &Vec<Style>| s.get(x + first_line_indent)).copied().unwrap_or_default();
+                        spans.push(Span::styled(c.to_string(), style));
+                    }
+                    
+                    spans.push(Span::styled(format!(" ... {} lines ... ", count), theme.get("Comment").add_modifier(Modifier::BOLD)));
+                    
+                    // Last line content
+                    let last_line_styles = editor.syntax_styles.get(*end);
+                    let last_line_indent = last_line_full.len() - last_line_full.trim_start().len();
+                    for (x, c) in last_line_trimmed.chars().enumerate() {
+                        let style = last_line_styles.and_then(|s: &Vec<Style>| s.get(x + last_line_indent)).copied().unwrap_or_default();
+                        spans.push(Span::styled(c.to_string(), style));
+                    }
                 }
             } else {
+                let mut current_pos_in_line = 0;
                 for (x, c) in line.chars().enumerate() {
-                    let mut style = syntax_styles.and_then(|s| s.get(x)).copied().unwrap_or(theme.get("Normal"));
+                    let char_width = if c == '\t' { 2 } else { 1 };
+                    let char_row = current_pos_in_line / editor_width;
                     
-                    // Overlay Highlights
-                    if let Some(start) = vim.selection_start {
-                        let cur = crate::vim::Position { x: cursor.x, y: cursor.y };
-                        let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) { (start.y, start.x, cur.y, cur.x) } else { (cur.y, cur.x, start.y, start.x) };
-                        let is_in_range = if actual_idx > s_y && actual_idx < e_y { true } else if actual_idx == s_y && actual_idx == e_y { x >= s_x && x <= e_x } else if actual_idx == s_y { x >= s_x } else if actual_idx == e_y { x <= e_x } else { false };
-                        if is_in_range { style = theme.get("Visual"); }
-                    }
-                    if !search_query.is_empty() {
-                        if let Some(pos) = line.to_lowercase().find(&search_query.to_lowercase()) {
-                            if x >= pos && x < pos + search_query.len() {
-                                style = theme.get("Search");
+                    if char_row == row {
+                        let mut style = syntax_styles.and_then(|s: &Vec<Style>| s.get(x)).copied().unwrap_or(theme.get("Normal"));
+                        
+                        // Overlay Highlights
+                        if let Some(start) = vim.selection_start {
+                            let cur = crate::vim::Position { x: cursor.x, y: cursor.y };
+                            let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) { (start.y, start.x, cur.y, cur.x) } else { (cur.y, cur.x, start.y, start.x) };
+                            let is_in_range = if actual_idx > s_y && actual_idx < e_y { true } else if actual_idx == s_y && actual_idx == e_y { x >= s_x && x <= e_x } else if actual_idx == s_y { x >= s_x } else if actual_idx == e_y { x <= e_x } else { false };
+                            if is_in_range { style = theme.get("Visual"); }
+                        }
+                        if !search_query.is_empty() {
+                            if let Some(pos) = line.to_lowercase().find(&search_query.to_lowercase()) {
+                                if x >= pos && x < pos + search_query.len() {
+                                    style = theme.get("Search");
+                                }
                             }
                         }
-                    }
-                    if vim.yank_highlight_line == Some(actual_idx) { style = Style::default().bg(theme.palette.blue).fg(theme.palette.black); }
-                    
-                    // Diagnostics undercurl/underline
-                    if let Some(path) = &buffer.file_path {
-                        if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                            let diagnostics_lock = lsp_manager.diagnostics.lock().unwrap();
-                            if let Some(server_diags) = diagnostics_lock.get(&url) {
-                                for diags in server_diags.values() {
-                                    for diag in diags {
-                                        if (actual_idx as u32) >= diag.range.start.line && (actual_idx as u32) <= diag.range.end.line {
-                                            let s_x = if (actual_idx as u32) == diag.range.start.line { diag.range.start.character as usize } else { 0 };
-                                            let e_x = if (actual_idx as u32) == diag.range.end.line { diag.range.end.character as usize } else { line.len() };
-                                            if x >= s_x && x < e_x {
-                                                let diag_color = match diag.severity {
-                                                    Some(lsp_types::DiagnosticSeverity::ERROR) => theme.palette.red,
-                                                    Some(lsp_types::DiagnosticSeverity::WARNING) => theme.palette.yellow,
-                                                    _ => theme.palette.blue,
-                                                };
-                                                style = style.underline_color(diag_color).add_modifier(Modifier::UNDERLINED);
+                        if vim.yank_highlight_line == Some(actual_idx) { style = Style::default().bg(theme.palette.blue).fg(theme.palette.black); }
+                        
+                        // Diagnostics undercurl/underline
+                        if let Some(path) = &buffer.file_path {
+                            if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                                let diagnostics_lock = lsp_manager.diagnostics.lock().unwrap();
+                                if let Some(server_diags) = diagnostics_lock.get(&url) {
+                                    for diags in server_diags.values() {
+                                        for diag in diags {
+                                            if (actual_idx as u32) >= diag.range.start.line && (actual_idx as u32) <= diag.range.end.line {
+                                                let s_x = if (actual_idx as u32) == diag.range.start.line { diag.range.start.character as usize } else { 0 };
+                                                let e_x = if (actual_idx as u32) == diag.range.end.line { diag.range.end.character as usize } else { line.len() };
+                                                if x >= s_x && x < e_x {
+                                                    let diag_color = match diag.severity {
+                                                        Some(lsp_types::DiagnosticSeverity::ERROR) => theme.palette.red,
+                                                        Some(lsp_types::DiagnosticSeverity::WARNING) => theme.palette.yellow,
+                                                        _ => theme.palette.blue,
+                                                    };
+                                                    style = style.underline_color(diag_color).add_modifier(Modifier::UNDERLINED);
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // Apply CursorLine background to character if it's the current line
-                    // Removed: manual background application to style
-                    if is_current_line && style.bg == Some(theme.palette.black) {
-                        style.bg = None;
-                    }
-
-                    if c == '\t' {
-                        for _ in 0..2 {
-                            spans.push(Span::styled(" ", style));
+                        // Apply CursorLine background to character if it's the current line
+                        if is_current_line && style.bg == Some(theme.palette.black) {
+                            style.bg = None;
                         }
-                    } else {
-                        // Indent guide logic for non-tab characters
-                        let is_indent_pos = x > 0 && x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
-                        if is_indent_pos {
-                            let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
-                            spans.push(Span::styled("┆", indent_style));
+
+                        if c == '\t' {
+                            for _ in 0..2 {
+                                spans.push(Span::styled(" ", style));
+                            }
                         } else {
-                            spans.push(Span::styled(c.to_string(), style));
+                            // Indent guide logic for non-tab characters
+                            let is_indent_pos = x > 0 && x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
+                            if is_indent_pos {
+                                let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                                spans.push(Span::styled("┆", indent_style));
+                            } else {
+                                spans.push(Span::styled(c.to_string(), style));
+                            }
                         }
                     }
+                    current_pos_in_line += char_width;
                 }
             }
-            if line.is_empty() { 
+            if row == 0 && line.is_empty() { 
                 spans.push(Span::styled(" ", theme.get("Normal"))); 
             }
 
             // Indent Blankline Visualization for totally empty lines
-            if line.trim().is_empty() && line.is_empty() {
+            if row == 0 && line.trim().is_empty() && line.is_empty() {
                 // Find previous line indentation
                 let mut prev_indent = 0;
                 for j in (0..actual_idx).rev() {
@@ -853,13 +881,12 @@ impl TerminalUi {
             }
             
             let mut line_obj = Line::from(spans);
-            if is_current_line {
+            if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
                 line_obj = line_obj.style(theme.get("CursorLine"));
             }
 
-            // Diagnostic Virtual Text on the right (skip if folded)
-            let is_folded = buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx);
-            if vim.show_diagnostics && !is_folded {
+            // Diagnostic Virtual Text on the first row of the line
+            if is_first_row && vim.show_diagnostics {
                 if let Some(path) = &buffer.file_path {
                     if let Ok(url) = lsp_types::Url::from_file_path(path) {
                         let diags_lock = lsp_manager.diagnostics.lock().unwrap();
@@ -915,19 +942,26 @@ impl TerminalUi {
         if let Some(blame) = &vim.blame_popup {
             let popup_width = (blame.len() as u16) + 4;
             let popup_height = 3;
-            let x = (editor_layout[1].x + cursor.x as u16).min(area.right().saturating_sub(popup_width));
-            let y = (editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16).saturating_sub(popup_height);
             
-            let popup_area = Rect { x, y, width: popup_width, height: popup_height };
-            
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(theme.get("TreeExplorerConnector"))
-                .style(theme.get("Normal"));
-            
-            frame.render_widget(Clear, popup_area);
-            frame.render_widget(Paragraph::new(blame.clone()).block(block).alignment(Alignment::Center), popup_area);
+            if let Some(y) = cursor_screen_y {
+                let current_line = &buffer.lines[cursor.y];
+                let cursor_pos_in_line = current_line.chars().take(cursor.x).map(|c| if c == '\t' { 2 } else { 1 }).sum::<usize>();
+                let screen_x = (cursor_pos_in_line % editor_width) as u16;
+
+                let x = (editor_layout[1].x + screen_x).min(area.right().saturating_sub(popup_width));
+                let screen_y = (editor_layout[1].y + y as u16).saturating_sub(popup_height);
+                
+                let popup_area = Rect { x, y: screen_y, width: popup_width, height: popup_height };
+                
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(theme.get("TreeExplorerConnector"))
+                    .style(theme.get("Normal"));
+                
+                frame.render_widget(Clear, popup_area);
+                frame.render_widget(Paragraph::new(blame.clone()).block(block).alignment(Alignment::Center), popup_area);
+            }
         }
 
         // 2.5 Completion Menu (Floating)
@@ -943,7 +977,7 @@ impl TerminalUi {
             let prefix = if start_x < x { line[start_x..x].to_lowercase() } else { String::new() };
 
             let mut unique_items = std::collections::HashSet::new();
-            let filtered_suggestions: Vec<(&lsp_types::CompletionItem, usize)> = vim.suggestions.iter().enumerate()
+            let mut filtered_suggestions: Vec<(&lsp_types::CompletionItem, usize)> = vim.suggestions.iter().enumerate()
                 .filter(|(_, item)| {
                     let key = format!("{}:{:?}", item.label, item.kind);
                     if unique_items.contains(&key) { return false; }
@@ -954,6 +988,19 @@ impl TerminalUi {
                 })
                 .map(|(i, item)| (item, i))
                 .collect();
+
+            // Sort: Priority to starts_with, then alphabetical
+            filtered_suggestions.sort_by(|(a, _), (b, _)| {
+                let a_starts = a.label.to_lowercase().starts_with(&prefix);
+                let b_starts = b.label.to_lowercase().starts_with(&prefix);
+                if a_starts && !b_starts {
+                    std::cmp::Ordering::Less
+                } else if !a_starts && b_starts {
+                    std::cmp::Ordering::Greater
+                } else {
+                    a.label.cmp(&b.label)
+                }
+            });
 
             if !filtered_suggestions.is_empty() {
                 let menu_width = 45;
@@ -1146,8 +1193,20 @@ impl TerminalUi {
         // 4. Command/Search/Input Line
         match vim.mode {
             Mode::Command => {
-                let text = format!(":{}", vim.command_buffer);
-                frame.render_widget(Paragraph::new(text).style(theme.get("Normal")), root_chunks[2]);
+                let mut spans = vec![
+                    Span::styled(format!(":{}", vim.command_buffer), theme.get("Normal"))
+                ];
+
+                // Ghost text
+                if !vim.command_suggestions.is_empty() {
+                    let suggestion = &vim.command_suggestions[vim.selected_command_suggestion];
+                    if suggestion.to_lowercase().starts_with(&vim.command_buffer.to_lowercase()) {
+                        let ghost = &suggestion[vim.command_buffer.len()..];
+                        spans.push(Span::styled(ghost, theme.get("Comment").add_modifier(Modifier::DIM)));
+                    }
+                }
+
+                frame.render_widget(Paragraph::new(Line::from(spans)), root_chunks[2]);
                 frame.set_cursor_position((root_chunks[2].x + vim.command_buffer.len() as u16 + 1, root_chunks[2].y));
             }
             Mode::Search => {
@@ -1173,11 +1232,11 @@ impl TerminalUi {
             }
             Mode::Confirm(action) => {
                 let prompt = match action {
-                    crate::vim::mode::ConfirmAction::Quit => "Unsaved changes! Quit anyway? (y/n): ",
-                    crate::vim::mode::ConfirmAction::CloseBuffer => "Unsaved changes! Close buffer anyway? (y/n): ",
+                    crate::vim::mode::ConfirmAction::Quit => "Unsaved changes! Quit? [Y]es (Save), [N]o (Discard), [C]ancel: ",
+                    crate::vim::mode::ConfirmAction::CloseBuffer => "Unsaved changes! Close buffer? [Y]es (Save), [N]o (Discard), [C]ancel: ",
                 };
                 frame.render_widget(Paragraph::new(prompt).style(theme.get("Keyword")), root_chunks[2]);
-                frame.set_cursor_position((root_chunks[2].x + prompt.len() as u16, root_chunks[2].y));
+                frame.set_cursor_position((root_chunks[2].x + prompt.chars().count() as u16, root_chunks[2].y));
             }
             _ => {
                 if let Some(msg) = &vim.message {

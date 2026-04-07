@@ -167,12 +167,22 @@ impl Editor {
         }
     }
 
-    pub fn get_screen_to_buffer_lines(&self) -> Vec<usize> {
+    pub fn get_screen_to_buffer_lines(&self, width: usize, wrap: bool) -> Vec<(usize, usize)> {
         let buffer = self.buffer();
         let mut screen_to_buffer_lines = Vec::new();
         let mut i = 0;
         while i < buffer.lines.len() {
-            screen_to_buffer_lines.push(i);
+            if wrap {
+                let line = &buffer.lines[i];
+                let line_width = line.chars().map(|c| if c == '\t' { 2 } else { 1 }).sum::<usize>();
+                let num_rows = if line_width == 0 { 1 } else { (line_width + width - 1) / width };
+                for row in 0..num_rows {
+                    screen_to_buffer_lines.push((i, row));
+                }
+            } else {
+                screen_to_buffer_lines.push((i, 0));
+            }
+
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == i) {
                 i = *end + 1;
             } else {
@@ -182,13 +192,13 @@ impl Editor {
         screen_to_buffer_lines
     }
 
-    pub fn scroll_into_view(&mut self, height: usize) {
-        let screen_lines = self.get_screen_to_buffer_lines();
+    pub fn scroll_into_view(&mut self, height: usize, width: usize, wrap: bool) {
+        let screen_lines = self.get_screen_to_buffer_lines(width, wrap);
         let y = self.cursor().y;
         let mut scroll_y = self.cursor().scroll_y;
 
-        // Find cursor position in screen space
-        let screen_y = screen_lines.iter().position(|&idx| idx == y).unwrap_or(0);
+        // Find first screen row of current buffer line
+        let screen_y = screen_lines.iter().position(|&(idx, _)| idx == y).unwrap_or(0);
 
         if screen_y < scroll_y {
             scroll_y = screen_y;

@@ -784,15 +784,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 match vim.mode {
                     Mode::Keymaps => match key.code {
-                        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => { vim.mode = Mode::Normal; }
-                        KeyCode::Char('j') | KeyCode::Down => {
+                        KeyCode::Esc => { 
+                            vim.mode = Mode::Normal; 
+                            vim.keymap_filter.clear();
+                        }
+                        KeyCode::Backspace => {
+                            vim.keymap_filter.pop();
+                            vim.keymap_state.select(Some(0));
+                        }
+                        KeyCode::Char(c) => {
+                            vim.keymap_filter.push(c);
+                            vim.keymap_state.select(Some(0));
+                        }
+                        KeyCode::Down | KeyCode::Tab => {
                             let i = match vim.keymap_state.selected() {
-                                Some(i) => (i + 1).min(35), // Approximating item count for now, list is static
+                                Some(i) => i + 1,
                                 None => 0,
                             };
                             vim.keymap_state.select(Some(i));
                         }
-                        KeyCode::Char('k') | KeyCode::Up => {
+                        KeyCode::Up | KeyCode::BackTab => {
                             let i = match vim.keymap_state.selected() {
                                 Some(i) => i.saturating_sub(1),
                                 None => 0,
@@ -809,8 +820,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             vim.telescope.scroll_preview_down(10);
                         }
-                        KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => { vim.telescope.move_down(); }
-                        KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => { vim.telescope.move_up(); }
+                        KeyCode::Down | KeyCode::Tab => { vim.telescope.move_down(); }
+                        KeyCode::Up | KeyCode::BackTab => { vim.telescope.move_up(); }
                         KeyCode::Enter => {
                             if let Some(result) = vim.telescope.results.get(vim.telescope.selected_idx) {
                                 match vim.telescope.kind {
@@ -1453,12 +1464,73 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         _ => {}
                     },
-                    Mode::Command => match key.code {
-                        KeyCode::Esc => { vim.mode = Mode::Normal; vim.command_buffer.clear(); }
-                        KeyCode::Char(c) => { vim.command_buffer.push(c); }
-                        KeyCode::Backspace => { if vim.command_buffer.is_empty() { vim.mode = Mode::Normal; } else { vim.command_buffer.pop(); } }
+                    Mode::Command => {
+                        let commands = vec![
+                            "q", "quit", "qa", "quitall", "q!", "qa!", "w", "write", "wq", "wa", "wa!", "w!", "x",
+                            "edit", "e", "bd", "bdelete", "bn", "bnext", "bp", "bprev", "reload", "Reload", "e!",
+                            "colorscheme", "colo", "Mason", "FormatAll", "FormatDisable", "FormatEnable",
+                            "Trouble", "LspInfo", "LspLog", "LspRestart", "LspStop", "LspStart",
+                            "gd", "definition", "Format",
+                        ];
+
+                        match key.code {
+                        KeyCode::Esc => { 
+                            vim.mode = Mode::Normal; 
+                            vim.command_buffer.clear(); 
+                            vim.command_suggestions.clear();
+                        }
+                        KeyCode::Char(c) => { 
+                            vim.command_buffer.push(c); 
+                            let prefix = vim.command_buffer.to_lowercase();
+                            vim.command_suggestions = commands.iter()
+                                .filter(|c| c.to_lowercase().starts_with(&prefix))
+                                .map(|c| c.to_string())
+                                .collect();
+                            vim.selected_command_suggestion = 0;
+                        }
+                        KeyCode::Backspace => { 
+                            if vim.command_buffer.is_empty() { 
+                                vim.mode = Mode::Normal; 
+                            } else { 
+                                vim.command_buffer.pop(); 
+                                let prefix = vim.command_buffer.to_lowercase();
+                                if prefix.is_empty() {
+                                    vim.command_suggestions.clear();
+                                } else {
+                                    vim.command_suggestions = commands.iter()
+                                        .filter(|c| c.to_lowercase().starts_with(&prefix))
+                                        .map(|c| c.to_string())
+                                        .collect();
+                                }
+                                vim.selected_command_suggestion = 0;
+                            } 
+                        }
+                        KeyCode::Tab | KeyCode::Right => {
+                            if !vim.command_suggestions.is_empty() {
+                                vim.command_buffer = vim.command_suggestions[vim.selected_command_suggestion].clone();
+                                vim.command_suggestions.clear();
+                            }
+                        }
+                        KeyCode::BackTab => {
+                            if !vim.command_suggestions.is_empty() {
+                                if vim.selected_command_suggestion == 0 {
+                                    vim.selected_command_suggestion = vim.command_suggestions.len() - 1;
+                                } else {
+                                    vim.selected_command_suggestion -= 1;
+                                }
+                            }
+                        }
                         KeyCode::Enter => {
-                            let cmd_parts: Vec<String> = vim.command_buffer.split_whitespace().map(|s| s.to_string()).collect();
+                            let cmd_to_execute = if !vim.command_suggestions.is_empty() {
+                                vim.command_suggestions[vim.selected_command_suggestion].clone()
+                            } else {
+                                vim.command_buffer.clone()
+                            };
+
+                            let cmd_parts: Vec<String> = cmd_to_execute.split_whitespace().map(|s| s.to_string()).collect();
+                            vim.command_buffer.clear();
+                            vim.command_suggestions.clear();
+                            
                             if !cmd_parts.is_empty() {
                                 // Check if command is a number (line jump)
                                 if let Ok(line_num) = cmd_parts[0].parse::<usize>() {
@@ -1630,7 +1702,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                         } 
                                     }
-                                    "Mason" | "mason" => { vim.mode = Mode::Mason; }
+                                    "Mason" => { vim.mode = Mode::Mason; }
                                     "colorscheme" | "colo" => {
                                         if cmd_parts.len() > 1 {
                                             let new_theme_name = &cmd_parts[1];
@@ -1642,18 +1714,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             vim.set_message(format!("Current colorscheme: {}", vim.config.colorscheme));
                                         }
                                     }
-                                    _ => { vim.set_message(format!("Unknown command: {}", cmd_parts[0])); }                                }
+                                    _ => { vim.set_message(format!("Unknown command: {}", cmd_parts[0])); }
+                                }
                                 // Only reset to Normal if we didn't change mode (like to Mason)
                                 if let Mode::Command = vim.mode {
                                     vim.mode = Mode::Normal;
                                 }
-                            } else {
-                                vim.mode = Mode::Normal;
                             }
-                            vim.command_buffer.clear();
                         }
                         _ => {}
-                    },
+                    }
+                }
                     Mode::Search => match key.code {
                         KeyCode::Esc => { vim.mode = Mode::Normal; vim.search_query.clear(); }
                         KeyCode::Char(c) => { vim.search_query.push(c); }
@@ -1664,6 +1735,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Mode::Confirm(action) => match key.code {
                         KeyCode::Char('y') | KeyCode::Char('Y') => {
                             match action {
+                                vim::mode::ConfirmAction::Quit => {
+                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                    break;
+                                }
+                                vim::mode::ConfirmAction::CloseBuffer => {
+                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                    editor.close_current_buffer();
+                                    vim.mode = Mode::Normal;
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') => {
+                            match action {
                                 vim::mode::ConfirmAction::Quit => break,
                                 vim::mode::ConfirmAction::CloseBuffer => {
                                     editor.close_current_buffer();
@@ -1671,7 +1755,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                             }
                         }
-                        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
                             vim.mode = Mode::Normal;
                         }
                         _ => {}
@@ -1682,7 +1766,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let area = terminal.size()?;
             let visible_height = area.height.saturating_sub(2) as usize;
-            editor.scroll_into_view(visible_height);
+            let editor_width = if explorer.visible {
+                (area.width as f32 * 0.85) as usize - 8 // roughly editor width
+            } else {
+                area.width as usize - 8
+            };
+            editor.scroll_into_view(visible_height, editor_width, vim.config.wrap);
         }
     }
 

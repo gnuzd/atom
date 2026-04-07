@@ -22,7 +22,7 @@ pub enum LspStatus {
     Error(String),
 }
 
-use ratatui::widgets::ListState;
+use ratatui::widgets::{ListState, TableState};
 
 #[derive(Debug, Clone, Default)]
 pub struct GitInfo {
@@ -46,12 +46,15 @@ pub struct VimState {
     pub suggestions: Vec<CompletionItem>,
     pub selected_suggestion: usize,
     pub suggestion_state: ListState,
-    pub keymap_state: ListState,
+    pub keymap_state: TableState,
     pub mason_state: ListState,
     pub theme_state: ListState,
     pub mason_tab: usize,
     pub mason_filter: String,
     pub show_suggestions: bool,
+    pub keymap_filter: String,
+    pub command_suggestions: Vec<String>,
+    pub selected_command_suggestion: usize,
     pub lsp_to_install: Option<String>,
     pub lsp_status: LspStatus,
     pub spinner_idx: usize,
@@ -78,7 +81,7 @@ impl VimState {
     pub fn new(config: Config, project_root: std::path::PathBuf) -> Self {
         let mut suggestion_state = ListState::default();
         suggestion_state.select(Some(0));
-        let mut keymap_state = ListState::default();
+        let mut keymap_state = TableState::default();
         keymap_state.select(Some(0));
         let mut mason_state = ListState::default();
         mason_state.select(Some(0));
@@ -105,6 +108,9 @@ impl VimState {
             mason_tab: 0,
             mason_filter: String::new(),
             show_suggestions: false,
+            keymap_filter: String::new(),
+            command_suggestions: Vec::new(),
+            selected_command_suggestion: 0,
             lsp_to_install: None,
             lsp_status: LspStatus::None,
             spinner_idx: 0,

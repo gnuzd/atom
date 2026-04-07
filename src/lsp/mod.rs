@@ -230,7 +230,7 @@ impl LspManager {
         let mut path = std::path::PathBuf::from(home);
         path.push(".config");
         path.push("atom");
-        path.push("lsp_servers");
+        path.push("mason");
         path
     }
 
@@ -239,15 +239,19 @@ impl LspManager {
     }
 
     pub fn is_managed(&self, server_cmd: &str) -> bool {
-        // Check local bin directory for Mason-managed packages
-        let local_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(server_cmd);
-        if local_bin.exists() {
+        // Check local bin directory for Mason-managed packages (npm)
+        let npm_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(server_cmd);
+        if npm_bin.exists() {
+            return true;
+        }
+
+        // Check top-level bin directory for other tools
+        let direct_bin = Self::get_local_bin_dir().join("bin").join(server_cmd);
+        if direct_bin.exists() {
             return true;
         }
 
         // For non-npm tools like rust-analyzer, we might need a marker or just check if it was explicitly installed.
-        // For now, let's check if the tool is in our managed list if we had one, but to keep it simple
-        // and satisfy "only show if I installed via Mason", we'll check a marker file for non-npm tools.
         let marker = Self::get_local_bin_dir().join(format!("{}.managed", server_cmd));
         marker.exists()
     }
@@ -334,7 +338,22 @@ impl LspManager {
                     .stderr(std::process::Stdio::null())
                     .status()?;
                 if status.success() {
-                    if cmd != "npm" {
+                    // Create bin/ directory and symlink
+                    let bin_dir = local_dir.join("bin");
+                    if !bin_dir.exists() {
+                        let _ = std::fs::create_dir_all(&bin_dir);
+                    }
+
+                    if cmd == "npm" {
+                        // Try to find the binary in node_modules/.bin and symlink it to bin/
+                        let npm_bin = local_dir.join("node_modules").join(".bin").join(server_cmd);
+                        if npm_bin.exists() {
+                            let target = bin_dir.join(server_cmd);
+                            if target.exists() { let _ = std::fs::remove_file(&target); }
+                            #[cfg(unix)]
+                            let _ = std::os::unix::fs::symlink(&npm_bin, &target);
+                        }
+                    } else {
                         let marker = local_dir.join(format!("{}.managed", server_cmd));
                         let _ = std::fs::File::create(marker);
                     }
@@ -365,9 +384,13 @@ impl LspManager {
                 }
             }
 
-            let local_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(cmd);
-            let final_cmd = if local_bin.exists() {
-                local_bin.to_string_lossy().to_string()
+            let npm_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(cmd);
+            let direct_bin = Self::get_local_bin_dir().join("bin").join(cmd);
+            
+            let final_cmd = if npm_bin.exists() {
+                npm_bin.to_string_lossy().to_string()
+            } else if direct_bin.exists() {
+                direct_bin.to_string_lossy().to_string()
             } else {
                 cmd.to_string()
             };
