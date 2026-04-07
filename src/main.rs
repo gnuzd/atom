@@ -405,6 +405,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             trouble.update_from_lsp(&lsp_manager.diagnostics.lock().unwrap(), todos);
         }
 
+        editor.refresh_syntax();
         terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &trouble, &lsp_manager))?;
 
         // 3. Handle Events
@@ -869,75 +870,158 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         _ => {}
                     },
                     Mode::Mason => {
-                        let filtered_packages: Vec<_> = crate::lsp::PACKAGES.iter()
-                            .filter(|p| {
-                                let matches_tab = match vim.mason_tab {
-                                    0 => true,
-                                    1 => p.kind == crate::lsp::PackageKind::Lsp,
-                                    2 => p.kind == crate::lsp::PackageKind::Dap,
-                                    3 => p.kind == crate::lsp::PackageKind::Linter,
-                                    4 => p.kind == crate::lsp::PackageKind::Formatter,
-                                    _ => true,
-                                };
-                                let matches_filter = p.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()) || 
-                                                   p.description.to_lowercase().contains(&vim.mason_filter.to_lowercase());
-                                matches_tab && matches_filter
-                            })
-                            .collect();
-                        
-                        let (mut installed, mut available): (Vec<_>, Vec<_>) = filtered_packages.into_iter().partition(|p| lsp_manager.is_managed(p.cmd));
-                        installed.sort_by_key(|p| p.name);
-                        available.sort_by_key(|p| p.name);
-                        let list_len = 3 + installed.len() + available.len();
+                        if vim.mason_tab == 5 {
+                            // Treesitter tab
+                            let languages = &crate::editor::treesitter::LANGUAGES;
+                            let filtered_langs: Vec<_> = languages.iter()
+                                .filter(|l| {
+                                    l.name.to_lowercase().contains(&vim.mason_filter.to_lowercase())
+                                })
+                                .collect();
 
-                        match key.code {
-                            KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
-                            KeyCode::Char('j') | KeyCode::Down => {
-                                let i = match vim.mason_state.selected() {
-                                    Some(i) => (i + 1).min(list_len.saturating_sub(1)),
-                                    None => 0,
-                                };
-                                vim.mason_state.select(Some(i));
-                            }
-                            KeyCode::Char('k') | KeyCode::Up => {
-                                let i = match vim.mason_state.selected() {
-                                    Some(i) => i.saturating_sub(1),
-                                    None => 0,
-                                };
-                                vim.mason_state.select(Some(i));
-                            }
-                            KeyCode::Char('1') => { vim.mason_tab = 0; vim.mason_state.select(Some(0)); }
-                            KeyCode::Char('2') => { vim.mason_tab = 1; vim.mason_state.select(Some(0)); }
-                            KeyCode::Char('3') => { vim.mason_tab = 2; vim.mason_state.select(Some(0)); }
-                            KeyCode::Char('4') => { vim.mason_tab = 3; vim.mason_state.select(Some(0)); }
-                            KeyCode::Char('5') => { vim.mason_tab = 4; vim.mason_state.select(Some(0)); }
-                            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                vim.mode = Mode::MasonFilter;
-                            }
-                            KeyCode::Char('i') | KeyCode::Enter => {
-                                if let Some(idx) = vim.mason_state.selected() {
-                                    let mut selected_package = None;
-                                    if idx >= 1 && idx < 1 + installed.len() {
-                                        selected_package = Some(installed[idx - 1]);
-                                    } else if idx >= 3 + installed.len() && idx < 3 + installed.len() + available.len() {
-                                        selected_package = Some(available[idx - (3 + installed.len())]);
-                                    }
-                                    
-                                    if let Some(pkg) = selected_package {
-                                        let lsp_manager_clone = lsp_manager.clone();
-                                        let cmd = pkg.cmd.to_string();
-                                        // Use a sender or just set a flag if we had a shared state for messages
-                                        // For now, the main loop will see is_any_installing()
-                                        std::thread::spawn(move || {
-                                            if let Ok(_) = lsp_manager_clone.install_server(&cmd) {
-                                                // We can't easily set vim.message from here without Mutex, 
-                                                // but is_any_installing will handle the status line.
-                                            }
-                                        });
+                            let (installed, available): (Vec<_>, Vec<_>) = filtered_langs.into_iter()
+                                .partition(|l| editor.treesitter.is_installed(l.name));
+                            let list_len = 3 + installed.len() + available.len();
+
+                            match key.code {
+                                KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    let i = match vim.mason_state.selected() {
+                                        Some(i) => (i + 1).min(list_len.saturating_sub(1)),
+                                        None => 0,
+                                    };
+                                    vim.mason_state.select(Some(i));
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    let i = match vim.mason_state.selected() {
+                                        Some(i) => i.saturating_sub(1),
+                                        None => 0,
+                                    };
+                                    vim.mason_state.select(Some(i));
+                                }
+                                KeyCode::Char('1') => { vim.mason_tab = 0; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('2') => { vim.mason_tab = 1; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('3') => { vim.mason_tab = 2; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('4') => { vim.mason_tab = 3; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('5') => { vim.mason_tab = 4; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('6') => { vim.mason_tab = 5; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    vim.mode = Mode::MasonFilter;
+                                }
+                                KeyCode::Char(' ') | KeyCode::Char('i') | KeyCode::Char('u') | KeyCode::Enter => {
+                                    if let Some(idx) = vim.mason_state.selected() {
+                                        let mut selected_lang = None;
+                                        if idx >= 1 && idx < 1 + installed.len() {
+                                            selected_lang = Some(installed[idx - 1]);
+                                        } else if idx >= 3 + installed.len() && idx < 3 + installed.len() + available.len() {
+                                            selected_lang = Some(available[idx - (3 + installed.len())]);
+                                        }
+
+                                        if let Some(lang) = selected_lang {
+                                            let name = lang.name;
+                                            let repo = lang.repo;
+                                            // Since TreesitterManager isn't thread-safe easily (uses Arc internally but we need to call install)
+                                            // and we want to show status, let's use the lsp_manager's installing set for UI
+                                            let installing = lsp_manager.installing.clone();
+                                            installing.lock().unwrap().insert(name.to_string());
+                                            
+                                            let lang_name = name.to_string();
+                                            let lang_repo = repo.to_string();
+
+                                            std::thread::spawn(move || {
+                                                let ts_mgr = crate::editor::treesitter::TreesitterManager::new();
+                                                let lang_def = crate::editor::treesitter::TreesitterLanguage {
+                                                    name: Box::leak(lang_name.clone().into_boxed_str()),
+                                                    repo: Box::leak(lang_repo.into_boxed_str()),
+                                                    file_types: &[], // Not needed for install
+                                                };
+                                                let _ = ts_mgr.install(&lang_def);
+                                                installing.lock().unwrap().remove(&lang_name);
+                                            });
+                                        }
                                     }
                                 }
+                                KeyCode::Char('d') | KeyCode::Char('x') => {
+                                    if let Some(idx) = vim.mason_state.selected() {
+                                        if idx >= 1 && idx < 1 + installed.len() {
+                                            let lang = installed[idx - 1];
+                                            let _ = editor.treesitter.uninstall(lang.name);
+                                        }
+                                    }
+                                }
+                                _ => {}
                             }
-                            _ => {}
+                        } else {
+                            // LSP/DAP/Linter/Formatter tabs
+                            let filtered_packages: Vec<_> = crate::lsp::PACKAGES.iter()
+                                .filter(|p| {
+                                    let matches_tab = match vim.mason_tab {
+                                        0 => true,
+                                        1 => p.kind == crate::lsp::PackageKind::Lsp,
+                                        2 => p.kind == crate::lsp::PackageKind::Dap,
+                                        3 => p.kind == crate::lsp::PackageKind::Linter,
+                                        4 => p.kind == crate::lsp::PackageKind::Formatter,
+                                        _ => true,
+                                    };
+                                    let matches_filter = p.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()) || 
+                                                       p.description.to_lowercase().contains(&vim.mason_filter.to_lowercase());
+                                    matches_tab && matches_filter
+                                })
+                                .collect();
+                            
+                            let (mut installed, mut available): (Vec<_>, Vec<_>) = filtered_packages.into_iter().partition(|p| lsp_manager.is_managed(p.cmd));
+                            installed.sort_by_key(|p| p.name);
+                            available.sort_by_key(|p| p.name);
+                            let list_len = 3 + installed.len() + available.len();
+
+                            match key.code {
+                                KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    let i = match vim.mason_state.selected() {
+                                        Some(i) => (i + 1).min(list_len.saturating_sub(1)),
+                                        None => 0,
+                                    };
+                                    vim.mason_state.select(Some(i));
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    let i = match vim.mason_state.selected() {
+                                        Some(i) => i.saturating_sub(1),
+                                        None => 0,
+                                    };
+                                    vim.mason_state.select(Some(i));
+                                }
+                                KeyCode::Char('1') => { vim.mason_tab = 0; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('2') => { vim.mason_tab = 1; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('3') => { vim.mason_tab = 2; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('4') => { vim.mason_tab = 3; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('5') => { vim.mason_tab = 4; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('6') => { vim.mason_tab = 5; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    vim.mode = Mode::MasonFilter;
+                                }
+                                KeyCode::Char(' ') | KeyCode::Char('i') | KeyCode::Char('u') | KeyCode::Enter => {
+                                    if let Some(idx) = vim.mason_state.selected() {
+                                        let mut selected_package = None;
+                                        if idx >= 1 && idx < 1 + installed.len() {
+                                            selected_package = Some(installed[idx - 1]);
+                                        } else if idx >= 3 + installed.len() && idx < 3 + installed.len() + available.len() {
+                                            selected_package = Some(available[idx - (3 + installed.len())]);
+                                        }
+                                        
+                                        if let Some(pkg) = selected_package {
+                                            let lsp_manager_clone = lsp_manager.clone();
+                                            let cmd = pkg.cmd.to_string();
+                                            std::thread::spawn(move || {
+                                                let _ = lsp_manager_clone.install_server(&cmd);
+                                            });
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('d') | KeyCode::Char('x') => {
+                                    // LSP uninstall not implemented in lsp_manager yet, but we can add it or just ignore
+                                }
+                                _ => {}
+                            }
                         }
                     },
                     Mode::MasonFilter => match key.code {

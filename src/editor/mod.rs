@@ -4,12 +4,16 @@ pub mod buffer;
 pub mod cursor;
 pub mod highlighter;
 pub mod todo;
+pub mod treesitter;
 
 pub struct Editor {
     pub buffers: Vec<buffer::Buffer>,
     pub cursors: Vec<cursor::Cursor>,
     pub active_idx: usize,
     pub highlighter: highlighter::Highlighter,
+    pub treesitter: treesitter::TreesitterManager,
+    pub syntax_styles: Vec<Vec<ratatui::style::Style>>,
+    pub last_syntax_text: String,
 }
 
 impl Editor {
@@ -20,7 +24,50 @@ impl Editor {
             cursors: vec![cursor::Cursor::new()],
             active_idx: 0,
             highlighter: highlighter::Highlighter::new(theme),
+            treesitter: treesitter::TreesitterManager::new(),
+            syntax_styles: Vec::new(),
+            last_syntax_text: String::new(),
         }
+    }
+
+    pub fn refresh_syntax(&mut self) {
+        let (text, ext) = {
+            let buffer = self.buffer();
+            let text = buffer.lines.join("\n");
+            
+            // Optimization: Skip if text is exactly the same as last time
+            if text == self.last_syntax_text {
+                return;
+            }
+
+            let ext = buffer.file_path.as_ref()
+                .and_then(|p| p.extension())
+                .and_then(|s| s.to_str())
+                .unwrap_or("rs")
+                .to_string();
+            (text, ext)
+        };
+        
+        // Map extension to treesitter language name
+        let lang_name = match ext.as_str() {
+            "rs" => "rust",
+            "ts" => "typescript",
+            "tsx" => "tsx",
+            "js" | "jsx" => "javascript",
+            "py" => "python",
+            "go" => "go",
+            "c" | "h" => "c",
+            "cpp" | "hpp" | "cc" | "hh" => "cpp",
+            "lua" => "lua",
+            "json" => "json",
+            "toml" => "toml",
+            "html" => "html",
+            "css" => "css",
+            _ => &ext,
+        };
+
+        self.syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut self.treesitter);
+        self.last_syntax_text = text;
     }
 
     pub fn buffer(&self) -> &buffer::Buffer {

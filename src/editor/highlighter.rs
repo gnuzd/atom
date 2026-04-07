@@ -1,13 +1,118 @@
 use ratatui::style::Style;
 use crate::ui::colorscheme::ColorScheme;
+use tree_sitter_highlight::{Highlighter as TsHighlighter, HighlightConfiguration, HighlightEvent};
+use std::collections::HashMap;
 
 pub struct Highlighter {
     pub theme: ColorScheme,
+    ts_highlighter: TsHighlighter,
+    configs: HashMap<String, HighlightConfiguration>,
 }
 
 impl Highlighter {
     pub fn new(theme: ColorScheme) -> Self {
-        Self { theme }
+        Self { 
+            theme,
+            ts_highlighter: TsHighlighter::new(),
+            configs: HashMap::new(),
+        }
+    }
+
+    pub fn ensure_config(&mut self, lang_name: &str, ts_manager: &mut crate::editor::treesitter::TreesitterManager) {
+        if !self.configs.contains_key(lang_name) {
+            if let Some(config) = ts_manager.get_highlight_config(lang_name) {
+                self.configs.insert(lang_name.to_string(), config);
+            }
+        }
+    }
+
+    pub fn highlight_buffer(&mut self, text: &str, lang_name: &str, ts_manager: &mut crate::editor::treesitter::TreesitterManager) -> Vec<Vec<Style>> {
+        self.ensure_config(lang_name, ts_manager);
+        
+        let lines: Vec<&str> = text.lines().collect();
+        let mut result = Vec::with_capacity(lines.len());
+        for line in &lines {
+            result.push(vec![self.theme.get("Normal"); line.len()]);
+        }
+
+        if let Some(config) = self.configs.get(lang_name) {
+            let Ok(highlights) = self.ts_highlighter.highlight(config, text.as_bytes(), None, |_| None) else {
+                return result;
+            };
+            
+            let mut current_style = self.theme.get("Normal");
+            
+            // Pre-calculate line start offsets
+            let mut line_starts = Vec::with_capacity(lines.len());
+            let mut current_offset = 0;
+            for line in text.split_inclusive('\n') {
+                line_starts.push(current_offset);
+                current_offset += line.len();
+            }
+
+            let captures = [
+                "Keyword", "Function", "Type", "String", "Comment", "Constant", "Identifier", "Identifier", "Label", "Tag", "Attribute"
+            ];
+
+            for event in highlights {
+                match event.map_err(|e| e.to_string()) {
+                    Ok(HighlightEvent::Source { start, end }) => {
+                        // Efficiently apply style to the range [start, end)
+                        let mut i = start;
+                        while i < end {
+                            // Find the line index for the current offset 'i'
+                            let line_idx = match line_starts.binary_search(&i) {
+                                Ok(idx) => idx,
+                                Err(idx) => idx.saturating_sub(1),
+                            };
+
+                            if line_idx >= result.len() { break; }
+
+                            let line_start = line_starts[line_idx];
+                            let line_end = if line_idx + 1 < line_starts.len() {
+                                line_starts[line_idx + 1]
+                            } else {
+                                text.len()
+                            };
+
+                            // Calculate how much of this range fits in the current line
+                            let apply_end = end.min(line_end);
+                            
+                            // Adjust for newline characters at the end of the source range
+                            let col_start = i - line_start;
+                            let col_end = (apply_end - line_start).min(result[line_idx].len());
+                            
+                            if col_start < col_end {
+                                for col in col_start..col_end {
+                                    result[line_idx][col] = current_style;
+                                }
+                            }
+                            
+                            i = apply_end;
+                            if i == line_end && i < end {
+                                // We reached the end of the line but still have more to highlight
+                                // The next iteration will pick up the next line
+                            }
+                        }
+                    }
+                    Ok(HighlightEvent::HighlightStart(s)) => {
+                        let cap_name = captures.get(s.0).copied().unwrap_or("Normal");
+                        current_style = self.theme.get(cap_name);
+                    }
+                    Ok(HighlightEvent::HighlightEnd) => {
+                        current_style = self.theme.get("Normal");
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            // Fallback to regex-based highlighting for each line
+            for (i, line) in lines.iter().enumerate() {
+                result[i] = self.highlight_line(line);
+            }
+        }
+
+        result
     }
 
     pub fn highlight_line(&self, line: &str) -> Vec<Style> {

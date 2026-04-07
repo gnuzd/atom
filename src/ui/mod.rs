@@ -37,6 +37,7 @@ impl TerminalUi {
     fn draw_mason(
         &self,
         frame: &mut Frame,
+        editor: &crate::editor::Editor,
         lsp_manager: &crate::lsp::LspManager,
         theme: &crate::ui::colorscheme::ColorScheme,
         vim: &mut crate::vim::VimState,
@@ -73,7 +74,7 @@ impl TerminalUi {
             .split(inner_area);
 
         // 1. Tabs
-        let tabs = ["(1) All", "(2) LSP", "(3) DAP", "(4) Linter", "(5) Formatter"];
+        let tabs = ["(1) All", "(2) LSP", "(3) DAP", "(4) Linter", "(5) Formatter", "(6) Treesitter"];
         let mut tab_spans = Vec::new();
         for (i, tab) in tabs.iter().enumerate() {
             let style = if i == vim.mason_tab {
@@ -109,60 +110,107 @@ impl TerminalUi {
         }
 
         // 3. Package List
-        let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES.iter()
-            .filter(|p| {
-                let matches_tab = match vim.mason_tab {
-                    0 => true,
-                    1 => p.kind == crate::lsp::PackageKind::Lsp,
-                    2 => p.kind == crate::lsp::PackageKind::Dap,
-                    3 => p.kind == crate::lsp::PackageKind::Linter,
-                    4 => p.kind == crate::lsp::PackageKind::Formatter,
-                    _ => true,
-                };
-                let matches_filter = p.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()) || 
-                                   p.description.to_lowercase().contains(&vim.mason_filter.to_lowercase());
-                matches_tab && matches_filter
-            })
-            .collect();
-
-        let (mut installed, mut available): (Vec<_>, Vec<_>) = packages.into_iter().partition(|p| lsp_manager.is_managed(p.cmd));
-        installed.sort_by_key(|p| p.name);
-        available.sort_by_key(|p| p.name);
-
         let mut items = Vec::new();
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled(format!("Installed ({})", installed.len()), Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.orange))
-        ])));
-
         let installing_set = lsp_manager.installing.lock().unwrap();
 
-        for p in &installed {
-            let mut spans = vec![
-                Span::styled(" ● ", theme.get("String")),
-                Span::styled(format!("{:<30} ", p.name), theme.get("Keyword")),
-                Span::styled(p.cmd, theme.get("Comment")),
-            ];
-            if installing_set.contains(p.cmd) {
-                spans.push(Span::styled(" (installing...)", theme.get("Type")));
-            }
-            items.push(ListItem::new(Line::from(spans)));
-        }
+        if vim.mason_tab == 5 {
+            // Treesitter tab
+            let languages = &crate::editor::treesitter::LANGUAGES;
+            let filtered_langs: Vec<_> = languages.iter()
+                .filter(|l| {
+                    l.name.to_lowercase().contains(&vim.mason_filter.to_lowercase())
+                })
+                .collect();
 
-        items.push(ListItem::new(Line::from("")));
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled(format!("Available ({})", available.len()), Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.blue))
-        ])));
+            let (installed, available): (Vec<_>, Vec<_>) = filtered_langs.into_iter()
+                .partition(|l| editor.treesitter.is_installed(l.name));
 
-        for p in &available {
-            let mut spans = vec![
-                Span::styled(" ○ ", theme.get("Comment")),
-                Span::styled(format!("{:<30} ", p.name), theme.get("Normal")),
-                Span::styled(p.description, theme.get("Comment")),
-            ];
-            if installing_set.contains(p.cmd) {
-                spans.push(Span::styled(" (installing...)", theme.get("Type")));
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("Installed ({})", installed.len()), Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.orange))
+            ])));
+
+            for l in &installed {
+                let mut spans = vec![
+                    Span::styled(" ● ", theme.get("String")),
+                    Span::styled(format!("{:<30} ", l.name), theme.get("Keyword")),
+                    Span::styled(l.repo, theme.get("Comment")),
+                ];
+                if installing_set.contains(l.name) {
+                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                }
+                items.push(ListItem::new(Line::from(spans)));
             }
-            items.push(ListItem::new(Line::from(spans)));
+
+            items.push(ListItem::new(Line::from("")));
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("Available ({})", available.len()), Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.blue))
+            ])));
+
+            for l in &available {
+                let mut spans = vec![
+                    Span::styled(" ○ ", theme.get("Comment")),
+                    Span::styled(format!("{:<30} ", l.name), theme.get("Normal")),
+                    Span::styled(l.repo, theme.get("Comment")),
+                ];
+                if installing_set.contains(l.name) {
+                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                }
+                items.push(ListItem::new(Line::from(spans)));
+            }
+        } else {
+            // LSP/DAP/Linter/Formatter tabs
+            let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES.iter()
+                .filter(|p| {
+                    let matches_tab = match vim.mason_tab {
+                        0 => true,
+                        1 => p.kind == crate::lsp::PackageKind::Lsp,
+                        2 => p.kind == crate::lsp::PackageKind::Dap,
+                        3 => p.kind == crate::lsp::PackageKind::Linter,
+                        4 => p.kind == crate::lsp::PackageKind::Formatter,
+                        _ => true,
+                    };
+                    let matches_filter = p.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()) || 
+                                       p.description.to_lowercase().contains(&vim.mason_filter.to_lowercase());
+                    matches_tab && matches_filter
+                })
+                .collect();
+
+            let (mut installed, mut available): (Vec<_>, Vec<_>) = packages.into_iter().partition(|p| lsp_manager.is_managed(p.cmd));
+            installed.sort_by_key(|p| p.name);
+            available.sort_by_key(|p| p.name);
+
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("Installed ({})", installed.len()), Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.orange))
+            ])));
+
+            for p in &installed {
+                let mut spans = vec![
+                    Span::styled(" ● ", theme.get("String")),
+                    Span::styled(format!("{:<30} ", p.name), theme.get("Keyword")),
+                    Span::styled(p.cmd, theme.get("Comment")),
+                ];
+                if installing_set.contains(p.cmd) {
+                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                }
+                items.push(ListItem::new(Line::from(spans)));
+            }
+
+            items.push(ListItem::new(Line::from("")));
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("Available ({})", available.len()), Style::default().add_modifier(Modifier::BOLD).fg(theme.palette.blue))
+            ])));
+
+            for p in &available {
+                let mut spans = vec![
+                    Span::styled(" ○ ", theme.get("Comment")),
+                    Span::styled(format!("{:<30} ", p.name), theme.get("Normal")),
+                    Span::styled(p.description, theme.get("Comment")),
+                ];
+                if installing_set.contains(p.cmd) {
+                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                }
+                items.push(ListItem::new(Line::from(spans)));
+            }
         }
 
         let list = List::new(items)
@@ -173,7 +221,7 @@ impl TerminalUi {
 
         // 4. Help / Status
         let mut help_spans = vec![
-            Span::styled(" i: install  u: update  x: uninstall  q: close ", theme.get("Comment"))
+            Span::styled(" space/i: install  u: update  d/x: uninstall  q: close ", theme.get("Comment"))
         ];
 
         if !installing_set.is_empty() {
@@ -671,7 +719,7 @@ impl TerminalUi {
             let actual_idx = screen_to_buffer_lines[i];
             let line = &buffer.lines[actual_idx];
             let mut spans = Vec::new();
-            let syntax_styles = editor.highlighter.highlight_line(line);
+            let syntax_styles = editor.syntax_styles.get(actual_idx);
             let is_current_line = actual_idx == cursor.y;
 
             if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx) {
@@ -690,22 +738,22 @@ impl TerminalUi {
                 }
 
                 // First line content
-                let first_line_styles = editor.highlighter.highlight_line(first_line_full);
+                let first_line_styles = editor.syntax_styles.get(actual_idx);
                 for (x, c) in first_line_trimmed.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), first_line_styles.get(x + first_line_indent).copied().unwrap_or_default()));
+                    spans.push(Span::styled(c.to_string(), first_line_styles.and_then(|s| s.get(x + first_line_indent)).copied().unwrap_or_default()));
                 }
                 
                 spans.push(Span::styled(format!(" ... {} lines ... ", count), theme.get("Comment").add_modifier(Modifier::BOLD)));
                 
                 // Last line content
-                let last_line_styles = editor.highlighter.highlight_line(last_line_full);
+                let last_line_styles = editor.syntax_styles.get(*end);
                 let last_line_indent = last_line_full.len() - last_line_full.trim_start().len();
                 for (x, c) in last_line_trimmed.chars().enumerate() {
-                    spans.push(Span::styled(c.to_string(), last_line_styles.get(x + last_line_indent).copied().unwrap_or_default()));
+                    spans.push(Span::styled(c.to_string(), last_line_styles.and_then(|s| s.get(x + last_line_indent)).copied().unwrap_or_default()));
                 }
             } else {
                 for (x, c) in line.chars().enumerate() {
-                    let mut style = syntax_styles.get(x).copied().unwrap_or(theme.get("Normal"));
+                    let mut style = syntax_styles.and_then(|s| s.get(x)).copied().unwrap_or(theme.get("Normal"));
                     
                     // Overlay Highlights
                     if let Some(start) = vim.selection_start {
@@ -1150,7 +1198,7 @@ impl TerminalUi {
         }
 
         if let Mode::Mason = vim.mode {
-            self.draw_mason(frame, lsp_manager, theme, vim);
+            self.draw_mason(frame, editor, lsp_manager, theme, vim);
         }
 
         if let Mode::Keymaps = vim.mode {
