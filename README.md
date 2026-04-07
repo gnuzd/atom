@@ -1,118 +1,98 @@
-# Atom IDE
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gnuzd/atom/main/assets/logo.png" alt="Atom Logo" width="200" />
+</p>
 
-A minimalist, terminal-based IDE built with Rust, Ratatui, and Vim-inspired motions.
+<h1 align="center">Atom</h1>
 
-## Features
+<p align="center">
+  <strong>A lightning-fast, modal terminal editor written in Rust.</strong>
+</p>
 
-- **Vim-inspired Modes:** Supports `Normal`, `Insert`, `Visual`, and `Command` modes.
-- **LSP Integration:**
-    - **Automatic Installation:** Built-in LSP manager (`:Mason`) to install and track language servers.
-    - **Go to Definition:** Instantly navigate to function, variable, or component definitions (`gd` or `Ctrl-]`).
-    - **Jumplist:** Helix-style navigation history (`Ctrl-o` for back, `Ctrl-i` for forward).
-    - **Auto-completion:** Real-time suggestions with documentation tooltips.
-    - **Status Tracking:** Real-time feedback on LSP status (Loading, Installing, Ready).
-- **Advanced Formatting:**
-    - **Multi-language Support:** Out-of-the-box support for Rust (`rustfmt`), Lua (`stylua`), and Web/JS stack (Prettier).
-    - **High Performance:** Multi-layer caching (Project Root, Local Binary, and Not Found caches) for near-instant formatting.
-    - **Auto-format:** Automatically formats files on open and save.
-- **File Explorer:** Integrated file tree with support for adding, renaming, moving, and deleting files.
-- **Minimalist UI:** Clean, modern design with Catppuccin-inspired colors and dynamic notifications.
-- **Vim Motions:** Supports word-wise movement (`w`, `b`, `e`), line operations (`o`, `O`, `dd`, `yy`), and undo/redo.
+<p align="center">
+  <a href="https://github.com/gnuzd/atom/releases"><img src="https://img.shields.io/github/v/release/gnuzd/atom?style=flat-square" alt="GitHub release" /></a>
+  <a href="https://github.com/gnuzd/atom/blob/main/LICENSE"><img src="https://img.shields.io/github/license/gnuzd/atom?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/gnuzd/atom/actions"><img src="https://img.shields.io/github/actions/workflow/status/gnuzd/atom/rust.yml?branch=main&style=flat-square" alt="GitHub Actions" /></a>
+</p>
 
-## Getting Started
+---
 
-### Prerequisites
+Atom is a modern, Vim-inspired terminal editor designed for speed and productivity. It combines the best of traditional modal editing with contemporary features like LSP, Tree-sitter, and a built-in package manager.
 
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
-- Optional: `rustfmt`, `prettier`, or `stylua` for formatting.
+## ✨ Features
 
-### Installation
+- ⌨️ **Vim-inspired Modal Editing**: Powerful motions and operators for efficient text manipulation.
+- 🛠️ **Mason-like Package Manager**: Manage LSPs, DAPs, linters, and formatters with an intuitive UI.
+- 🔭 **Telescope-like Fuzzy Finder**: Quickly find files, search text, and navigate your project.
+- 🌳 **Tree-sitter Integration**: High-performance, language-aware syntax highlighting and indentation.
+- 🚀 **Native LSP Support**: Auto-completion, diagnostics, go-to-definition, and refactoring out of the box.
+- 📁 **Integrated File Explorer**: Navigate your project structure without leaving the editor.
+- ⚠️ **Trouble List**: A centralized view for project-wide diagnostics and warnings.
+- 🌿 **Git Integration**: Real-time branch status and file changes in the status line.
+- 🎨 **Beautiful UI**: Modern aesthetics with rounded borders, icons, and customizable themes.
 
-Clone the repository and run using Cargo:
+## 🚀 Installation
+
+### Using Homebrew (Recommended)
 
 ```bash
-cargo run
+brew tap gnuzd/tap
+brew install atom
 ```
 
-### Controls
+### From Source
 
-#### Normal Mode (Default)
+Ensure you have [Rust](https://www.rust-lang.org/tools/install) installed.
 
-- `i`: Enter **Insert** mode.
-- `v`: Enter **Visual** mode.
-- `: `: Enter **Command** mode.
-- `\`: Toggle/Focus **File Explorer**.
-- `?`: Toggle **Keymaps Help**.
-- `h`, `j`, `k`, `l` or **Arrow Keys**: Move the cursor.
-- `gd` or `Ctrl-]`: Go to **Definition**.
-- `Ctrl-o`: Back in **Jumplist**.
-- `Ctrl-i`: Forward in **Jumplist**.
-- `w`, `b`, `e`: Move forward/backward by word (start/end).
-- `o`, `O`: Open new line below/above and enter Insert mode.
-- `p`, `P`: Paste yanked text after/before the cursor.
-- `u`: Undo change.
-- `Ctrl-r`: Redo change.
-- `q`: Quit the application.
+```bash
+git clone https://github.com/gnuzd/atom.git
+cd atom
+cargo build --release
+```
 
-#### File Explorer
+The binary will be available at `target/release/atom`.
 
-- `j/k`: Navigate entries.
-- `l / Enter`: Expand folder or open file.
-- `h`: Collapse folder.
-- `a`: Add new file/folder.
-- `r`: Rename selected.
-- `d`: Delete selected (with confirmation).
-- `/`: Filter files.
+## 🛠️ Getting Started
 
-#### Command Mode
+Simply run `atom` in your terminal:
 
-- `:w`: Save and Format current file.
-- `:gd` or `:definition`: Trigger Go to Definition.
-- `:Format`: Manually trigger formatter.
-- `:FormatAll`: Format all open buffers.
-- `:FormatEnable / :FormatDisable`: Toggle auto-formatting.
-- `:Mason`: Open LSP Manager.
-- `:bn / :bp`: Next/Previous buffer.
-- `:bd`: Close current buffer.
-- `:e <path>`: Open/Edit a file.
-- `:q`: Quit the application.
+```bash
+atom [file or directory]
+```
 
-## Project Structure
+### Basic Keybindings
 
-- `src/editor/`: Core editor logic (Buffer, Cursor, Highlighter).
-- `src/lsp/`: LSP client and Manager (Formatting, Installation).
-- `src/vim/`: Vim state, modes, and motion abstractions.
-- `src/ui/`: Ratatui-based UI components (Explorer, Statusline, CMP).
+- `i` - Insert mode
+- `v` - Visual mode
+- `Esc` - Back to Normal mode
+- `:w` - Save file
+- `:q` - Quit
+- `<Space>ff` - Find files (Telescope)
+- `<Space>e` - Toggle File Explorer
+- `<Space>m` - Open Mason (Package Manager)
 
-## Roadmap / TODO
+## ⚙️ Customization
 
-### Core Editor
-- [ ] Improved Syntax Highlighting (Tree-sitter integration)
-- [ ] Project-wide Search (Grep/Ripgrep integration)
-- [ ] Search & Replace (:s/old/new/g)
-- [ ] Command History (Up/Down in `:` mode)
-- [ ] Indentation support (Auto-indent, Tab/Shift-Tab)
-- [ ] Horizontal scrolling for long lines
+Atom is highly configurable. Configuration files are located in `~/.config/atom/` (or platform equivalent).
 
-### LSP & Tooling
-- [x] Auto-completion
-- [ ] Diagnostics (inline errors/warnings)
-- [x] Go to definition / References
-- [ ] Hover documentation (expanded)
-- [x] Multi-layer caching for Formatters
+- `config.toml`: General editor settings.
+- `colorscheme.toml`: Customize your editor's look.
 
-### UI/UX
-- [x] Floating Windows for CMP/Documentation
-- [ ] Customizable Color Schemes (Themes)
-- [ ] Customizable Keybindings
-- [ ] Tab bar for open buffers
-- [x] Command Line Notifications
+## 🤝 Contributing
 
-### Miscellaneous
-- [ ] Plugin system (Lua-based)
-- [ ] Session management (restore open buffers)
-- [ ] Configuration file support (`atom.toml`)
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-MIT
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://github.com/gnuzd">gnuzd</a>
+</p>
