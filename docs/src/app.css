@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	body {
+		@apply bg-[#1a1b26] text-[#c0caf5];
+	}
+}
+
+.prose {
+	@apply text-[#c0caf5];
+}
+
+.prose h1, .prose h2, .prose h3, .prose strong {
+	@apply text-[#7aa2f7];
+}
+
+.prose code {
+	@apply bg-[#24283b] text-[#9ece6a] px-1 rounded;
+}
+
+.prose a {
+	@apply text-[#bb9af7] no-underline hover:underline;
+}

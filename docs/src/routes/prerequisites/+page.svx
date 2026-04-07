@@ -1,0 +1,28 @@
+# 📋 Pre-requisites
+
+Before installing Atom, please ensure your system meets the following requirements.
+
+## 🛠️ System Requirements
+
+- **Operating System**: macOS, Linux, or Windows (via WSL2).
+- **Terminal**: A terminal emulator with true-color (24-bit) support is highly recommended (e.g., Alacritty, Kitty, WezTerm, iTerm2).
+
+## 📦 Core Dependencies
+
+Atom requires the following tools to be installed on your system:
+
+- **[Rust & Cargo](https://www.rust-lang.org/tools/install)**: The latest stable version of Rust is required to build from source.
+- **[Git](https://git-scm.com/)**: Required for Git integration features and some package management operations.
+
+## 🚀 Runtime Dependencies
+
+To get the most out of Atom's features, you should have the following:
+
+- **Language Servers (LSP)**: Install LSPs for your preferred languages (e.g., `rust-analyzer` for Rust, `pyright` for Python). You can manage these within Atom using the `:Mason` command.
+- **Tree-sitter Parsers**: Used for syntax highlighting. Atom can download and compile these automatically.
+- **[Nerd Fonts](https://www.nerdfonts.com/)**: Highly recommended for rendering icons in the UI, explorer, and status line.
+
+## 🧩 Optional Tools
+
+- **Ripgrep (rg)**: For faster project-wide searching.
+- **FD (fd)**: For faster file finding.

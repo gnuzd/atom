@@ -1,0 +1,17 @@
+# Introduction
+
+Welcome to the official documentation for **Atom**, a lightning-fast, modal terminal editor written in Rust.
+
+Atom is designed for developers who crave the speed and efficiency of Vim but want the modern features of a contemporary IDE, such as LSP support, Tree-sitter highlighting, and a built-in package manager.
+
+## ✨ Key Features
+
+- **⌨️ Vim-inspired Modal Editing**: Powerful motions and operators for efficient text manipulation.
+- **🛠️ Mason-like Package Manager**: Manage LSPs, DAPs, linters, and formatters with an intuitive UI.
+- **🔭 Telescope-like Fuzzy Finder**: Quickly find files, search text, and navigate your project.
+- **🌳 Tree-sitter Integration**: High-performance, language-aware syntax highlighting and indentation.
+- **🚀 Native LSP Support**: Auto-completion, diagnostics, go-to-definition, and refactoring out of the box.
+- **📁 Integrated File Explorer**: Navigate your project structure without leaving the editor.
+- **⚠️ Trouble List**: A centralized view for project-wide diagnostics and warnings.
+- **🌿 Git Integration**: Real-time branch status and file changes in the status line.
+- **🎨 Beautiful UI**: Modern aesthetics with rounded borders, icons, and customizable themes.

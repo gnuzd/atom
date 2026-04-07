@@ -18,6 +18,8 @@
 
 Atom is a modern, Vim-inspired terminal editor designed for speed and productivity. It combines the best of traditional modal editing with contemporary features like LSP, Tree-sitter, and a built-in package manager.
 
+📚 **[Documentation Site](https://gnuzd.github.io/atom)** | 🚀 **[Installation Guide](https://gnuzd.github.io/atom/installation)** | 📋 **[Prerequisites](https://gnuzd.github.io/atom/prerequisites)**
+
 ## ✨ Features
 
 - ⌨️ **Vim-inspired Modal Editing**: Powerful motions and operators for efficient text manipulation.

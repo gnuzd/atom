@@ -1,0 +1,50 @@
+# 🚀 Installation
+
+Atom can be installed easily on most platforms.
+
+## 📦 Using Homebrew (Recommended for macOS)
+
+This is the easiest way to install and keep Atom up to date.
+
+```bash
+# Add the gnuzd tap
+brew tap gnuzd/tap
+
+# Install Atom
+brew install atom
+```
+
+To update later:
+```bash
+brew upgrade atom
+```
+
+## 🏗️ Building from Source
+
+If you're on Linux or want the latest features, you can build Atom yourself using Cargo.
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/gnuzd/atom.git
+cd atom
+```
+
+### 2. Build and install
+
+```bash
+# Build the release binary and install it to your cargo path (~/.cargo/bin)
+cargo install --path .
+```
+
+Ensure `~/.cargo/bin` is in your `PATH`.
+
+## ⚙️ Post-Installation
+
+Once installed, simply run `atom` in your terminal:
+
+```bash
+atom .
+```
+
+You can now use the `:Mason` command to install language servers and other packages.
