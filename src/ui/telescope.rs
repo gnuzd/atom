@@ -468,8 +468,10 @@ export default Counter;"#
             let mut spans = Vec::new();
             for (x, c) in line.chars().enumerate() {
                 let mut style = syntax_styles.get(x).copied().unwrap_or(preview_theme.get("Normal"));
-                if is_target && style.bg.is_none() {
-                    style = style.bg(preview_theme.palette.black2);
+                
+                // Clear individual backgrounds on target line to avoid "patchy" look
+                if is_target {
+                    style.bg = None;
                 }
 
                 if c == '\t' {
@@ -480,20 +482,33 @@ export default Counter;"#
                     // Indent guide logic for non-tab characters
                     let is_indent_pos = x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
                     if is_indent_pos {
-                        let indent_style = preview_theme.get("Comment").add_modifier(Modifier::DIM);
+                        let mut indent_style = preview_theme.get("Comment").add_modifier(Modifier::DIM);
+                        if is_target { indent_style.bg = None; }
                         spans.push(Span::styled("┆", indent_style));
                     } else {
                         spans.push(Span::styled(c.to_string(), style));
                     }
                 }
             }
-            if line.is_empty() {
-                if is_target {
-                    let style = preview_theme.get("CursorLine");
-                    spans.push(Span::styled(" ", style));
+            
+            // Fill the rest of the preview line with CursorLine if active
+            if is_target {
+                let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
+                if current_width < inner_preview_area.width as usize {
+                    spans.push(Span::styled(" ".repeat(inner_preview_area.width as usize - current_width), preview_theme.get("CursorLine")));
                 }
             }
-            preview_text.lines.push(Line::from(spans));
+
+            if line.is_empty() {
+                if is_target {
+                    spans.push(Span::styled(" ".repeat(inner_preview_area.width as usize), preview_theme.get("CursorLine")));
+                }
+            }
+            let mut line_obj = Line::from(spans);
+            if is_target {
+                line_obj = line_obj.style(preview_theme.get("CursorLine"));
+            }
+            preview_text.lines.push(line_obj);
         }
         frame.render_widget(Paragraph::new(line_numbers).alignment(ratatui::layout::Alignment::Right), preview_layout[0]);
         frame.render_widget(Paragraph::new(preview_text), preview_layout[1]);
