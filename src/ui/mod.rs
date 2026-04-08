@@ -411,7 +411,7 @@ impl TerminalUi {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(1),
-                Constraint::Length(if vim.config.laststatus == 0 { 0 } else { 1 }),
+                Constraint::Length(if vim.config.laststatus >= 2 { 1 } else { 0 }),
                 Constraint::Length(1),
             ])
             .split(area);
@@ -809,10 +809,11 @@ impl TerminalUi {
                         let mut style = syntax_styles.and_then(|s: &Vec<Style>| s.get(x)).copied().unwrap_or(theme.get("Normal"));
                         
                         // Overlay Highlights
+                        let mut is_in_range = false;
                         if let Some(start) = vim.selection_start {
                             let cur = crate::vim::Position { x: cursor.x, y: cursor.y };
                             let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) { (start.y, start.x, cur.y, cur.x) } else { (cur.y, cur.x, start.y, start.x) };
-                            let is_in_range = if actual_idx > s_y && actual_idx < e_y { true } else if actual_idx == s_y && actual_idx == e_y { x >= s_x && x <= e_x } else if actual_idx == s_y { x >= s_x } else if actual_idx == e_y { x <= e_x } else { false };
+                            is_in_range = if actual_idx > s_y && actual_idx < e_y { true } else if actual_idx == s_y && actual_idx == e_y { x >= s_x && x <= e_x } else if actual_idx == s_y { x >= s_x } else if actual_idx == e_y { x <= e_x } else { false };
                             if is_in_range { style = theme.get("Visual"); }
                         }
                         if !search_query.is_empty() {
@@ -851,7 +852,8 @@ impl TerminalUi {
                         }
 
                         // Apply CursorLine background: clear individual bg to avoid "patchy" look
-                        if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
+                        // ONLY if not in visual selection range
+                        if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) && !is_in_range {
                             style.bg = None;
                         }
 

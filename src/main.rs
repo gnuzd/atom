@@ -329,7 +329,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             } else {
                                                 // 2. Check for partial sequences
                                                 let is_partial = match seq.as_str() {
-                                                    " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" => true,
+                                                    " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" | "d" | "y" | "g" => true,
                                                     _ => false,
                                                 };
 
@@ -704,6 +704,53 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                     vim.mode = Mode::Normal;
                                     vim.telescope.close();
+                                }
+                                _ => {}
+                            }
+                        }
+                        Mode::Mason => {
+                            match key.code {
+                                KeyCode::Esc | KeyCode::Char('q') => { vim.mode = Mode::Normal; }
+                                KeyCode::Char('j') | KeyCode::Down => {
+                                    let i = vim.mason_state.selected().unwrap_or(0);
+                                    vim.mason_state.select(Some(i + 1));
+                                }
+                                KeyCode::Char('k') | KeyCode::Up => {
+                                    let i = vim.mason_state.selected().unwrap_or(0);
+                                    if i > 0 { vim.mason_state.select(Some(i - 1)); }
+                                }
+                                KeyCode::Char('1') => { vim.mason_tab = 0; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('2') => { vim.mason_tab = 1; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('3') => { vim.mason_tab = 2; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('4') => { vim.mason_tab = 3; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('5') => { vim.mason_tab = 4; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('6') => { vim.mason_tab = 5; vim.mason_state.select(Some(0)); }
+                                KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    vim.mode = Mode::MasonFilter;
+                                    vim.mason_filter.clear();
+                                }
+                                KeyCode::Char(' ') | KeyCode::Char('i') => {
+                                    // Install selected
+                                }
+                                KeyCode::Char('u') => {
+                                    // Update selected
+                                }
+                                KeyCode::Char('d') | KeyCode::Char('x') => {
+                                    // Uninstall selected
+                                }
+                                _ => {}
+                            }
+                        }
+                        Mode::MasonFilter => {
+                            match key.code {
+                                KeyCode::Esc | KeyCode::Enter => { vim.mode = Mode::Mason; }
+                                KeyCode::Char(c) => {
+                                    vim.mason_filter.push(c);
+                                    vim.mason_state.select(Some(0));
+                                }
+                                KeyCode::Backspace => {
+                                    vim.mason_filter.pop();
+                                    vim.mason_state.select(Some(0));
                                 }
                                 _ => {}
                             }
