@@ -32,7 +32,7 @@ pub struct Config {
     pub signcolumn: bool,
     #[serde(default = "default_true")]
     pub mouse: bool,
-    #[serde(default = "default_false")]
+    #[serde(default = "default_true")]
     pub showmode: bool,
     #[serde(default = "default_laststatus")]
     pub laststatus: usize,
@@ -62,7 +62,7 @@ impl Config {
             undofile: true,
             signcolumn: true,
             mouse: true,
-            showmode: false,
+            showmode: true,
             laststatus: 3,
         }
     }

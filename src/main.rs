@@ -429,6 +429,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     vim.yank_type = YankType::Line;
                                                     vim.set_message("Line yanked".to_string());
                                                 }
+                                                "[[" => { editor.jump_to_first_line(); }
+                                                "]]" => { editor.jump_to_last_line(); }
                                                 "gd" => {
                                                     if let Some(path) = editor.buffer().file_path.clone() {
                                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
@@ -521,6 +523,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 KeyCode::Up => editor.move_up(),
                                                 KeyCode::Left => editor.move_left(),
                                                 KeyCode::Right => editor.move_right(),
+                                                KeyCode::PageUp => editor.move_to_line_start(),
+                                                KeyCode::PageDown => editor.move_to_line_end(),
                                                 _ => {}
                                             }
                                         }
@@ -657,6 +661,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
                                 }
+                                KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    if let Some(path) = editor.buffer().file_path.clone() {
+                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                            let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                            let _ = lsp_manager.request_completions(&ext, &path, y, x, CompletionTriggerKind::INVOKED, None);
+                                        }
+                                    }
+                                }
                                 KeyCode::Char(c) => {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
                                     let idx = editor.buffer().text.line_to_char(y) + x;
@@ -742,6 +754,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         editor.cursor_mut().y += 1; editor.cursor_mut().x = 0;
                                     }
                                 }
+                                KeyCode::PageUp => editor.move_to_line_start(),
+                                KeyCode::PageDown => editor.move_to_line_end(),
                                 _ => {}
                             }
                         }
@@ -1132,7 +1146,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             _ => {}
                         }
                     }
-                    _ => { vim.mode = Mode::Normal; }
                 }
             }
         }
