@@ -142,6 +142,51 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    let install_selected_package = |vim: &mut VimState, editor: &mut Editor, lsp_manager: &LspManager| {
+        let selected_idx = vim.mason_state.selected().unwrap_or(0);
+        if vim.mason_tab == 5 {
+            // Treesitter
+            let languages = &crate::editor::treesitter::LANGUAGES;
+            let filtered_langs: Vec<_> = languages.iter()
+                .filter(|l| l.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()))
+                .collect();
+            if let Some(lang) = filtered_langs.get(selected_idx) {
+                if let Err(e) = editor.treesitter.install(lang.name) {
+                    vim.set_message(format!("Error installing parser: {}", e));
+                } else {
+                    vim.set_message(format!("Parser {} installed", lang.name));
+                }
+            }
+        } else {
+            // LSP/DAP/etc
+            let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES.iter()
+                .filter(|p| {
+                    let matches_tab = match vim.mason_tab {
+                        0 => true,
+                        1 => p.kind == crate::lsp::PackageKind::Lsp,
+                        2 => p.kind == crate::lsp::PackageKind::Dap,
+                        3 => p.kind == crate::lsp::PackageKind::Linter,
+                        4 => p.kind == crate::lsp::PackageKind::Formatter,
+                        _ => true,
+                    };
+                    let matches_filter = p.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()) ||
+                                       p.description.to_lowercase().contains(&vim.mason_filter.to_lowercase());
+                    matches_tab && matches_filter
+                })
+                .collect();
+            
+            let (installed, available): (Vec<_>, Vec<_>) = packages.into_iter().partition(|p| lsp_manager.is_managed(p.cmd));
+            let target = if selected_idx < installed.len() { Some(installed[selected_idx]) }
+                         else if selected_idx < installed.len() + available.len() { Some(available[selected_idx - installed.len()]) }
+                         else { None };
+
+            if let Some(pkg) = target {
+                let _ = lsp_manager.install_package(pkg.cmd);
+                vim.set_message(format!("Installing {}...", pkg.name));
+            }
+        }
+    };
+
     let toggle_comment = |editor: &mut Editor, vim: &mut VimState| {
         let path = editor.buffer().file_path.clone();
         let ext = path.as_ref().and_then(|p| p.extension()).and_then(|s| s.to_str()).unwrap_or("rs");
@@ -730,13 +775,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     vim.mason_filter.clear();
                                 }
                                 KeyCode::Char(' ') | KeyCode::Char('i') => {
-                                    // Install selected
+                                    install_selected_package(&mut vim, &mut editor, &lsp_manager);
                                 }
                                 KeyCode::Char('u') => {
-                                    // Update selected
+                                    install_selected_package(&mut vim, &mut editor, &lsp_manager);
                                 }
                                 KeyCode::Char('d') | KeyCode::Char('x') => {
-                                    // Uninstall selected
+                                    // uninstall logic can be similar if added
+                                    install_selected_package(&mut vim, &mut editor, &lsp_manager);
                                 }
                                 _ => {}
                             }
