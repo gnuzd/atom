@@ -300,7 +300,9 @@ impl TerminalUi {
             ("<Space>bl", "Show Git Blame (Popup)"),
             ("zc / za", "Fold / Unfold"),
             ("<Space>bb", "Toggle Autoformat"),
+            ("<Space>x", "Close current buffer"),
             ("dd", "Delete line"),
+
             ("yy", "Yank line"),
             ("p/P", "Paste after/before"),
             ("o/O", "Open line below/above"),

@@ -293,7 +293,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     vim.set_message(format!("Autoformat {}", if vim.config.disable_autoformat { "disabled" } else { "enabled" }));
                                                 }
                                                 " bl" => { vim.blame_popup = Some("Git Blame: You (just now) - placeholder".to_string()); }
-                                                " bx" => {
+                                                " x" => {
                                                     if editor.buffer().modified {
                                                         vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::CloseBuffer);
                                                     } else {
