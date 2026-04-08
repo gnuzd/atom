@@ -20,6 +20,7 @@ use ui::TerminalUi;
 use vim::{mode::{Mode, YankType, Focus, ExplorerInputType}, VimState, Position, LspStatus};
 use ui::explorer::FileExplorer;
 use lsp::LspManager;
+use lsp_types::{GotoDefinitionResponse, CompletionResponse, PublishDiagnosticsParams, CompletionTriggerKind};
 
 fn find_project_root(path: &PathBuf) -> PathBuf {
     let mut current = path.clone();
@@ -89,7 +90,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let ui = TerminalUi::new();
     let mut explorer = FileExplorer::new();
     let mut trouble = ui::trouble::TroubleList::new();
-    let lsp_manager = LspManager::new();
+    let mut lsp_manager = LspManager::new();
 
     // Helper functions for common logic
     let format_buffer = |editor: &mut Editor, lsp_manager: &LspManager, vim: &mut VimState, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ui: &TerminalUi, explorer: &FileExplorer, trouble: &ui::trouble::TroubleList| -> Result<(), String> {
@@ -284,7 +285,72 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         // LSP ensure/debouncing/message processing
-        // (Skipping detailed re-impl here for brevity but assuming it's merged or called)
+        if let Some(path) = editor.buffer().file_path.clone() {
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                let _ = lsp_manager.start_client(&ext, vim.project_root.clone());
+            }
+        }
+
+        // Process LSP messages
+        let mut messages_to_process = Vec::new();
+        {
+            let clients = lsp_manager.clients.lock().unwrap();
+            for (ext, ext_clients) in clients.iter() {
+                for (client, _, cmd) in ext_clients {
+                    while let Ok(msg) = client.receiver().try_recv() {
+                        messages_to_process.push((ext.clone(), cmd.clone(), msg));
+                    }
+                }
+            }
+        }
+
+        for (_ext, cmd, msg) in messages_to_process {
+            match msg {
+                lsp_server::Message::Response(resp) => {
+                    let id_str = resp.id.to_string();
+                    let id = id_str.trim_matches('"').parse::<i32>().ok();
+
+                    if let Some(id) = id {
+                        if Some(id) == vim.definition_request_id {
+                            // Handle definition response
+                            vim.definition_request_id = None;
+                            if let Ok(value) = serde_json::from_value::<GotoDefinitionResponse>(resp.result.unwrap_or_default()) {
+                                match value {
+                                    GotoDefinitionResponse::Scalar(loc) => {
+                                        let path = PathBuf::from(loc.uri.to_file_path().unwrap());
+                                        let pos = Position { x: loc.range.start.character as usize, y: loc.range.start.line as usize };
+                                        let _ = editor.open_file(path);
+                                        editor.cursor_mut().y = pos.y;
+                                        editor.cursor_mut().x = pos.x;
+                                    }
+                                    _ => {} // Handle multiple locations if needed
+                                }
+                            }
+                        } else {
+                            // Handle completions
+                            if let Ok(value) = serde_json::from_value::<CompletionResponse>(resp.result.unwrap_or_default()) {
+                                match value {
+                                    CompletionResponse::Array(items) => { vim.suggestions = items; }
+                                    CompletionResponse::List(list) => { vim.suggestions = list.items; }
+                                }
+                                vim.show_suggestions = !vim.suggestions.is_empty();
+                                vim.suggestion_state.select(Some(0));
+                            }
+                        }
+                    }
+                }
+                lsp_server::Message::Notification(notif) => {
+                    if notif.method == "textDocument/publishDiagnostics" {
+                        if let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(notif.params) {
+                            let mut diagnostics = lsp_manager.diagnostics.lock().unwrap();
+                            let file_diags = diagnostics.entry(params.uri).or_default();
+                            file_diags.insert(cmd, params.diagnostics);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
         
         // 1. Process events (Draining for zero-lag)
         let mut should_quit = false;
@@ -362,6 +428,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     vim.register = line;
                                                     vim.yank_type = YankType::Line;
                                                     vim.set_message("Line yanked".to_string());
+                                                }
+                                                "gd" => {
+                                                    if let Some(path) = editor.buffer().file_path.clone() {
+                                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                            let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                                            match lsp_manager.request_definition(&ext, &path, y, x) {
+                                                                Ok(id) => { vim.definition_request_id = Some(id); }
+                                                                Err(e) => { vim.set_message(format!("LSP Error: {}", e)); }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                                 "zc" | "za" => { editor.toggle_fold(&vim.folding_ranges); }
                                                 "]g" => { editor.jump_to_next_hunk(); }
@@ -608,6 +685,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                     editor.buffer_mut().text.insert(idx, &to_insert);
                                     editor.cursor_mut().x += 1;
+
+                                    // Trigger LSP completion
+                                    if let Some(path) = editor.buffer().file_path.clone() {
+                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                            let trigger_kind = if c == '.' || c == ':' || c == '>' { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
+                                            let trigger_char = if trigger_kind == CompletionTriggerKind::TRIGGER_CHARACTER { Some(c.to_string()) } else { None };
+                                            let _ = lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
+                                        }
+                                    }
                                 }
                                 KeyCode::Backspace => {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
@@ -618,17 +704,43 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                                 KeyCode::Tab => {
-                                    let (y, x) = (editor.cursor().y, editor.cursor().x);
-                                    let idx = editor.buffer().text.line_to_char(y) + x;
-                                    let spaces = " ".repeat(vim.config.tabstop);
-                                    editor.buffer_mut().text.insert(idx, &spaces);
-                                    editor.cursor_mut().x += vim.config.tabstop;
+                                    if vim.show_suggestions && !vim.suggestions.is_empty() {
+                                        vim.selected_suggestion = (vim.selected_suggestion + 1) % vim.suggestions.len();
+                                        vim.suggestion_state.select(Some(vim.selected_suggestion));
+                                    } else {
+                                        let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                        let idx = editor.buffer().text.line_to_char(y) + x;
+                                        let spaces = " ".repeat(vim.config.tabstop);
+                                        editor.buffer_mut().text.insert(idx, &spaces);
+                                        editor.cursor_mut().x += vim.config.tabstop;
+                                    }
                                 }
                                 KeyCode::Enter => {
-                                    let (y, x) = (editor.cursor().y, editor.cursor().x);
-                                    let idx = editor.buffer().text.line_to_char(y) + x;
-                                    editor.buffer_mut().text.insert(idx, "\n");
-                                    editor.cursor_mut().y += 1; editor.cursor_mut().x = 0;
+                                    if vim.show_suggestions && !vim.suggestions.is_empty() {
+                                        let selected = &vim.suggestions[vim.selected_suggestion];
+                                        let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                        
+                                        // Simple completion: replace current word with suggestion
+                                        let line = editor.buffer().line(y).unwrap().to_string();
+                                        let mut start_x = x;
+                                        let chars: Vec<char> = line.chars().collect();
+                                        while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
+                                            start_x -= 1;
+                                        }
+                                        
+                                        let line_start_char = editor.buffer().text.line_to_char(y);
+                                        editor.buffer_mut().text.remove((line_start_char + start_x)..(line_start_char + x));
+                                        editor.buffer_mut().text.insert(line_start_char + start_x, &selected.label);
+                                        editor.cursor_mut().x = start_x + selected.label.len();
+                                        
+                                        vim.show_suggestions = false;
+                                        vim.suggestions.clear();
+                                    } else {
+                                        let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                        let idx = editor.buffer().text.line_to_char(y) + x;
+                                        editor.buffer_mut().text.insert(idx, "\n");
+                                        editor.cursor_mut().y += 1; editor.cursor_mut().x = 0;
+                                    }
                                 }
                                 _ => {}
                             }
@@ -973,7 +1085,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                             "FormatEnable" => { vim.config.disable_autoformat = false; vim.set_message("Autoformat enabled".to_string()); }
                                             "FormatDisable" => { vim.config.disable_autoformat = true; vim.set_message("Autoformat disabled".to_string()); }
-                                            "gd" => { vim.set_message("Go to Definition (not implemented)".to_string()); }
+                                            "gd" | "Definition" => {
+                                                if let Some(path) = editor.buffer().file_path.clone() {
+                                                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                        let (y, x) = (editor.cursor().y, editor.cursor().x);
+                                                        match lsp_manager.request_definition(&ext, &path, y, x) {
+                                                            Ok(id) => { vim.definition_request_id = Some(id); }
+                                                            Err(e) => { vim.set_message(format!("LSP Error: {}", e)); }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             "LspInfo" => { vim.set_message("LSP Info (not implemented)".to_string()); }
                                             "LspRestart" => { vim.set_message("LSP Restarted".to_string()); }
                                             "set" => {
