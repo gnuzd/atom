@@ -14,9 +14,9 @@
 
 <div class="flex h-screen overflow-hidden">
 	<!-- Sidebar -->
-	<aside class="w-64 bg-[#16161e] border-r border-[#24283b] flex flex-col">
-		<div class="p-6 border-b border-[#24283b]">
-			<h1 class="text-xl font-bold text-[#7aa2f7] flex items-center gap-2">
+	<aside class="w-64 bg-tokyo-sidebar border-r border-tokyo-border flex flex-col">
+		<div class="p-6 border-b border-tokyo-border">
+			<h1 class="text-xl font-bold text-tokyo-blue flex items-center gap-2">
 				<LayoutGrid size={24} />
 				Atom Docs
 			</h1>
@@ -27,7 +27,7 @@
 					<li>
 						<a
 							href={item.path}
-							class="flex items-center gap-3 px-4 py-2 rounded-lg transition-colors { $page.url.pathname === item.path ? 'bg-[#24283b] text-[#7aa2f7]' : 'text-[#565f89] hover:bg-[#1a1b26] hover:text-[#c0caf5]' }"
+							class="flex items-center gap-3 px-4 py-2 rounded-lg transition-colors { $page.url.pathname === item.path ? 'bg-tokyo-border text-tokyo-blue' : 'text-tokyo-muted hover:bg-tokyo-bg hover:text-tokyo-text' }"
 						>
 							<item.icon size={18} />
 							{item.name}
@@ -36,7 +36,7 @@
 				{/each}
 			</ul>
 		</nav>
-		<div class="p-4 border-t border-[#24283b] text-xs text-[#565f89]">
+		<div class="p-4 border-t border-tokyo-border text-xs text-tokyo-muted">
 			Built with SvelteKit & ❤️
 		</div>
 	</aside>

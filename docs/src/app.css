@@ -1,25 +1,44 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-tokyo-bg: #1a1b26;
+  --color-tokyo-sidebar: #16161e;
+  --color-tokyo-border: #24283b;
+  --color-tokyo-text: #c0caf5;
+  --color-tokyo-muted: #565f89;
+  --color-tokyo-blue: #7aa2f7;
+  --color-tokyo-purple: #bb9af7;
+  --color-tokyo-green: #9ece6a;
+}
 
 @layer base {
-	body {
-		@apply bg-[#1a1b26] text-[#c0caf5];
-	}
+  body {
+    background-color: var(--color-tokyo-bg);
+    color: var(--color-tokyo-text);
+  }
 }
 
 .prose {
-	@apply text-[#c0caf5];
+  color: var(--color-tokyo-text);
 }
 
-.prose h1, .prose h2, .prose h3, .prose strong {
-	@apply text-[#7aa2f7];
+.prose h1, .prose h2, .prose h3, .prose h4, .prose strong {
+  color: var(--color-tokyo-blue);
 }
 
 .prose code {
-	@apply bg-[#24283b] text-[#9ece6a] px-1 rounded;
+  background-color: var(--color-tokyo-border);
+  color: var(--color-tokyo-green);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
 }
 
 .prose a {
-	@apply text-[#bb9af7] no-underline hover:underline;
+  color: var(--color-tokyo-purple);
+  text-decoration: none;
+}
+
+.prose a:hover {
+  text-decoration: underline;
 }
