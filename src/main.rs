@@ -840,6 +840,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 }
                                 KeyCode::PageUp => editor.move_to_line_start(),
                                 KeyCode::PageDown => editor.move_to_line_end(),
+                                KeyCode::Down => {
+                                    if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
+                                        vim.selected_suggestion = (vim.selected_suggestion + 1) % vim.filtered_suggestions.len();
+                                        vim.suggestion_state.select(Some(vim.selected_suggestion));
+                                    } else {
+                                        editor.move_down();
+                                    }
+                                }
+                                KeyCode::Up => {
+                                    if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
+                                        if vim.selected_suggestion > 0 {
+                                            vim.selected_suggestion -= 1;
+                                        } else {
+                                            vim.selected_suggestion = vim.filtered_suggestions.len() - 1;
+                                        }
+                                        vim.suggestion_state.select(Some(vim.selected_suggestion));
+                                    } else {
+                                        editor.move_up();
+                                    }
+                                }
+                                KeyCode::Left => editor.move_left(),
+                                KeyCode::Right => editor.move_right(),
                                 _ => {}
                             }
                         }
