@@ -73,6 +73,24 @@ impl Palette {
         }
     }
 
+    pub fn tokyonight() -> Self {
+        Self {
+            white: Color::Rgb(192, 202, 245),
+            darker_black: Color::Rgb(26, 27, 38),
+            black: Color::Rgb(26, 27, 38),
+            black2: Color::Rgb(36, 38, 54),
+            grey: Color::Rgb(59, 66, 97),
+            grey_fg: Color::Rgb(68, 75, 110),
+            red: Color::Rgb(247, 118, 118),
+            green: Color::Rgb(158, 206, 106),
+            yellow: Color::Rgb(224, 175, 104),
+            blue: Color::Rgb(122, 162, 247),
+            purple: Color::Rgb(187, 154, 247),
+            cyan: Color::Rgb(125, 207, 255),
+            orange: Color::Rgb(255, 158, 100),
+        }
+    }
+
     pub fn onedark() -> Self {
         Self {
             white: Color::Rgb(171, 178, 191), // base05
@@ -90,6 +108,24 @@ impl Palette {
             orange: Color::Rgb(209, 154, 102),
         }
     }
+
+    pub fn everforest() -> Self {
+        Self {
+            white: Color::Rgb(211, 198, 170),
+            darker_black: Color::Rgb(30, 35, 38),
+            black: Color::Rgb(35, 42, 46),
+            black2: Color::Rgb(45, 53, 59),
+            grey: Color::Rgb(71, 82, 88),
+            grey_fg: Color::Rgb(86, 95, 100),
+            red: Color::Rgb(230, 126, 128),
+            green: Color::Rgb(167, 192, 128),
+            yellow: Color::Rgb(214, 182, 125),
+            blue: Color::Rgb(127, 187, 179),
+            purple: Color::Rgb(214, 153, 182),
+            cyan: Color::Rgb(131, 192, 146),
+            orange: Color::Rgb(227, 139, 110),
+        }
+    }
     }
 
 #[derive(Debug, Clone)]
@@ -100,11 +136,19 @@ pub struct ColorScheme {
 
 impl ColorScheme {
     pub fn new(name: &str) -> Self {
-        let palette = match name {
-            "gruvbox-material" => Palette::gruvbox_material(),
-            "ayu-dark" => Palette::ayu_dark(),
-            "onedark" => Palette::onedark(),
-            _ => Palette::catppuccin(),
+        let name_lower = name.to_lowercase();
+        let palette = if name_lower.contains("gruvbox") {
+            Palette::gruvbox_material()
+        } else if name_lower.contains("ayu") {
+            Palette::ayu_dark()
+        } else if name_lower.contains("one") {
+            Palette::onedark()
+        } else if name_lower.contains("tokyo") {
+            Palette::tokyonight()
+        } else if name_lower.contains("everforest") {
+            Palette::everforest()
+        } else {
+            Palette::catppuccin()
         };
 
         let mut hl = HashMap::new();

@@ -417,9 +417,9 @@ impl TerminalUi {
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(if explorer.visible {
-                [Constraint::Percentage(15), Constraint::Percentage(85)]
+                [Constraint::Length(explorer.width), Constraint::Min(1)]
             } else {
-                [Constraint::Percentage(0), Constraint::Percentage(100)]
+                [Constraint::Length(0), Constraint::Min(1)]
             })
             .split(root_chunks[0]);
 
@@ -611,8 +611,12 @@ impl TerminalUi {
         let cursor_screen_y = screen_to_buffer_lines.iter().position(|&(idx, row)| {
             if idx != cursor.y { return false; }
             if !vim.config.wrap { return true; }
-            let line = &buffer.lines[idx];
-            let cursor_pos_in_line = line.chars().take(cursor.x).map(|c| if c == '\t' { 2 } else { 1 }).sum::<usize>();
+            let line = buffer.line(idx).unwrap();
+            let mut cursor_pos_in_line = 0;
+            for (i, c) in line.chars().enumerate() {
+                if i >= cursor.x { break; }
+                cursor_pos_in_line += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
+            }
             let cursor_row = cursor_pos_in_line / editor_width;
             row == cursor_row
         }).map(|pos| pos.saturating_sub(scroll_y));
@@ -734,7 +738,7 @@ impl TerminalUi {
         for i in scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len()) {
             let (actual_idx, row) = screen_to_buffer_lines[i];
             let is_first_row = row == 0;
-            let line = &buffer.lines[actual_idx];
+            let line = buffer.line(actual_idx).unwrap();
             let mut spans = Vec::new();
             let syntax_styles = editor.syntax_styles.get(actual_idx);
             let is_current_line = actual_idx == cursor.y;
@@ -743,11 +747,11 @@ impl TerminalUi {
                 // Folds don't wrap for now
                 if row == 0 {
                     // Render a nice fold summary line: StartLine ... count lines ... EndLine
-                    let first_line_full = line.trim_end();
+                    let first_line_full = line.to_string();
                     let first_line_trimmed = first_line_full.trim_start();
                     let first_line_indent = first_line_full.len() - first_line_trimmed.len();
                     
-                    let last_line_full = buffer.lines.get(*end).map(|l| l.as_str()).unwrap_or("}");
+                    let last_line_full = buffer.line(*end).map(|l| l.to_string()).unwrap_or_else(|| "}".to_string());
                     let last_line_trimmed = last_line_full.trim();
                     let count = end - actual_idx;
                     
@@ -776,7 +780,8 @@ impl TerminalUi {
             } else {
                 let mut current_pos_in_line = 0;
                 for (x, c) in line.chars().enumerate() {
-                    let char_width = if c == '\t' { 2 } else { 1 };
+                    if c == '\n' || c == '\r' { continue; }
+                    let char_width = if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
                     let char_row = current_pos_in_line / editor_width;
                     
                     if char_row == row {
@@ -790,7 +795,8 @@ impl TerminalUi {
                             if is_in_range { style = theme.get("Visual"); }
                         }
                         if !search_query.is_empty() {
-                            if let Some(pos) = line.to_lowercase().find(&search_query.to_lowercase()) {
+                            let line_str = line.to_string();
+                            if let Some(pos) = line_str.to_lowercase().find(&search_query.to_lowercase()) {
                                 if x >= pos && x < pos + search_query.len() {
                                     style = theme.get("Search");
                                 }
@@ -807,7 +813,7 @@ impl TerminalUi {
                                         for diag in diags {
                                             if (actual_idx as u32) >= diag.range.start.line && (actual_idx as u32) <= diag.range.end.line {
                                                 let s_x = if (actual_idx as u32) == diag.range.start.line { diag.range.start.character as usize } else { 0 };
-                                                let e_x = if (actual_idx as u32) == diag.range.end.line { diag.range.end.character as usize } else { line.len() };
+                                                let e_x = if (actual_idx as u32) == diag.range.end.line { diag.range.end.character as usize } else { line.len_chars() };
                                                 if x >= s_x && x < e_x {
                                                     let diag_color = match diag.severity {
                                                         Some(lsp_types::DiagnosticSeverity::ERROR) => theme.palette.red,
@@ -834,7 +840,9 @@ impl TerminalUi {
                             }
                         } else {
                             // Indent guide logic for non-tab characters
-                            let is_indent_pos = x > 0 && x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
+                            let line_str = line.to_string();
+                            // Only show guides for level 1+ (skip col 0)
+                            let is_indent_pos = x > 0 && x % 2 == 0 && x < line_str.chars().take_while(|&c| c == ' ').count();
                             if is_indent_pos {
                                 let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
                                 spans.push(Span::styled("┆", indent_style));
@@ -846,16 +854,16 @@ impl TerminalUi {
                     current_pos_in_line += char_width;
                 }
             }
-            if row == 0 && line.is_empty() { 
-                spans.push(Span::styled(" ", theme.get("Normal"))); 
-            }
-
+            let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
+            // Empty lines don't need a space span; they will show the Block background
+            
             // Indent Blankline Visualization for totally empty lines
-            if row == 0 && line.trim().is_empty() && line.is_empty() {
+            let line_str = line.to_string();
+            if row == 0 && line_str.trim().is_empty() && line_len == 0 {
                 // Find previous line indentation
                 let mut prev_indent = 0;
                 for j in (0..actual_idx).rev() {
-                    let prev_line = &buffer.lines[j];
+                    let prev_line = buffer.line(j).unwrap().to_string();
                     if !prev_line.trim().is_empty() {
                         prev_indent = prev_line.chars().take_while(|&c| c == ' ' || c == '\t').count();
                         break;
@@ -870,7 +878,8 @@ impl TerminalUi {
                     let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
                     
                     for j in 0..prev_indent {
-                        if j > 0 && j % 2 == 0 {
+                        // Skip col 0 (root level), show guides for level 1+ (j=2, 4, ...)
+                        if j >= 2 && j % 2 == 0 {
                             new_spans.push(Span::styled(indent_char, indent_style));
                         } else {
                             new_spans.push(Span::styled(" ", base_style));
@@ -944,8 +953,12 @@ impl TerminalUi {
             let popup_height = 3;
             
             if let Some(y) = cursor_screen_y {
-                let current_line = &buffer.lines[cursor.y];
-                let cursor_pos_in_line = current_line.chars().take(cursor.x).map(|c| if c == '\t' { 2 } else { 1 }).sum::<usize>();
+                let line = buffer.line(cursor.y).unwrap();
+                let mut cursor_pos_in_line = 0;
+                for (i, c) in line.chars().enumerate() {
+                    if i >= cursor.x { break; }
+                    cursor_pos_in_line += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
+                }
                 let screen_x = (cursor_pos_in_line % editor_width) as u16;
 
                 let x = (editor_layout[1].x + screen_x).min(area.right().saturating_sub(popup_width));
@@ -968,7 +981,7 @@ impl TerminalUi {
         if vim.show_suggestions && !vim.suggestions.is_empty() {
             // Filter suggestions based on current word prefix
             let (y, x) = (cursor.y, cursor.x);
-            let line = &buffer.lines[y];
+            let line = buffer.line(y).unwrap().to_string();
             let mut start_x = x;
             let chars: Vec<char> = line.chars().collect();
             while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
@@ -1005,7 +1018,15 @@ impl TerminalUi {
             if !filtered_suggestions.is_empty() {
                 let menu_width = 45;
                 let menu_height = std::cmp::min(10, filtered_suggestions.len()) as u16 + 2;
-                let menu_x = editor_layout[1].x + cursor.x as u16;
+                
+                let line = buffer.line(cursor.y).unwrap();
+                let mut cursor_pos_in_line = 0;
+                for (i, c) in line.chars().enumerate() {
+                    if i >= cursor.x { break; }
+                    cursor_pos_in_line += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
+                }
+                
+                let menu_x = editor_layout[1].x + (cursor_pos_in_line % editor_width) as u16;
                 let menu_y = editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16 + 1;
 
                 let menu_area = Rect {
@@ -1172,7 +1193,7 @@ impl TerminalUi {
         right_spans.push(Span::styled(lsp_status_text, theme.get("StatusLineY")));
 
         // Section Z: Position & Buffers
-        let total_lines = buffer.lines.len();
+        let total_lines = buffer.len_lines();
         let percent = if total_lines > 0 { (cursor.y + 1) * 100 / total_lines } else { 0 };
         let pos_text = format!(" {:>2}% {}:{} ", percent, cursor.y + 1, cursor.x + 1);
         let buf_text = format!("(Buffer {}/{}) ", editor.active_idx + 1, editor.buffers.len());
@@ -1244,10 +1265,14 @@ impl TerminalUi {
                 } else {
                     frame.render_widget(Paragraph::new("").style(theme.get("Normal")), root_chunks[2]);
                 }
-                if vim.focus == Focus::Editor && cursor.y < buffer.lines.len() {
-                    let current_line = &buffer.lines[cursor.y];
-                    let screen_x: u16 = current_line.chars().take(cursor.x).map(|c| if c == '\t' { 2 } else { 1 }).sum();
-                    frame.set_cursor_position((editor_layout[1].x + screen_x, editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16));
+                if vim.focus == Focus::Editor && cursor.y < buffer.len_lines() {
+                    let line = buffer.line(cursor.y).unwrap();
+                    let mut screen_x = 0;
+                    for (i, c) in line.chars().enumerate() {
+                        if i >= cursor.x { break; }
+                        screen_x += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
+                    }
+                    frame.set_cursor_position((editor_layout[1].x + (screen_x % editor_width as usize) as u16, editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16));
                 }
             }
         }

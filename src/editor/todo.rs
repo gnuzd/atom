@@ -2,20 +2,22 @@ use std::path::{Path, PathBuf};
 use crate::ui::trouble::{TroubleItem, TroubleType};
 use ignore::WalkBuilder;
 use std::fs;
+use ropey::Rope;
 
-pub fn scan_todos(path: &PathBuf, lines: &[String]) -> Vec<TroubleItem> {
+pub fn scan_todos(path: &PathBuf, text: &Rope) -> Vec<TroubleItem> {
     let mut todos = Vec::new();
     let todo_keywords = ["TODO", "FIXME", "BUG", "HACK", "NOTE"];
 
-    for (y, line) in lines.iter().enumerate() {
+    for (y, line) in text.lines().enumerate() {
+        let line_str = line.to_string();
         for keyword in todo_keywords {
-            if let Some(x) = line.find(keyword) {
-                if line.trim_start().starts_with("//") || (line.contains("//") && line.find("//").unwrap() < x) {
+            if let Some(x) = line_str.find(keyword) {
+                if line_str.trim_start().starts_with("//") || (line_str.contains("//") && line_str.find("//").unwrap() < x) {
                      todos.push(TroubleItem {
                         path: path.clone(),
                         line: y,
                         col: x,
-                        message: line[x..].trim().to_string(),
+                        message: line_str[x..].trim().to_string(),
                         severity: None,
                         item_type: TroubleType::Todo,
                     });
@@ -40,8 +42,8 @@ pub fn scan_project_todos(root: &Path) -> Vec<TroubleItem> {
                 let valid_exts = ["rs", "js", "ts", "jsx", "tsx", "svelte", "py", "c", "cpp", "h", "hpp", "lua"];
                 if valid_exts.contains(&ext) {
                     if let Ok(content) = fs::read_to_string(path) {
-                        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                        todos.extend(scan_todos(&path.to_path_buf(), &lines));
+                        let text = Rope::from_str(&content);
+                        todos.extend(scan_todos(&path.to_path_buf(), &text));
                     }
                 }
             }

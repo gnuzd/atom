@@ -33,7 +33,7 @@ impl Editor {
     pub fn refresh_syntax(&mut self) {
         let (text, ext) = {
             let buffer = self.buffer();
-            let text = buffer.lines.join("\n");
+            let text = buffer.text.to_string();
             
             // Optimization: Skip if text is exactly the same as last time
             if text == self.last_syntax_text {
@@ -157,11 +157,16 @@ impl Editor {
     }
 
     pub fn clamp_cursor(&mut self) {
-        let num_lines = self.buffer().lines.len();
+        let num_lines = self.buffer().len_lines();
         if self.cursor_mut().y >= num_lines {
             self.cursor_mut().y = num_lines.saturating_sub(1);
         }
-        let line_len = self.buffer().lines[self.cursor().y].len();
+        let line_len = self.buffer().line(self.cursor().y).map(|s| s.len_chars()).unwrap_or(0);
+        let line_len = if self.buffer().line(self.cursor().y).map(|s| s.as_str().unwrap_or("").ends_with('\n')).unwrap_or(false) {
+            line_len.saturating_sub(1)
+        } else {
+            line_len
+        };
         if self.cursor_mut().x > line_len {
             self.cursor_mut().x = line_len;
         }
@@ -171,10 +176,15 @@ impl Editor {
         let buffer = self.buffer();
         let mut screen_to_buffer_lines = Vec::new();
         let mut i = 0;
-        while i < buffer.lines.len() {
+        let num_lines = buffer.len_lines();
+        while i < num_lines {
             if wrap {
-                let line = &buffer.lines[i];
-                let line_width = line.chars().map(|c| if c == '\t' { 2 } else { 1 }).sum::<usize>();
+                let line = buffer.line(i).unwrap();
+                let mut line_width = 0;
+                for c in line.chars() {
+                    if c == '\n' || c == '\r' { continue; }
+                    line_width += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
+                }
                 let num_rows = if line_width == 0 { 1 } else { (line_width + width - 1) / width };
                 for row in 0..num_rows {
                     screen_to_buffer_lines.push((i, row));
@@ -213,98 +223,71 @@ impl Editor {
             let mut target_y = self.cursor().y - 1;
             
             // Jump over folded ranges if necessary
-            let buffer = self.buffer();
-            while target_y > 0 {
-                if let Some((start, _)) = buffer.folded_ranges.iter().find(|(s, e)| target_y > *s && target_y <= *e) {
-                    target_y = *start;
-                } else {
-                    break;
+            {
+                let buffer = self.buffer();
+                while target_y > 0 {
+                    if let Some((start, _)) = buffer.folded_ranges.iter().find(|(s, e)| target_y > *s && target_y <= *e) {
+                        target_y = *start;
+                    } else {
+                        break;
+                    }
                 }
             }
 
             self.cursor_mut().y = target_y;
             let current_x = self.cursor().x;
-            let line = &self.buffer().lines[target_y];
             
-            // Find the closest valid character boundary
-            let mut new_x = 0;
-            for (idx, _) in line.char_indices() {
-                if idx > current_x {
-                    break;
-                }
-                new_x = idx;
-            }
-            self.cursor_mut().x = new_x;
+            let line_len = {
+                let line = self.buffer().line(target_y).unwrap();
+                if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() }
+            };
+            self.cursor_mut().x = current_x.min(line_len);
         }
     }
 
     pub fn move_down(&mut self) {
-        if self.cursor().y < self.buffer().lines.len() - 1 {
+        let num_lines = self.buffer().len_lines();
+        if self.cursor().y < num_lines - 1 {
             let mut target_y = self.cursor().y + 1;
 
             // Jump over folded ranges if necessary
-            let buffer = self.buffer();
-            while target_y < buffer.lines.len() {
-                if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, e)| target_y > *s && target_y <= *e) {
-                    target_y = *end + 1;
-                } else {
-                    break;
+            {
+                let buffer = self.buffer();
+                while target_y < num_lines {
+                    if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, e)| target_y > *s && target_y <= *e) {
+                        target_y = *end + 1;
+                    } else {
+                        break;
+                    }
                 }
             }
 
-            if target_y < buffer.lines.len() {
+            if target_y < num_lines {
                 self.cursor_mut().y = target_y;
                 let current_x = self.cursor().x;
-                let line = &self.buffer().lines[target_y];
                 
-                let mut new_x = 0;
-                for (idx, _) in line.char_indices() {
-                    if idx > current_x {
-                        break;
-                    }
-                    new_x = idx;
-                }
-                self.cursor_mut().x = new_x;
+                let line_len = {
+                    let line = self.buffer().line(target_y).unwrap();
+                    if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() }
+                };
+                self.cursor_mut().x = current_x.min(line_len);
             }
         }
     }
 
     pub fn move_left(&mut self) {
-        let y = self.cursor().y;
-        let x = self.cursor().x;
-        if x > 0 {
-            if let Some(line) = self.buffer().lines.get(y) {
-                let mut prev_x = 0;
-                for (idx, _) in line.char_indices() {
-                    if idx >= x {
-                        break;
-                    }
-                    prev_x = idx;
-                }
-                self.cursor_mut().x = prev_x;
-            } else {
-                self.cursor_mut().x -= 1;
-            }
+        if self.cursor().x > 0 {
+            self.cursor_mut().x -= 1;
         }
     }
 
     pub fn move_right(&mut self) {
         let y = self.cursor().y;
         let x = self.cursor().x;
-        if let Some(line) = self.buffer().lines.get(y) {
-            let mut char_indices = line.char_indices().map(|(i, _)| i);
-            while let Some(idx) = char_indices.next() {
-                if idx == x {
-                    if let Some(next_idx) = char_indices.next() {
-                        self.cursor_mut().x = next_idx;
-                    } else {
-                        self.cursor_mut().x = line.len();
-                    }
-                    return;
-                }
-            }
-            if x < line.len() {
-                self.cursor_mut().x = line.len();
+        if let Some(line) = self.buffer().line(y) {
+            let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
+            if x < line_len {
+                self.cursor_mut().x += 1;
             }
         }
     }
@@ -315,8 +298,10 @@ impl Editor {
 
     pub fn move_to_line_end(&mut self) {
         let y = self.cursor().y;
-        let line_len = self.buffer().lines[y].len();
-        self.cursor_mut().x = line_len;
+        if let Some(line) = self.buffer().line(y) {
+            let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
+            self.cursor_mut().x = line_len;
+        }
     }
 
     pub fn jump_to_first_line(&mut self) {
@@ -325,7 +310,7 @@ impl Editor {
     }
 
     pub fn jump_to_last_line(&mut self) {
-        let last_y = self.buffer().lines.len().saturating_sub(1);
+        let last_y = self.buffer().len_lines().saturating_sub(1);
         self.cursor_mut().y = last_y;
         self.cursor_mut().x = 0;
     }
@@ -337,12 +322,13 @@ impl Editor {
     pub fn move_word_forward(&mut self) {
         let y = self.cursor().y;
         let x = self.cursor().x;
-        let num_lines = self.buffer().lines.len();
+        let num_lines = self.buffer().len_lines();
 
         if y >= num_lines { return; }
-        let line = &self.buffer().lines[y];
+        let line = self.buffer().line(y).unwrap();
+        let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
         
-        if x >= line.len() {
+        if x >= line_len {
             if y < num_lines - 1 {
                 self.cursor_mut().y += 1;
                 self.cursor_mut().x = 0;
@@ -351,43 +337,44 @@ impl Editor {
             return;
         }
 
-        let chars: Vec<char> = line.chars().collect();
         let mut i = x;
+        let chars: Vec<char> = line.chars().collect();
 
         if Self::is_word_char(chars[i]) {
-            while i < chars.len() && Self::is_word_char(chars[i]) {
+            while i < line_len && Self::is_word_char(chars[i]) {
                 i += 1;
             }
-            while i < chars.len() && chars[i].is_whitespace() {
+            while i < line_len && chars[i].is_whitespace() {
                 i += 1;
             }
         } else if chars[i].is_whitespace() {
-            while i < chars.len() && chars[i].is_whitespace() {
+            while i < line_len && chars[i].is_whitespace() {
                 i += 1;
             }
         } else {
-            while i < chars.len() && !chars[i].is_whitespace() && !Self::is_word_char(chars[i]) {
+            while i < line_len && !chars[i].is_whitespace() && !Self::is_word_char(chars[i]) {
                 i += 1;
             }
-            while i < chars.len() && chars[i].is_whitespace() {
+            while i < line_len && chars[i].is_whitespace() {
                 i += 1;
             }
         }
 
-        if i < chars.len() {
+        if i < line_len {
             self.cursor_mut().x = i;
         } else if y < num_lines - 1 {
             self.cursor_mut().y += 1;
             self.cursor_mut().x = 0;
             let y_new = self.cursor().y;
-            let next_line_text = &self.buffer().lines[y_new];
+            let next_line = self.buffer().line(y_new).unwrap();
             let mut j = 0;
-            while j < next_line_text.len() && next_line_text.chars().nth(j).unwrap().is_whitespace() {
+            let next_chars: Vec<char> = next_line.chars().collect();
+            while j < next_chars.len() && next_chars[j].is_whitespace() && next_chars[j] != '\n' && next_chars[j] != '\r' {
                 j += 1;
             }
             self.cursor_mut().x = j;
         } else {
-            self.cursor_mut().x = line.len();
+            self.cursor_mut().x = line_len;
         }
     }
 
@@ -399,13 +386,15 @@ impl Editor {
             if y > 0 {
                 self.cursor_mut().y -= 1;
                 let y_new = self.cursor().y;
-                self.cursor_mut().x = self.buffer().lines[y_new].len();
+                let line = self.buffer().line(y_new).unwrap();
+                let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
+                self.cursor_mut().x = line_len;
                 self.move_word_backward();
             }
             return;
         }
 
-        let line = &self.buffer().lines[y];
+        let line = self.buffer().line(y).unwrap();
         let chars: Vec<char> = line.chars().collect();
         let mut i = x.saturating_sub(1);
 
@@ -434,13 +423,13 @@ impl Editor {
     pub fn move_word_end(&mut self) {
         let y = self.cursor().y;
         let x = self.cursor().x;
-        let num_lines = self.buffer().lines.len();
+        let num_lines = self.buffer().len_lines();
 
         if y >= num_lines { return; }
-        let line = &self.buffer().lines[y];
-        let chars: Vec<char> = line.chars().collect();
+        let line = self.buffer().line(y).unwrap();
+        let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
         
-        if x >= line.len().saturating_sub(1) {
+        if x >= line_len.saturating_sub(1) {
             if y < num_lines - 1 {
                 self.cursor_mut().y += 1;
                 self.cursor_mut().x = 0;
@@ -449,12 +438,13 @@ impl Editor {
             return;
         }
 
+        let chars: Vec<char> = line.chars().collect();
         let mut i = x + 1;
-        while i < chars.len() && chars[i].is_whitespace() {
+        while i < line_len && chars[i].is_whitespace() {
             i += 1;
         }
 
-        if i >= chars.len() {
+        if i >= line_len {
             if y < num_lines - 1 {
                 self.cursor_mut().y += 1;
                 self.cursor_mut().x = 0;
@@ -464,11 +454,11 @@ impl Editor {
         }
 
         if Self::is_word_char(chars[i]) {
-            while i + 1 < chars.len() && Self::is_word_char(chars[i+1]) {
+            while i + 1 < line_len && Self::is_word_char(chars[i+1]) {
                 i += 1;
             }
         } else {
-            while i + 1 < chars.len() && !chars[i+1].is_whitespace() && !Self::is_word_char(chars[i+1]) {
+            while i + 1 < line_len && !chars[i+1].is_whitespace() && !Self::is_word_char(chars[i+1]) {
                 i += 1;
             }
         }
@@ -478,7 +468,8 @@ impl Editor {
     pub fn open_line_below(&mut self) {
         self.buffer_mut().push_history();
         let y = self.cursor().y;
-        self.buffer_mut().lines.insert(y + 1, String::new());
+        let line_start = self.buffer().text.line_to_char(y + 1);
+        self.buffer_mut().text.insert(line_start, "\n");
         self.cursor_mut().y = y + 1;
         self.cursor_mut().x = 0;
     }
@@ -486,7 +477,8 @@ impl Editor {
     pub fn open_line_above(&mut self) {
         self.buffer_mut().push_history();
         let y = self.cursor().y;
-        self.buffer_mut().lines.insert(y, String::new());
+        let line_start = self.buffer().text.line_to_char(y);
+        self.buffer_mut().text.insert(line_start, "\n");
         self.cursor_mut().y = y;
         self.cursor_mut().x = 0;
     }
@@ -498,19 +490,11 @@ impl Editor {
             (end_y, end_x, start_y, start_x)
         };
 
-        let mut result = Vec::new();
-        for y in s_y..=e_y {
-            if let Some(line) = self.buffer().lines.get(y) {
-                let start = if y == s_y { s_x } else { 0 };
-                let end = if y == e_y { e_x + 1 } else { line.len() };
-                
-                if start < line.len() {
-                    let end = end.min(line.len());
-                    result.push(line[start..end].to_string());
-                }
-            }
-        }
-        result.join("\n")
+        let start_char = self.buffer().text.line_to_char(s_y) + s_x;
+        let end_char = self.buffer().text.line_to_char(e_y) + e_x + 1;
+        
+        let end_char = end_char.min(self.buffer().text.len_chars());
+        self.buffer().text.slice(start_char..end_char).to_string()
     }
 
     pub fn paste_before(&mut self, text: &str, yank_type: crate::vim::mode::YankType) {
@@ -521,36 +505,24 @@ impl Editor {
         let cursor_x = self.cursor().x;
 
         if yank_type == crate::vim::mode::YankType::Line {
-            let lines_to_paste: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
-            for (i, line) in lines_to_paste.into_iter().enumerate() {
-                self.buffer_mut().lines.insert(cursor_y + i, line);
+            let line_start = self.buffer().text.line_to_char(cursor_y);
+            let mut paste_text = text.to_string();
+            if !paste_text.ends_with('\n') {
+                paste_text.push('\n');
             }
+            self.buffer_mut().text.insert(line_start, &paste_text);
             self.cursor_mut().y = cursor_y;
             self.cursor_mut().x = 0;
         } else {
-            let lines_to_paste: Vec<&str> = text.split('\n').collect();
-            if lines_to_paste.len() == 1 {
-                let current_line = &mut self.buffer_mut().lines[cursor_y];
-                current_line.insert_str(cursor_x, lines_to_paste[0]);
-                self.cursor_mut().x += lines_to_paste[0].len();
-            } else {
-                let current_line = &mut self.buffer_mut().lines[cursor_y];
-                let suffix = current_line.split_off(cursor_x);
-                current_line.push_str(lines_to_paste[0]);
-                
-                for i in 1..lines_to_paste.len() - 1 {
-                    self.buffer_mut().lines.insert(cursor_y + i, lines_to_paste[i].to_string());
-                }
-                
-                let last_line_idx = cursor_y + lines_to_paste.len() - 1;
-                let mut last_line = lines_to_paste.last().unwrap().to_string();
-                let new_x = last_line.len();
-                last_line.push_str(&suffix);
-                self.buffer_mut().lines.insert(last_line_idx, last_line);
-                
-                self.cursor_mut().y = last_line_idx;
-                self.cursor_mut().x = new_x;
-            }
+            let char_idx = self.buffer().text.line_to_char(cursor_y) + cursor_x;
+            self.buffer_mut().text.insert(char_idx, text);
+            
+            // Move cursor to end of paste
+            let new_char_idx = char_idx + text.chars().count();
+            let new_y = self.buffer().text.char_to_line(new_char_idx);
+            let new_x = new_char_idx - self.buffer().text.line_to_char(new_y);
+            self.cursor_mut().y = new_y;
+            self.cursor_mut().x = new_x;
         }
     }
 
@@ -560,15 +532,18 @@ impl Editor {
         if yank_type == crate::vim::mode::YankType::Line {
             self.buffer_mut().push_history();
             let cursor_y = self.cursor().y;
-            let lines_to_paste: Vec<String> = text.split('\n').map(|s| s.to_string()).collect();
-            for (i, line) in lines_to_paste.into_iter().enumerate() {
-                self.buffer_mut().lines.insert(cursor_y + 1 + i, line);
+            let line_end = self.buffer().text.line_to_char(cursor_y + 1);
+            let mut paste_text = text.to_string();
+            if !paste_text.ends_with('\n') {
+                paste_text.push('\n');
             }
+            self.buffer_mut().text.insert(line_end, &paste_text);
             self.cursor_mut().y = cursor_y + 1;
             self.cursor_mut().x = 0;
         } else {
             let cursor_x = self.cursor().x;
-            let line_len = self.buffer().lines[self.cursor().y].len();
+            let line = self.buffer().line(self.cursor().y).unwrap();
+            let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
             if cursor_x < line_len {
                 self.cursor_mut().x += 1;
             }
@@ -583,43 +558,49 @@ impl Editor {
             (end_y, end_x, start_y, start_x)
         };
 
-        let yanked = self.yank(start_x, start_y, end_x, end_y);
-        self.buffer_mut().push_history();
+        let start_char = self.buffer().text.line_to_char(s_y) + s_x;
+        let end_char = self.buffer().text.line_to_char(e_y) + e_x + 1;
+        let end_char = end_char.min(self.buffer().text.len_chars());
 
-        if s_y == e_y {
-            let line = &mut self.buffer_mut().lines[s_y];
-            let suffix = line.split_off(e_x + 1);
-            line.truncate(s_x);
-            line.push_str(&suffix);
-        } else {
-            let first_line = self.buffer_mut().lines[s_y].clone();
-            let last_line = self.buffer_mut().lines[e_y].clone();
-            
-            let prefix = &first_line[..s_x];
-            let suffix = if e_x + 1 < last_line.len() { &last_line[e_x+1..] } else { "" };
-            
-            self.buffer_mut().lines[s_y] = format!("{}{}", prefix, suffix);
-            
-            for _ in s_y+1..=e_y {
-                self.buffer_mut().lines.remove(s_y + 1);
-            }
-        }
+        let yanked = self.buffer().text.slice(start_char..end_char).to_string();
+        self.buffer_mut().push_history();
+        self.buffer_mut().text.remove(start_char..end_char);
 
         self.cursor_mut().x = s_x;
         self.cursor_mut().y = s_y;
+        self.clamp_cursor();
         yanked
     }
 
     pub fn delete_line(&mut self, y: usize) -> String {
+        let num_lines = self.buffer().len_lines();
+        if num_lines == 0 { return String::new(); }
+        
         self.buffer_mut().push_history();
-        let yanked = self.buffer().lines[y].clone();
-        self.buffer_mut().lines.remove(y);
-        if self.buffer().lines.is_empty() {
-            self.buffer_mut().lines.push(String::new());
+        let start_char = self.buffer().text.line_to_char(y);
+        let end_char = if y + 1 < num_lines {
+            self.buffer().text.line_to_char(y + 1)
+        } else {
+            self.buffer().text.len_chars()
+        };
+        
+        let mut yanked = self.buffer().text.slice(start_char..end_char).to_string();
+        
+        // If it's the last line and we don't have a newline to delete, 
+        // try to delete the preceding newline to "remove the row"
+        if y > 0 && y + 1 == num_lines && !yanked.ends_with('\n') {
+            self.buffer_mut().text.remove(start_char - 1 .. end_char);
+            // We should probably include that newline in yanked if we want it to be a "line" yank
+            if !yanked.ends_with('\n') { yanked.push('\n'); }
+        } else {
+            self.buffer_mut().text.remove(start_char..end_char);
         }
-        if self.cursor().y >= self.buffer().lines.len() {
-            self.cursor_mut().y = self.buffer().lines.len().saturating_sub(1);
+        
+        if self.buffer().text.len_chars() == 0 {
+            self.buffer_mut().text = ropey::Rope::from_str("");
         }
+        
+        self.clamp_cursor();
         self.cursor_mut().x = 0;
         yanked
     }
@@ -636,8 +617,6 @@ impl Editor {
 
         // 2. Use LSP ranges if available
         if !lsp_ranges.is_empty() {
-            // Find the best range for current cursor position
-            // Prioritize ranges that start on current line, then look upwards
             let mut best_range = None;
             for r in lsp_ranges {
                 let start = r.start_line as usize;
@@ -655,17 +634,23 @@ impl Editor {
             }
         }
 
-        // 3. Fallback to Indent-based folding (simulating nvim-ufo behavior)
-        let get_indent = |line: &str| {
-            if line.trim().is_empty() { return usize::MAX; }
-            line.chars().take_while(|c| c.is_whitespace()).count()
+        // 3. Fallback to Indent-based folding
+        let get_indent = |line_idx: usize, buffer: &crate::editor::buffer::Buffer| {
+            if let Some(line) = buffer.line(line_idx) {
+                let s = line.to_string();
+                if s.trim().is_empty() { return usize::MAX; }
+                s.chars().take_while(|c| c.is_whitespace()).count()
+            } else {
+                usize::MAX
+            }
         };
 
-        let current_indent = get_indent(&buffer.lines[cursor_y]);
+        let current_indent = get_indent(cursor_y, buffer);
         if current_indent != usize::MAX {
             let mut end_line = cursor_y;
-            for i in cursor_y + 1..buffer.lines.len() {
-                let indent = get_indent(&buffer.lines[i]);
+            let num_lines = buffer.len_lines();
+            for i in cursor_y + 1..num_lines {
+                let indent = get_indent(i, buffer);
                 if indent != usize::MAX && indent <= current_indent {
                     break;
                 }
@@ -675,56 +660,6 @@ impl Editor {
             if end_line > cursor_y {
                 buffer.folded_ranges.push((cursor_y, end_line));
                 return;
-            }
-        }
-
-        // 4. Smart fallback to Tags/Braces (existing logic but slightly improved)
-        let has_opener = |l: &str| l.contains('{') || (l.contains('<') && !l.contains("</") && !l.trim_start().starts_with("<!"));
-        let mut target_line = cursor_y;
-        if !has_opener(&buffer.lines[target_line]) {
-            for i in (0..cursor_y).rev() {
-                if has_opener(&buffer.lines[i]) {
-                    if buffer.folded_ranges.iter().any(|(s, e)| i >= *s && i <= *e) { continue; }
-                    target_line = i;
-                    break;
-                }
-            }
-        }
-
-        let line = &buffer.lines[target_line];
-        // ... (rest of the tag/brace logic stays similar but we'll wrap it)
-        if let Some(tag_start) = line.find('<') {
-            if let Some(tag_end) = line[tag_start+1..].find(|c: char| c == ' ' || c == '>') {
-                let tag_name = &line[tag_start+1..tag_start+1+tag_end];
-                if !tag_name.starts_with('/') && !tag_name.starts_with('!') {
-                    let open_tag = format!("<{}", tag_name);
-                    let close_tag = format!("</{}", tag_name);
-                    let mut tag_count = 0;
-                    for i in target_line..buffer.lines.len() {
-                        let l = &buffer.lines[i];
-                        tag_count += l.matches(&open_tag).count();
-                        tag_count -= l.matches(&close_tag).count();
-                        if tag_count == 0 && i > target_line {
-                            buffer.folded_ranges.push((target_line, i));
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        if line.contains('{') {
-            let mut brace_count = 0;
-            let mut found_start = false;
-            for i in target_line..buffer.lines.len() {
-                for c in buffer.lines[i].chars() {
-                    if c == '{' { brace_count += 1; found_start = true; }
-                    else if c == '}' { brace_count -= 1; }
-                    if found_start && brace_count == 0 && i > target_line {
-                        buffer.folded_ranges.push((target_line, i));
-                        return;
-                    }
-                }
             }
         }
     }
@@ -796,25 +731,26 @@ mod tests {
     #[test]
     fn test_editor_multi_buffer() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffers[0].lines = vec!["Buffer 1".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("Buffer 1");
         
         editor.buffers.push(buffer::Buffer::new());
         editor.cursors.push(cursor::Cursor::new());
-        editor.buffers[1].lines = vec!["Buffer 2".to_string()];
-        
-        editor.next_buffer();
-        assert_eq!(editor.active_idx, 1);
-        assert_eq!(editor.buffer().lines[0], "Buffer 2");
+        editor.active_idx = 1;
+        editor.buffer_mut().text = ropey::Rope::from_str("Buffer 2");
         
         editor.prev_buffer();
         assert_eq!(editor.active_idx, 0);
-        assert_eq!(editor.buffer().lines[0], "Buffer 1");
+        assert_eq!(editor.buffer().text.to_string(), "Buffer 1");
+        
+        editor.next_buffer();
+        assert_eq!(editor.active_idx, 1);
+        assert_eq!(editor.buffer().text.to_string(), "Buffer 2");
     }
 
     #[test]
     fn test_editor_movement() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffer_mut().lines = vec!["abc".to_string(), "de".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("abc\nde");
         editor.move_right();
         assert_eq!(editor.cursor().x, 1);
         editor.move_down();
@@ -825,7 +761,7 @@ mod tests {
     #[test]
     fn test_editor_line_boundaries() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffer_mut().lines = vec!["hello world".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("hello world");
         editor.move_to_line_end();
         assert_eq!(editor.cursor().x, 11);
         editor.move_to_line_start();
@@ -835,7 +771,7 @@ mod tests {
     #[test]
     fn test_editor_word_movement() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffer_mut().lines = vec!["hello, world rust".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("hello, world rust");
         
         editor.move_word_forward();
         assert_eq!(editor.cursor().x, 5); // start of ','
@@ -853,37 +789,37 @@ mod tests {
     #[test]
     fn test_editor_delete_selection() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffer_mut().lines = vec!["hello world".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("hello world");
         editor.delete_selection(0, 0, 5, 0); // delete "hello "
-        assert_eq!(editor.buffer().lines[0], "world");
+        assert_eq!(editor.buffer().text.to_string(), "world");
     }
 
     #[test]
     fn test_editor_open_line() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffer_mut().lines = vec!["line 1".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("line 1");
         
         editor.open_line_below();
-        assert_eq!(editor.buffer().lines.len(), 2);
+        assert_eq!(editor.buffer().len_lines(), 2);
         assert_eq!(editor.cursor().y, 1);
         
         editor.open_line_above();
-        assert_eq!(editor.buffer().lines.len(), 3);
+        assert_eq!(editor.buffer().len_lines(), 3);
         assert_eq!(editor.cursor().y, 1);
-        assert_eq!(editor.buffer().lines[1], "");
+        assert_eq!(editor.buffer().line(1).unwrap().to_string(), "\n");
     }
 
     #[test]
     fn test_editor_paste() {
         let mut editor = Editor::new("catppuccin");
-        editor.buffer_mut().lines = vec!["ab".to_string()];
+        editor.buffer_mut().text = ropey::Rope::from_str("ab");
         editor.cursor_mut().x = 1; // On 'b'
         
         editor.paste_after("X", crate::vim::mode::YankType::Char);
-        assert_eq!(editor.buffer().lines[0], "abX");
+        assert_eq!(editor.buffer().text.to_string(), "abX");
         
         editor.cursor_mut().x = 1; // On 'b'
         editor.paste_before("Y", crate::vim::mode::YankType::Char);
-        assert_eq!(editor.buffer().lines[0], "aYbX");
+        assert_eq!(editor.buffer().text.to_string(), "aYbX");
     }
 }

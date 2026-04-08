@@ -21,6 +21,7 @@ pub struct FileExplorer {
     pub filter: String,
     pub show_hidden: bool,
     pub show_ignored: bool,
+    pub width: u16,
 }
 
 impl FileExplorer {
@@ -34,10 +35,14 @@ impl FileExplorer {
             filter: String::new(),
             show_hidden: false,
             show_ignored: false,
+            width: 30,
         };
         explorer.init_root();
         explorer
     }
+
+    pub fn increase_width(&mut self) { self.width = self.width.saturating_add(2).min(80); }
+    pub fn decrease_width(&mut self) { self.width = self.width.saturating_sub(2).max(10); }
 
     pub fn init_root(&mut self) {
         self.entries.clear();

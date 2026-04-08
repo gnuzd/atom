@@ -116,16 +116,15 @@ impl Highlighter {
     }
 
     pub fn highlight_line(&self, line: &str) -> Vec<Style> {
-        let mut styles = vec![self.theme.get("Normal"); line.len()];
-        if line.is_empty() { return styles; }
+        let chars: Vec<char> = line.chars().collect();
+        let mut styles = vec![self.theme.get("Normal"); chars.len()];
+        if chars.is_empty() { return styles; }
 
         let keywords = ["fn", "let", "mut", "use", "pub", "mod", "match", "if", "else", "loop", "while", "for", "in", "impl", "struct", "enum", "type", "trait", "as", "return", "const", "static", "async", "await", "where", "dyn", "move", "unsafe", "extern", "crate", "self", "Self", "import", "from", "export", "default", "class", "interface", "extends", "implements", "readonly", "private", "protected", "public", "abstract", "override", "virtual", "new", "delete", "throw", "try", "catch", "finally", "instanceof", "typeof", "void", "yield", "package", "namespace", "using", "var", "function", "goto", "break", "continue", "switch", "case", "true", "false", "null", "undefined", "NaN", "Infinity", "this", "super"];
         let builtins = ["String", "Option", "Result", "Some", "None", "Ok", "Err", "Box", "Vec", "HashMap", "HashSet", "BTreeMap", "BTreeSet", "Arc", "Rc", "RefCell", "Mutex", "RwLock", "Console", "Math", "JSON", "Promise", "Object", "Array", "Number", "Boolean", "Symbol", "Error", "Map", "Set", "WeakMap", "WeakSet", "Intl", "WebAssembly", "Global", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array"];
         let types = ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64", "bool", "char", "str", "number", "string", "boolean", "any", "unknown", "never", "void", "object", "bigint", "symbol"];
 
         let mut i = 0;
-        let chars: Vec<char> = line.chars().collect();
-
         while i < chars.len() {
             // Comments
             if chars[i] == '/' && i + 1 < chars.len() && chars[i+1] == '/' {

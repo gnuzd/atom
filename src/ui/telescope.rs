@@ -75,7 +75,7 @@ impl Telescope {
 
     fn search_themes(&mut self) {
         self.results.clear();
-        let themes = vec!["catppuccin", "gruvbox-material", "ayu-dark", "onedark"];
+        let themes = vec!["catppuccin", "gruvbox-material", "ayu-dark", "onedark", "tokyonight", "everforest"];
         let query_lower = self.query.to_lowercase();
         for theme in themes {
             if self.query.is_empty() || theme.to_lowercase().contains(&query_lower) {
@@ -307,17 +307,21 @@ export default Counter;"#
             let mut item_style = ratatui::style::Style::default();
             
             if is_selected {
+                style.bg = None;
                 style = style.add_modifier(Modifier::BOLD);
                 item_style = theme.get("CursorLine");
             }
 
-            let (icon, icon_style) = match self.kind {
+            let (icon, mut icon_style) = match self.kind {
                 TelescopeKind::Themes => (crate::ui::icons::COLOR, theme.get("Type")),
                 _ => {
                     let (icon, icon_group) = crate::ui::TerminalUi::get_file_icon(&res.path);
                     (icon, theme.get(&icon_group))
                 }
             };
+            if is_selected {
+                icon_style.bg = None;
+            }
             
             let path_str = if self.kind == TelescopeKind::Themes {
                 res.content.clone().unwrap_or_else(|| res.path.to_string_lossy().to_string())
@@ -431,7 +435,13 @@ export default Counter;"#
             if actual_line_idx >= self.preview_lines.len() { break; }
             let line = &self.preview_lines[actual_line_idx];
             let is_target = Some(actual_line_idx) == target_line_idx;
-            
+
+            let preview_theme = if self.kind == TelescopeKind::Themes {
+                selected_result.map(|r| crate::ui::colorscheme::ColorScheme::new(&r.path.to_string_lossy())).unwrap_or(theme.clone())
+            } else {
+                theme.clone()
+            };
+
             // Highlight active line background in preview
             if is_target {
                 let highlight_rect = Rect {
@@ -440,30 +450,26 @@ export default Counter;"#
                     width: inner_preview_area.width,
                     height: 1,
                 };
-                frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+                frame.render_widget(Block::default().style(preview_theme.get("CursorLine")), highlight_rect);
             }
 
             // Line numbers column
-            let ln_style = if is_target { theme.get("CursorLineNr") } else { theme.get("LineNr") };
+            let ln_style = if is_target { preview_theme.get("CursorLineNr") } else { preview_theme.get("LineNr") };
             line_numbers.lines.push(Line::from(vec![Span::styled(format!("{:>4} ", actual_line_idx + 1), ln_style)]));
 
             // Code content
             let syntax_styles = if self.kind == TelescopeKind::Themes {
-                if let Some(res) = selected_result {
-                    let temp_theme = crate::ui::colorscheme::ColorScheme::new(&res.path.to_string_lossy());
-                    let highlighter = crate::editor::highlighter::Highlighter::new(temp_theme);
-                    highlighter.highlight_line(line)
-                } else {
-                    editor.highlighter.highlight_line(line)
-                }
+                let highlighter = crate::editor::highlighter::Highlighter::new(preview_theme.clone());
+                highlighter.highlight_line(line)
             } else {
                 editor.highlighter.highlight_line(line)
             };
+
             let mut spans = Vec::new();
             for (x, c) in line.chars().enumerate() {
-                let mut style = syntax_styles.get(x).copied().unwrap_or(theme.get("Normal"));
+                let mut style = syntax_styles.get(x).copied().unwrap_or(preview_theme.get("Normal"));
                 if is_target && style.bg.is_none() {
-                    style = style.bg(theme.palette.black2);
+                    style = style.bg(preview_theme.palette.black2);
                 }
 
                 if c == '\t' {
@@ -474,20 +480,21 @@ export default Counter;"#
                     // Indent guide logic for non-tab characters
                     let is_indent_pos = x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
                     if is_indent_pos {
-                        spans.push(Span::styled("┆", theme.get("Comment").add_modifier(Modifier::DIM)));
+                        let indent_style = preview_theme.get("Comment").add_modifier(Modifier::DIM);
+                        spans.push(Span::styled("┆", indent_style));
                     } else {
                         spans.push(Span::styled(c.to_string(), style));
                     }
                 }
             }
             if line.is_empty() {
-                let mut style = theme.get("Normal");
-                if is_target { style = style.bg(theme.palette.black2); }
-                spans.push(Span::styled(" ", style));
+                if is_target {
+                    let style = preview_theme.get("CursorLine");
+                    spans.push(Span::styled(" ", style));
+                }
             }
             preview_text.lines.push(Line::from(spans));
         }
-
         frame.render_widget(Paragraph::new(line_numbers).alignment(ratatui::layout::Alignment::Right), preview_layout[0]);
         frame.render_widget(Paragraph::new(preview_text), preview_layout[1]);
     }
