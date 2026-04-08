@@ -721,7 +721,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         Mode::Insert => {
                             match key.code {
-                                KeyCode::Esc => { vim.mode = Mode::Normal; }
+                                KeyCode::Esc => {
+                                    if vim.show_suggestions {
+                                        vim.show_suggestions = false;
+                                        vim.filtered_suggestions.clear();
+                                        vim.suggestions.clear();
+                                    } else {
+                                        vim.mode = Mode::Normal;
+                                    }
+                                }
                                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
                                 }
