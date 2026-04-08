@@ -293,6 +293,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     vim.set_message(format!("Autoformat {}", if vim.config.disable_autoformat { "disabled" } else { "enabled" }));
                                                 }
                                                 " bl" => { vim.blame_popup = Some("Git Blame: You (just now) - placeholder".to_string()); }
+                                                " bx" => {
+                                                    if editor.buffer().modified {
+                                                        vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::CloseBuffer);
+                                                    } else {
+                                                        editor.close_current_buffer();
+                                                    }
+                                                }
                                                 "gg" => { editor.jump_to_first_line(); }
                                                 "dd" => {
                                                     let y = editor.cursor().y;
@@ -317,7 +324,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             } else {
                                                 // 2. Check for partial sequences
                                                 let is_partial = match seq.as_str() {
-                                                    " " | " f" | " t" | " g" | "[" | "]" | "z" => true,
+                                                    " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" => true,
                                                     _ => false,
                                                 };
 
@@ -617,6 +624,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 _ => {}
                             }
                         }
+                        Mode::Confirm(action) => {
+                            match key.code {
+                                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                    match action {
+                                        crate::vim::mode::ConfirmAction::Quit => {
+                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                            should_quit = true;
+                                        }
+                                        crate::vim::mode::ConfirmAction::CloseBuffer => {
+                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                            editor.close_current_buffer();
+                                            vim.mode = Mode::Normal;
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('n') | KeyCode::Char('N') => {
+                                    match action {
+                                        crate::vim::mode::ConfirmAction::Quit => {
+                                            should_quit = true;
+                                        }
+                                        crate::vim::mode::ConfirmAction::CloseBuffer => {
+                                            editor.close_current_buffer();
+                                            vim.mode = Mode::Normal;
+                                        }
+                                    }
+                                }
+                                KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                                    vim.mode = Mode::Normal;
+                                }
+                                _ => {}
+                            }
+                        }
                         Mode::Telescope(_) => {
                             match key.code {
                                 KeyCode::Esc => { vim.mode = Mode::Normal; vim.telescope.close(); }
@@ -705,7 +744,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         match cmd {
                                             "q" | "quit" => {
                                                 if !force && editor.buffer().modified {
-                                                    vim.set_message("No write since last change (add ! to override)".to_string());
+                                                    vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::Quit);
                                                 } else if editor.buffers.len() > 1 {
                                                     editor.close_current_buffer();
                                                 } else {
@@ -715,7 +754,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             "qa" | "qall" => {
                                                 let any_modified = editor.buffers.iter().any(|b| b.modified);
                                                 if !force && any_modified {
-                                                    vim.set_message("Some buffers have unsaved changes (add ! to override)".to_string());
+                                                    vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::Quit);
                                                 } else {
                                                     should_quit = true;
                                                 }
@@ -753,7 +792,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             "bp" | "bprev" => editor.prev_buffer(),
                                             "bd" | "bdelete" => {
                                                 if !force && editor.buffer().modified {
-                                                    vim.set_message("No write since last change (add ! to override)".to_string());
+                                                    vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::CloseBuffer);
                                                 } else {
                                                     editor.close_current_buffer();
                                                 }
