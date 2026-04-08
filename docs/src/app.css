@@ -27,11 +27,27 @@
   color: var(--color-tokyo-blue);
 }
 
-.prose code {
-  background-color: var(--color-tokyo-border);
+/* Inline code and code block styling */
+.prose :not(pre) > code {
+  background-color: transparent !important;
   color: var(--color-tokyo-green);
-  padding: 0.125rem 0.25rem;
-  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.prose :not(pre) > code::before,
+.prose :not(pre) > code::after {
+  content: "" !important;
+}
+
+.prose pre {
+  background-color: #16161e !important;
+  border: 1px solid var(--color-tokyo-border);
+  border-radius: 0.75rem;
+}
+
+.prose pre code {
+  background-color: transparent !important;
+  padding: 0 !important;
 }
 
 .prose a {
