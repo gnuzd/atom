@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .filter(|l| l.name.to_lowercase().contains(&vim.mason_filter.to_lowercase()))
                 .collect();
             if let Some(lang) = filtered_langs.get(selected_idx) {
-                if let Err(e) = editor.treesitter.install(lang.name) {
+                if let Err(e) = editor.treesitter.install(lang) {
                     vim.set_message(format!("Error installing parser: {}", e));
                 } else {
                     vim.set_message(format!("Parser {} installed", lang.name));
@@ -181,7 +181,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                          else { None };
 
             if let Some(pkg) = target {
-                let _ = lsp_manager.install_package(pkg.cmd);
+                let _ = lsp_manager.install_server(pkg.cmd);
                 vim.set_message(format!("Installing {}...", pkg.name));
             }
         }
