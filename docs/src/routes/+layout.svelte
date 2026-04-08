@@ -70,12 +70,13 @@
 				<h2 class="text-[10px] font-bold text-tokyo-muted uppercase tracking-[0.2em] mb-4 px-4">Documentation</h2>
 				<ul class="space-y-1">
 					{#each navItems as item}
+						{@const Icon = item.icon}
 						<li>
 							<a
 								href={item.path}
 								class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium transition-all duration-200 { $page.url.pathname === item.path ? 'bg-tokyo-blue/10 text-tokyo-blue ring-1 ring-tokyo-blue/20' : 'text-tokyo-muted hover:bg-tokyo-border/50 hover:text-tokyo-text' }"
 							>
-								<item.icon size={20} weight={$page.url.pathname === item.path ? 'fill' : 'regular'} />
+								<Icon size={20} weight={$page.url.pathname === item.path ? 'fill' : 'regular'} />
 								{item.name}
 							</a>
 						</li>
