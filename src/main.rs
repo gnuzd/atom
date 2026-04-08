@@ -728,7 +728,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let commands = vec![
                                 "q", "quit", "qa", "qall", "w", "write", "wa", "wall", "wq", "x", "wqa", "xa",
                                 "bn", "bnext", "bp", "bprev", "bd", "bdelete", "e", "edit", "e!", "Reload",
-                                "colorscheme", "colo", "colorschem", "Mason", "Trouble", "format", "Format",
+                                "colorscheme", "Mason", "Trouble", "format", "Format",
                                 "FormatAll", "FormatEnable", "FormatDisable", "gd", "LspInfo", "LspRestart"
                             ];
 
@@ -851,7 +851,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     }
                                                 }
                                             }
-                                            "colorscheme" | "colo" | "colorschem" => {
+                                            "colorscheme" => {
                                                 if let Some(theme) = args.get(0) {
                                                     editor.set_theme(theme);
                                                     vim.set_message(format!("Colorscheme changed to {}", theme));

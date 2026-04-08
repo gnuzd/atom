@@ -831,8 +831,8 @@ impl TerminalUi {
                             }
                         }
 
-                        // Apply CursorLine background to character if it's the current line
-                        if is_current_line && style.bg == Some(theme.palette.black) {
+                        // Apply CursorLine background: clear individual bg to avoid "patchy" look
+                        if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
                             style.bg = None;
                         }
 
@@ -846,7 +846,10 @@ impl TerminalUi {
                             // Only show guides for level 1+ (skip col 0)
                             let is_indent_pos = x > 0 && x % 2 == 0 && x < line_str.chars().take_while(|&c| c == ' ').count();
                             if is_indent_pos {
-                                let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                                let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                                if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
+                                    indent_style.bg = None;
+                                }
                                 spans.push(Span::styled("┆", indent_style));
                             } else {
                                 spans.push(Span::styled(c.to_string(), style));
@@ -856,6 +859,15 @@ impl TerminalUi {
                     current_pos_in_line += char_width;
                 }
             }
+            
+            // Fill the rest of the line with CursorLine if active
+            if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
+                let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
+                if current_width < editor_width {
+                    spans.push(Span::styled(" ".repeat(editor_width - current_width), theme.get("CursorLine")));
+                }
+            }
+
             let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
             // Empty lines don't need a space span; they will show the Block background
             
@@ -875,9 +887,13 @@ impl TerminalUi {
                 if prev_indent > 0 {
                     let mut new_spans = Vec::new();
                     let indent_char = "┆";
-                    let base_style = theme.get("Normal");
+                    let mut base_style = theme.get("Normal");
+                    let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
                     
-                    let indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
+                    if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
+                        base_style.bg = None;
+                        indent_style.bg = None;
+                    }
                     
                     for j in 0..prev_indent {
                         // Skip col 0 (root level), show guides for level 1+ (j=2, 4, ...)
@@ -887,7 +903,16 @@ impl TerminalUi {
                             new_spans.push(Span::styled(" ", base_style));
                         }
                     }
-                    if !new_spans.is_empty() { spans = new_spans; }
+                    if !new_spans.is_empty() { 
+                        spans = new_spans;
+                        // Still fill the rest
+                        if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
+                            let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
+                            if current_width < editor_width {
+                                spans.push(Span::styled(" ".repeat(editor_width - current_width), theme.get("CursorLine")));
+                            }
+                        }
+                    }
                 }
             }
             
