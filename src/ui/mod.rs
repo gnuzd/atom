@@ -1026,127 +1026,89 @@ impl TerminalUi {
         }
 
         // 2.5 Completion Menu (Floating)
-        if vim.show_suggestions && !vim.suggestions.is_empty() {
-            // Filter suggestions based on current word prefix
-            let (y, x) = (cursor.y, cursor.x);
-            let line = buffer.line(y).unwrap().to_string();
-            let mut start_x = x;
-            let chars: Vec<char> = line.chars().collect();
-            while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
-                start_x -= 1;
+        if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
+            let menu_width = 45;
+            let menu_height = std::cmp::min(10, vim.filtered_suggestions.len()) as u16 + 2;
+            
+            let line = buffer.line(cursor.y).unwrap();
+            let mut cursor_pos_in_line = 0;
+            for (i, c) in line.chars().enumerate() {
+                if i >= cursor.x { break; }
+                cursor_pos_in_line += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
             }
-            let prefix = if start_x < x { line[start_x..x].to_lowercase() } else { String::new() };
+            
+            let menu_x = editor_layout[1].x + (cursor_pos_in_line % editor_width) as u16;
+            let menu_y = editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16 + 1;
 
-            let mut unique_items = std::collections::HashSet::new();
-            let mut filtered_suggestions: Vec<(&lsp_types::CompletionItem, usize)> = vim.suggestions.iter().enumerate()
-                .filter(|(_, item)| {
-                    let key = format!("{}:{:?}", item.label, item.kind);
-                    if unique_items.contains(&key) { return false; }
-                    if item.label.to_lowercase().contains(&prefix) {
-                        unique_items.insert(key);
-                        true
-                    } else { false }
-                })
-                .map(|(i, item)| (item, i))
-                .collect();
+            let menu_area = Rect {
+                x: menu_x.min(area.right().saturating_sub(menu_width)),
+                y: menu_y.min(editor_trouble_chunks[0].bottom().saturating_sub(menu_height)), 
+                width: menu_width,
+                height: menu_height,
+            };
 
-            // Sort: Priority to starts_with, then alphabetical
-            filtered_suggestions.sort_by(|(a, _), (b, _)| {
-                let a_starts = a.label.to_lowercase().starts_with(&prefix);
-                let b_starts = b.label.to_lowercase().starts_with(&prefix);
-                if a_starts && !b_starts {
-                    std::cmp::Ordering::Less
-                } else if !a_starts && b_starts {
-                    std::cmp::Ordering::Greater
-                } else {
-                    a.label.cmp(&b.label)
-                }
-            });
-
-            if !filtered_suggestions.is_empty() {
-                let menu_width = 45;
-                let menu_height = std::cmp::min(10, filtered_suggestions.len()) as u16 + 2;
-                
-                let line = buffer.line(cursor.y).unwrap();
-                let mut cursor_pos_in_line = 0;
-                for (i, c) in line.chars().enumerate() {
-                    if i >= cursor.x { break; }
-                    cursor_pos_in_line += if c == '\t' { 2 } else { unicode_width::UnicodeWidthChar::width(c).unwrap_or(1) };
-                }
-                
-                let menu_x = editor_layout[1].x + (cursor_pos_in_line % editor_width) as u16;
-                let menu_y = editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16 + 1;
-
-                let menu_area = Rect {
-                    x: menu_x.min(area.right().saturating_sub(menu_width)),
-                    y: menu_y.min(editor_trouble_chunks[0].bottom().saturating_sub(menu_height)), 
-                    width: menu_width,
-                    height: menu_height,
+            let items: Vec<ListItem> = vim.filtered_suggestions.iter().enumerate().map(|(display_idx, item)| {
+                let (icon, kind_name, color_group) = match item.kind {
+                    Some(lsp_types::CompletionItemKind::FUNCTION) => (icons::FUNCTION, "Function", "Function"),
+                    Some(lsp_types::CompletionItemKind::METHOD) => (icons::METHOD, "Method", "Function"),
+                    Some(lsp_types::CompletionItemKind::VARIABLE) => (icons::VARIABLE, "Variable", "Variable"),
+                    Some(lsp_types::CompletionItemKind::CLASS) => (icons::CLASS, "Class", "Type"),
+                    Some(lsp_types::CompletionItemKind::INTERFACE) => (icons::INTERFACE, "Interface", "Type"),
+                    Some(lsp_types::CompletionItemKind::KEYWORD) => (icons::KEYWORD, "Keyword", "Keyword"),
+                    Some(lsp_types::CompletionItemKind::SNIPPET) => (icons::SNIPPET, "Snippet", "Keyword"),
+                    Some(lsp_types::CompletionItemKind::FIELD) => (icons::FIELD, "Field", "Identifier"),
+                    Some(lsp_types::CompletionItemKind::PROPERTY) => (icons::PROPERTY, "Property", "Identifier"),
+                    Some(lsp_types::CompletionItemKind::TEXT) => (icons::TEXT, "Text", "Comment"),
+                    _ => (icons::OBJECT, "Object", "Constant"),
                 };
-
-                let items: Vec<ListItem> = filtered_suggestions.iter().enumerate().map(|(display_idx, (item, _))| {
-                    let (icon, kind_name, color_group) = match item.kind {
-                        Some(lsp_types::CompletionItemKind::FUNCTION) => (icons::FUNCTION, "Function", "Function"),
-                        Some(lsp_types::CompletionItemKind::METHOD) => (icons::METHOD, "Method", "Function"),
-                        Some(lsp_types::CompletionItemKind::VARIABLE) => (icons::VARIABLE, "Variable", "Variable"),
-                        Some(lsp_types::CompletionItemKind::CLASS) => (icons::CLASS, "Class", "Type"),
-                        Some(lsp_types::CompletionItemKind::INTERFACE) => (icons::INTERFACE, "Interface", "Type"),
-                        Some(lsp_types::CompletionItemKind::KEYWORD) => (icons::KEYWORD, "Keyword", "Keyword"),
-                        Some(lsp_types::CompletionItemKind::SNIPPET) => (icons::SNIPPET, "Snippet", "Keyword"),
-                        Some(lsp_types::CompletionItemKind::FIELD) => (icons::FIELD, "Field", "Identifier"),
-                        Some(lsp_types::CompletionItemKind::PROPERTY) => (icons::PROPERTY, "Property", "Identifier"),
-                        Some(lsp_types::CompletionItemKind::TEXT) => (icons::TEXT, "Text", "Comment"),
-                        _ => (icons::OBJECT, "Object", "Constant"),
-                    };
-                    
-                    let mut label_style = theme.get("Normal");
-                    let mut icon_style = theme.get(color_group);
-                    let mut kind_style = theme.get("Comment");
-                    
-                    if display_idx == (vim.selected_suggestion % filtered_suggestions.len()) {
-                        label_style = Style::default().fg(theme.palette.black).bg(theme.palette.blue).add_modifier(Modifier::BOLD);
-                        icon_style = Style::default().fg(theme.palette.black).bg(theme.palette.blue);
-                        kind_style = Style::default().fg(theme.palette.black).bg(theme.palette.blue);
-                    }
-                    
-                    ListItem::new(Line::from(vec![
-                        Span::styled(format!(" {} ", icon), icon_style),
-                        Span::styled(format!("{:<30}", item.label), label_style),
-                        Span::styled(format!(" {:>8} ", kind_name), kind_style),
-                    ]))
-                }).collect();
-
-                let menu = List::new(items)
-                    .block(Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(theme.get("TreeExplorerConnector"))
-                        .style(theme.get("Normal")));
                 
-                frame.render_widget(Clear, menu_area);
-                frame.render_stateful_widget(menu, menu_area, &mut vim.suggestion_state);
+                let mut label_style = theme.get("Normal");
+                let mut icon_style = theme.get(color_group);
+                let mut kind_style = theme.get("Comment");
+                
+                if display_idx == (vim.selected_suggestion % vim.filtered_suggestions.len()) {
+                    label_style = Style::default().fg(theme.palette.black).bg(theme.palette.blue).add_modifier(Modifier::BOLD);
+                    icon_style = Style::default().fg(theme.palette.black).bg(theme.palette.blue);
+                    kind_style = Style::default().fg(theme.palette.black).bg(theme.palette.blue);
+                }
+                
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!(" {} ", icon), icon_style),
+                    Span::styled(format!("{:<30}", item.label), label_style),
+                    Span::styled(format!(" {:>8} ", kind_name), kind_style),
+                ]))
+            }).collect();
 
-                // Floating Doc Window
-                let selected_idx = vim.selected_suggestion % filtered_suggestions.len();
-                if let Some((item, _)) = filtered_suggestions.get(selected_idx) {
-                    if let Some(detail) = &item.detail {
-                        let doc_width = 40;
-                        let doc_height = menu_height;
-                        let doc_x = if menu_area.right() + doc_width <= area.right() { menu_area.right() } else { menu_area.left().saturating_sub(doc_width) };
-                        let doc_area = Rect { x: doc_x, y: menu_area.y, width: doc_width, height: doc_height };
+            let menu = List::new(items)
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(theme.get("TreeExplorerConnector"))
+                    .style(theme.get("Normal")));
+            
+            frame.render_widget(Clear, menu_area);
+            frame.render_stateful_widget(menu, menu_area, &mut vim.suggestion_state);
 
-                        let doc_text = detail.clone();
-                        let doc_paragraph = Paragraph::new(doc_text)
-                            .block(Block::default()
-                                .borders(Borders::ALL)
-                                .border_type(BorderType::Rounded)
-                                .border_style(theme.get("TreeExplorerConnector"))
-                                .style(theme.get("Normal")))
-                            .wrap(ratatui::widgets::Wrap { trim: true });
-                        
-                        frame.render_widget(Clear, doc_area);
-                        frame.render_widget(doc_paragraph, doc_area);
-                    }
+            // Floating Doc Window
+            let selected_idx = vim.selected_suggestion % vim.filtered_suggestions.len();
+            if let Some(item) = vim.filtered_suggestions.get(selected_idx) {
+                if let Some(detail) = &item.detail {
+                    let doc_width = 40;
+                    let doc_height = menu_height;
+                    let doc_x = if menu_area.right() + doc_width <= area.right() { menu_area.right() } else { menu_area.left().saturating_sub(doc_width) };
+                    let doc_area = Rect { x: doc_x, y: menu_area.y, width: doc_width, height: doc_height };
+
+                    let doc_text = detail.clone();
+                    let doc_paragraph = Paragraph::new(doc_text)
+                        .block(Block::default()
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(theme.get("TreeExplorerConnector"))
+                            .style(theme.get("Normal")))
+                        .wrap(ratatui::widgets::Wrap { trim: true });
+                    
+                    frame.render_widget(Clear, doc_area);
+                    frame.render_widget(doc_paragraph, doc_area);
                 }
             }
         }

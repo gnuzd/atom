@@ -143,6 +143,48 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    let refresh_filtered_suggestions = |vim: &mut VimState, editor: &Editor| {
+        let (y, x) = (editor.cursor().y, editor.cursor().x);
+        let line = editor.buffer().line(y).unwrap().to_string();
+        let mut start_x = x;
+        let chars: Vec<char> = line.chars().collect();
+        while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
+            start_x -= 1;
+        }
+        let prefix = if start_x < x { line[start_x..x].to_lowercase() } else { String::new() };
+
+        let mut unique_items = std::collections::HashSet::new();
+        let mut filtered: Vec<lsp_types::CompletionItem> = vim.suggestions.iter()
+            .filter(|item| {
+                let key = format!("{}:{:?}", item.label, item.kind);
+                if unique_items.contains(&key) { return false; }
+                if item.label.to_lowercase().contains(&prefix) {
+                    unique_items.insert(key);
+                    true
+                } else { false }
+            })
+            .cloned()
+            .collect();
+
+        // Sort: Priority to starts_with, then alphabetical
+        filtered.sort_by(|a, b| {
+            let a_starts = a.label.to_lowercase().starts_with(&prefix);
+            let b_starts = b.label.to_lowercase().starts_with(&prefix);
+            if a_starts && !b_starts {
+                std::cmp::Ordering::Less
+            } else if !a_starts && b_starts {
+                std::cmp::Ordering::Greater
+            } else {
+                a.label.cmp(&b.label)
+            }
+        });
+
+        vim.filtered_suggestions = filtered;
+        vim.selected_suggestion = 0;
+        vim.suggestion_state.select(Some(0));
+        vim.show_suggestions = !vim.filtered_suggestions.is_empty();
+    };
+
     let install_selected_package = |vim: &mut VimState, editor: &mut Editor, lsp_manager: &LspManager| {
         let selected_idx = vim.mason_state.selected().unwrap_or(0);
         if vim.mason_tab == 5 {
@@ -304,14 +346,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        for (_ext, cmd, msg) in messages_to_process {
+        let mut newly_ready_clients = Vec::new();
+        for (ext, cmd, msg) in messages_to_process {
             match msg {
                 lsp_server::Message::Response(resp) => {
                     let id_str = resp.id.to_string();
                     let id = id_str.trim_matches('"').parse::<i32>().ok();
 
                     if let Some(id) = id {
-                        if Some(id) == vim.definition_request_id {
+                        if id == 1 {
+                            let mut clients = lsp_manager.clients.lock().unwrap();
+                            if let Some(ext_clients) = clients.get_mut(&ext) {
+                                for (client, state, c) in ext_clients.iter_mut() {
+                                    if c == &cmd {
+                                        *state = crate::lsp::ClientState::Ready;
+                                        let _ = client.send_notification("initialized", serde_json::json!({}));
+                                        newly_ready_clients.push((ext.clone(), cmd.clone()));
+                                    }
+                                }
+                            }
+                        } else if Some(id) == vim.definition_request_id {
                             // Handle definition response
                             vim.definition_request_id = None;
                             if let Ok(value) = serde_json::from_value::<GotoDefinitionResponse>(resp.result.unwrap_or_default()) {
@@ -333,8 +387,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     CompletionResponse::Array(items) => { vim.suggestions = items; }
                                     CompletionResponse::List(list) => { vim.suggestions = list.items; }
                                 }
-                                vim.show_suggestions = !vim.suggestions.is_empty();
-                                vim.suggestion_state.select(Some(0));
+                                refresh_filtered_suggestions(&mut vim, &editor);
                             }
                         }
                     }
@@ -349,6 +402,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        for (ext, cmd) in newly_ready_clients {
+            for buf in &editor.buffers {
+                if let Some(path) = &buf.file_path {
+                    if path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) == Some(ext.clone()) {
+                        let text = buf.text.to_string();
+                        let _ = lsp_manager.did_open(&ext, path, text, Some(&cmd));
+                    }
+                }
             }
         }
         
@@ -661,7 +725,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
                                 }
-                                KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                KeyCode::Char(' ') | KeyCode::Null if key.modifiers.contains(KeyModifiers::CONTROL) || key.code == KeyCode::Null => {
                                     if let Some(path) = editor.buffer().file_path.clone() {
                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                                             let (y, x) = (editor.cursor().y, editor.cursor().x);
@@ -701,11 +765,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     // Trigger LSP completion
                                     if let Some(path) = editor.buffer().file_path.clone() {
                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                            let text = editor.buffer().text.to_string();
+                                            let _ = lsp_manager.did_change(&ext, &path, text);
                                             let trigger_kind = if c == '.' || c == ':' || c == '>' { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
                                             let trigger_char = if trigger_kind == CompletionTriggerKind::TRIGGER_CHARACTER { Some(c.to_string()) } else { None };
                                             let _ = lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
                                         }
                                     }
+                                    refresh_filtered_suggestions(&mut vim, &editor);
                                 }
                                 KeyCode::Backspace => {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
@@ -713,11 +780,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let idx = editor.buffer().text.line_to_char(y) + x;
                                         editor.buffer_mut().text.remove((idx-1)..idx);
                                         editor.cursor_mut().x -= 1;
+                                        if let Some(path) = editor.buffer().file_path.clone() {
+                                            if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                let text = editor.buffer().text.to_string();
+                                                let _ = lsp_manager.did_change(&ext, &path, text);
+                                                let _ = lsp_manager.request_completions(&ext, &path, y, x - 1, CompletionTriggerKind::INVOKED, None);
+                                            }
+                                        }
+                                        refresh_filtered_suggestions(&mut vim, &editor);
                                     }
                                 }
                                 KeyCode::Tab => {
-                                    if vim.show_suggestions && !vim.suggestions.is_empty() {
-                                        vim.selected_suggestion = (vim.selected_suggestion + 1) % vim.suggestions.len();
+                                    if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
+                                        vim.selected_suggestion = (vim.selected_suggestion + 1) % vim.filtered_suggestions.len();
                                         vim.suggestion_state.select(Some(vim.selected_suggestion));
                                     } else {
                                         let (y, x) = (editor.cursor().y, editor.cursor().x);
@@ -728,8 +803,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                                 KeyCode::Enter => {
-                                    if vim.show_suggestions && !vim.suggestions.is_empty() {
-                                        let selected = &vim.suggestions[vim.selected_suggestion];
+                                    if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
+                                        let selected = &vim.filtered_suggestions[vim.selected_suggestion];
                                         let (y, x) = (editor.cursor().y, editor.cursor().x);
                                         
                                         // Simple completion: replace current word with suggestion
@@ -746,6 +821,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         editor.cursor_mut().x = start_x + selected.label.len();
                                         
                                         vim.show_suggestions = false;
+                                        vim.filtered_suggestions.clear();
                                         vim.suggestions.clear();
                                     } else {
                                         let (y, x) = (editor.cursor().y, editor.cursor().x);
