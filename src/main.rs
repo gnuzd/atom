@@ -725,23 +725,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                         Mode::Command => {
-                            match key.code {
-                                KeyCode::Esc => { vim.mode = Mode::Normal; }
-                                KeyCode::Char(c) => { vim.command_buffer.push(c); }
-                                KeyCode::Backspace => { vim.command_buffer.pop(); }
-                                KeyCode::Enter => {
-                                    let cmd_str = vim.command_buffer.trim().to_string();
-                                    vim.command_buffer.clear();
-                                    vim.mode = Mode::Normal;
-                                    
-                                    if !cmd_str.is_empty() {
-                                        let mut parts = cmd_str.split_whitespace();
-                                        let first_part = parts.next().unwrap_or("");
-                                        let force = first_part.ends_with('!');
-                                        let cmd = if force { &first_part[..first_part.len()-1] } else { first_part };
-                                        let args: Vec<&str> = parts.collect();
+                            let commands = vec![
+                                "q", "quit", "qa", "qall", "w", "write", "wa", "wall", "wq", "x", "wqa", "xa",
+                                "bn", "bnext", "bp", "bprev", "bd", "bdelete", "e", "edit", "e!", "Reload",
+                                "colorscheme", "colo", "colorschem", "Mason", "Trouble", "format", "Format",
+                                "FormatAll", "FormatEnable", "FormatDisable", "gd", "LspInfo", "LspRestart"
+                            ];
 
-                                        match cmd {
+                            match key.code {
+                                KeyCode::Esc => { 
+                                    vim.mode = Mode::Normal; 
+                                    vim.command_suggestions.clear();
+                                }
+                                KeyCode::Char(c) => { 
+                                    vim.command_buffer.push(c); 
+                                    vim.command_suggestions = commands.iter()
+                                        .filter(|cmd| cmd.starts_with(&vim.command_buffer))
+                                        .map(|s| s.to_string())
+                                        .collect();
+                                    vim.selected_command_suggestion = 0;
+                                }
+                                KeyCode::Backspace => { 
+                                    vim.command_buffer.pop(); 
+                                    if vim.command_buffer.is_empty() {
+                                        vim.command_suggestions.clear();
+                                    } else {
+                                        vim.command_suggestions = commands.iter()
+                                            .filter(|cmd| cmd.starts_with(&vim.command_buffer))
+                                            .map(|s| s.to_string())
+                                            .collect();
+                                    }
+                                    vim.selected_command_suggestion = 0;
+                                }
+                                KeyCode::Tab => {
+                                    if !vim.command_suggestions.is_empty() {
+                                        vim.selected_command_suggestion = (vim.selected_command_suggestion + 1) % vim.command_suggestions.len();
+                                    }
+                                }
+                                KeyCode::Enter => {
+                                    if !vim.command_suggestions.is_empty() {
+                                        vim.command_buffer = vim.command_suggestions[vim.selected_command_suggestion].clone();
+                                        vim.command_suggestions.clear();
+                                    } else {
+                                        let cmd_str = vim.command_buffer.trim().to_string();
+                                        vim.command_buffer.clear();
+                                        vim.mode = Mode::Normal;
+                                        
+                                        if !cmd_str.is_empty() {
+                                            let mut parts = cmd_str.split_whitespace();
+                                            let first_part = parts.next().unwrap_or("");
+                                            let force = first_part.ends_with('!');
+                                            let cmd = if force { &first_part[..first_part.len()-1] } else { first_part };
+                                            let args: Vec<&str> = parts.collect();
+
+                                            match cmd {
                                             "q" | "quit" => {
                                                 if !force && editor.buffer().modified {
                                                     vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::Quit);
@@ -845,14 +882,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         }
                                     }
                                 }
-                                _ => {}
                             }
+                            _ => {}
                         }
-                        _ => { vim.mode = Mode::Normal; }
                     }
+                    _ => { vim.mode = Mode::Normal; }
                 }
             }
         }
+    }
         if should_quit { break; }
 
         // 2. State & Render
