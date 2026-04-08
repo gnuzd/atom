@@ -3,23 +3,23 @@
 	import { page } from '$app/stores';
 	import { afterNavigate } from '$app/navigation';
 	import { 
-		Selection, 
+		LayoutGrid, 
 		BookOpen, 
-		DownloadSimple, 
-		TerminalWindow, 
-		List, 
+		Download, 
+		Terminal, 
+		Menu, 
 		X, 
-		GithubLogo, 
+		Github, 
 		Package 
-	} from 'phosphor-svelte';
+	} from 'lucide-svelte';
 
 	let { children } = $props();
 	let isSidebarOpen = $state(false);
 
 	const navItems = [
 		{ name: 'Introduction', path: '/', icon: BookOpen },
-		{ name: 'Prerequisites', path: '/prerequisites', icon: TerminalWindow },
-		{ name: 'Installation', path: '/installation', icon: DownloadSimple }
+		{ name: 'Prerequisites', path: '/prerequisites', icon: Terminal },
+		{ name: 'Installation', path: '/installation', icon: Download }
 	];
 
 	function toggleSidebar() {
@@ -35,7 +35,7 @@
 	<!-- Mobile Header -->
 	<header class="lg:hidden fixed top-0 left-0 right-0 h-16 bg-tokyo-sidebar/80 backdrop-blur-md border-b border-tokyo-border z-40 flex items-center justify-between px-6">
 		<a href="/" class="text-xl font-bold text-tokyo-blue flex items-center gap-2">
-			<Selection size={24} weight="bold" />
+			<LayoutGrid size={24} />
 			Atom Docs
 		</a>
 		<button 
@@ -46,7 +46,7 @@
 			{#if isSidebarOpen}
 				<X size={24} />
 			{:else}
-				<List size={24} />
+				<Menu size={24} />
 			{/if}
 		</button>
 	</header>
@@ -57,7 +57,7 @@
 	>
 		<div class="p-8 border-b border-tokyo-border flex items-center justify-between lg:block">
 			<h1 class="text-2xl font-black text-tokyo-blue flex items-center gap-3 tracking-tight">
-				<Selection size={28} weight="fill" class="text-tokyo-purple" />
+				<LayoutGrid size={28} class="text-tokyo-purple" />
 				Atom Docs
 			</h1>
 			<button onclick={toggleSidebar} class="lg:hidden p-2 text-tokyo-muted hover:text-tokyo-text">
@@ -76,7 +76,7 @@
 								href={item.path}
 								class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium transition-all duration-200 { $page.url.pathname === item.path ? 'bg-tokyo-blue/10 text-tokyo-blue ring-1 ring-tokyo-blue/20' : 'text-tokyo-muted hover:bg-tokyo-border/50 hover:text-tokyo-text' }"
 							>
-								<Icon size={20} weight={$page.url.pathname === item.path ? 'fill' : 'regular'} />
+								<Icon size={18} strokeWidth={$page.url.pathname === item.path ? 2.5 : 2} />
 								{item.name}
 							</a>
 						</li>
@@ -93,7 +93,7 @@
 							target="_blank"
 							class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium text-tokyo-muted hover:bg-tokyo-border/50 hover:text-tokyo-text transition-all duration-200"
 						>
-							<GithubLogo size={20} />
+							<Github size={18} />
 							GitHub Repository
 						</a>
 					</li>
@@ -103,7 +103,7 @@
 
 		<div class="p-6 border-t border-tokyo-border flex items-center gap-3 bg-tokyo-bg/30">
 			<div class="w-8 h-8 rounded-lg bg-tokyo-purple/20 flex items-center justify-center text-tokyo-purple">
-				<Package size={20} weight="fill" />
+				<Package size={18} />
 			</div>
 			<div class="flex flex-col">
 				<span class="text-xs font-bold text-tokyo-text">Atom v0.1.0</span>
@@ -133,15 +133,15 @@
 				<p>© 2026 Atom Editor Team</p>
 				<div class="flex gap-8">
 					<a href="https://github.com/gnuzd/atom" class="hover:text-tokyo-blue transition-colors flex items-center gap-2">
-						<GithubLogo size={16} />
+						<Github size={14} />
 						GitHub
 					</a>
 					<a href="/installation" class="hover:text-tokyo-blue transition-colors flex items-center gap-2">
-						<DownloadSimple size={16} />
+						<Download size={14} />
 						Install
 					</a>
 					<a href="/prerequisites" class="hover:text-tokyo-blue transition-colors flex items-center gap-2">
-						<TerminalWindow size={16} />
+						<Terminal size={14} />
 						Setup
 					</a>
 				</div>
