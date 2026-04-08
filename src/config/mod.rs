@@ -10,15 +10,40 @@ pub struct Config {
     pub colorscheme: String,
     #[serde(default = "default_wrap")]
     pub wrap: bool,
+    #[serde(default = "default_true")]
+    pub number: bool,
+    #[serde(default = "default_true")]
+    pub relativenumber: bool,
+    #[serde(default = "default_true")]
+    pub cursorline: bool,
+    #[serde(default = "default_tabstop")]
+    pub tabstop: usize,
+    #[serde(default = "default_tabstop")]
+    pub shiftwidth: usize,
+    #[serde(default = "default_true")]
+    pub expandtab: bool,
+    #[serde(default = "default_true")]
+    pub ignorecase: bool,
+    #[serde(default = "default_true")]
+    pub smartcase: bool,
+    #[serde(default = "default_true")]
+    pub undofile: bool,
+    #[serde(default = "default_true")]
+    pub signcolumn: bool,
+    #[serde(default = "default_true")]
+    pub mouse: bool,
+    #[serde(default = "default_false")]
+    pub showmode: bool,
+    #[serde(default = "default_laststatus")]
+    pub laststatus: usize,
 }
 
-fn default_colorscheme() -> String {
-    "gruvbox-material".to_string()
-}
-
-fn default_wrap() -> bool {
-    true
-}
+fn default_colorscheme() -> String { "gruvbox-material".to_string() }
+fn default_wrap() -> bool { true }
+fn default_true() -> bool { true }
+fn default_false() -> bool { false }
+fn default_tabstop() -> usize { 2 }
+fn default_laststatus() -> usize { 3 }
 
 impl Config {
     pub fn default() -> Self {
@@ -26,6 +51,19 @@ impl Config {
             disable_autoformat: false,
             colorscheme: default_colorscheme(),
             wrap: true,
+            number: true,
+            relativenumber: true,
+            cursorline: true,
+            tabstop: 2,
+            shiftwidth: 2,
+            expandtab: true,
+            ignorecase: true,
+            smartcase: true,
+            undofile: true,
+            signcolumn: true,
+            mouse: true,
+            showmode: false,
+            laststatus: 3,
         }
     }
 

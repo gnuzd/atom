@@ -71,16 +71,21 @@ fn update_git_info(project_root: &PathBuf) -> Option<vim::GitInfo> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let config = crate::config::Config::load();
+    let project_root = find_project_root(&env::current_dir().unwrap_or_default());
+    let mut vim = VimState::new(config, project_root);
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    if vim.config.mouse {
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    } else {
+        execute!(stdout, EnterAlternateScreen)?;
+    }
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let config = crate::config::Config::load();
-    let mut editor = Editor::new(&config.colorscheme);
-    let project_root = find_project_root(&env::current_dir().unwrap_or_default());
-    let mut vim = VimState::new(config, project_root);
+    let mut editor = Editor::new(&vim.config.colorscheme);
     let ui = TerminalUi::new();
     let mut explorer = FileExplorer::new();
     let mut trouble = ui::trouble::TroubleList::new();
@@ -570,8 +575,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::Tab => {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
                                     let idx = editor.buffer().text.line_to_char(y) + x;
-                                    editor.buffer_mut().text.insert(idx, "  ");
-                                    editor.cursor_mut().x += 2;
+                                    let spaces = " ".repeat(vim.config.tabstop);
+                                    editor.buffer_mut().text.insert(idx, &spaces);
+                                    editor.cursor_mut().x += vim.config.tabstop;
                                 }
                                 KeyCode::Enter => {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
@@ -729,7 +735,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 "q", "quit", "qa", "qall", "w", "write", "wa", "wall", "wq", "x", "wqa", "xa",
                                 "bn", "bnext", "bp", "bprev", "bd", "bdelete", "e", "edit", "e!", "Reload",
                                 "colorscheme", "Mason", "Trouble", "format", "Format",
-                                "FormatAll", "FormatEnable", "FormatDisable", "gd", "LspInfo", "LspRestart"
+                                "FormatAll", "FormatEnable", "FormatDisable", "gd", "LspInfo", "LspRestart",
+                                "set", "config"
                             ];
 
                             match key.code {
@@ -876,6 +883,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             "gd" => { vim.set_message("Go to Definition (not implemented)".to_string()); }
                                             "LspInfo" => { vim.set_message("LSP Info (not implemented)".to_string()); }
                                             "LspRestart" => { vim.set_message("LSP Restarted".to_string()); }
+                                            "set" => {
+                                                if let Some(arg) = args.get(0) {
+                                                    match *arg {
+                                                        "number" => { vim.show_number = true; vim.config.number = true; }
+                                                        "nonumber" => { vim.show_number = false; vim.config.number = false; }
+                                                        "relativenumber" => { vim.relative_number = true; vim.config.relativenumber = true; }
+                                                        "norelativenumber" => { vim.relative_number = false; vim.config.relativenumber = false; }
+                                                        "cursorline" => { vim.config.cursorline = true; }
+                                                        "nocursorline" => { vim.config.cursorline = false; }
+                                                        "signcolumn" => { vim.config.signcolumn = true; }
+                                                        "nosigncolumn" => { vim.config.signcolumn = false; }
+                                                        "mouse" => { vim.config.mouse = true; }
+                                                        "nomouse" => { vim.config.mouse = false; }
+                                                        _ => { vim.set_message(format!("Unknown option: {}", arg)); }
+                                                    }
+                                                }
+                                            }
+                                            "config" => {
+                                                if let Err(e) = vim.config.save() {
+                                                    vim.set_message(format!("Error saving config: {}", e));
+                                                } else {
+                                                    vim.set_message("Config saved".to_string());
+                                                }
+                                            }
                                             _ => {
                                                 vim.set_message(format!("Not an editor command: {}", cmd_str));
                                             }

@@ -411,7 +411,7 @@ impl TerminalUi {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(1),
-                Constraint::Length(1),
+                Constraint::Length(if vim.config.laststatus == 0 { 0 } else { 1 }),
                 Constraint::Length(1),
             ])
             .split(area);
@@ -601,9 +601,16 @@ impl TerminalUi {
         let scroll_y = cursor.scroll_y;
         let visible_height = editor_area.height as usize;
 
+        let gutter_width = match (vim.show_number || vim.relative_number, vim.config.signcolumn) {
+            (true, true) => 8,
+            (true, false) => 5,
+            (false, true) => 3,
+            (false, false) => 0,
+        };
+
         let editor_layout = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(8), Constraint::Min(1)])
+            .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
             .split(editor_area);
 
         let editor_width = editor_layout[1].width as usize;
@@ -624,84 +631,79 @@ impl TerminalUi {
         }).map(|pos| pos.saturating_sub(scroll_y));
 
         // Full width highlight for active line
-        if let Some(y) = cursor_screen_y {
-            if y < visible_height {
-                let highlight_rect = Rect {
-                    x: editor_area.x,
-                    y: editor_area.y + y as u16,
-                    width: editor_area.width,
-                    height: 1,
-                };
-                frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+        if vim.config.cursorline {
+            if let Some(y) = cursor_screen_y {
+                if y < visible_height {
+                    let highlight_rect = Rect {
+                        x: editor_area.x,
+                        y: editor_area.y + y as u16,
+                        width: editor_area.width,
+                        height: 1,
+                    };
+                    frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+                }
             }
         }
 
-        // Line Numbers
-        let mut line_numbers = Text::default();
-        for i in scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len()) {
-            let (actual_idx, row) = screen_to_buffer_lines[i];
-            let is_first_row = row == 0;
-            let is_active = actual_idx == cursor.y;
-            let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
-            
-            let display_num = if is_first_row {
-                if vim.relative_number {
-                    if is_active {
-                        format!("{:>3} ", actual_idx + 1)
-                    } else {
-                        let cursor_actual_screen_y = screen_to_buffer_lines.iter().position(|&(idx, _)| idx == cursor.y).unwrap_or(0);
-                        let diff = (i as i32 - cursor_actual_screen_y as i32).abs();
-                        format!("{:>3} ", diff)
-                    }
-                } else {
-                    format!("{:>3} ", actual_idx + 1)
-                }
-            } else {
-                "    ".to_string()
-            };
+        // Line Numbers & Gutter
+        if gutter_width > 0 {
+            let mut line_numbers = Text::default();
+            for i in scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len()) {
+                let (actual_idx, row) = screen_to_buffer_lines[i];
+                let is_first_row = row == 0;
+                let is_active = actual_idx == cursor.y;
+                let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
+                
+                let mut spans = Vec::new();
 
-            let mut spans = Vec::new();
+                // 1. Sign Column (Git Signs & Diagnostics)
+                if vim.config.signcolumn {
+                    if is_first_row {
+                        // Git Sign
+                        let git_sign = buffer.git_signs.iter().find(|(line, _)| *line == actual_idx).map(|(_, s)| s);
+                        if let Some(sign) = git_sign {
+                            let (symbol, style_name) = match sign {
+                                crate::git::GitSign::Add => (icons::GIT_ADD, "GitSignsAdd"),
+                                crate::git::GitSign::Change => (icons::GIT_MOD, "GitSignsChange"),
+                                crate::git::GitSign::Delete => (icons::GIT_DEL, "GitSignsDelete"),
+                                crate::git::GitSign::TopDelete => (icons::GIT_DEL, "GitSignsDelete"),
+                                crate::git::GitSign::ChangeDelete => (icons::GIT_MOD, "GitSignsChange"),
+                            };
+                            spans.push(Span::styled(symbol, theme.get(style_name)));
+                        } else {
+                            spans.push(Span::raw(" "));
+                        }
 
-            // Git Sign (Only on first row)
-            if is_first_row {
-                let git_sign = buffer.git_signs.iter().find(|(line, _)| *line == actual_idx).map(|(_, s)| s);
-                if let Some(sign) = git_sign {
-                    let (symbol, style_name) = match sign {
-                        crate::git::GitSign::Add => (icons::GIT_ADD, "GitSignsAdd"),
-                        crate::git::GitSign::Change => (icons::GIT_MOD, "GitSignsChange"),
-                        crate::git::GitSign::Delete => (icons::GIT_DEL, "GitSignsDelete"),
-                        crate::git::GitSign::TopDelete => (icons::GIT_DEL, "GitSignsDelete"),
-                        crate::git::GitSign::ChangeDelete => (icons::GIT_MOD, "GitSignsChange"),
-                    };
-                    spans.push(Span::styled(symbol, theme.get(style_name)));
-                } else {
-                    spans.push(Span::raw(" "));
-                }
-
-                // Diagnostic Icon in gutter
-                if vim.show_diagnostics {
-                    if let Some(path) = &buffer.file_path {
-                        if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                            let diagnostics = lsp_manager.diagnostics.lock().unwrap();
-                            if let Some(server_diags) = diagnostics.get(&url) {
-                                let mut line_diag = None;
-                                for diags in server_diags.values() {
-                                    for diag in diags {
-                                        if diag.range.start.line as usize == actual_idx {
-                                            if line_diag.is_none() || diag.severity < line_diag.as_ref().and_then(|d: &&lsp_types::Diagnostic| d.severity) {
-                                                line_diag = Some(diag);
+                        // Diagnostic Icon
+                        if vim.show_diagnostics {
+                            if let Some(path) = &buffer.file_path {
+                                if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                                    let diagnostics = lsp_manager.diagnostics.lock().unwrap();
+                                    if let Some(server_diags) = diagnostics.get(&url) {
+                                        let mut line_diag = None;
+                                        for diags in server_diags.values() {
+                                            for diag in diags {
+                                                if diag.range.start.line as usize == actual_idx {
+                                                    if line_diag.is_none() || diag.severity < line_diag.as_ref().and_then(|d: &&lsp_types::Diagnostic| d.severity) {
+                                                        line_diag = Some(diag);
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
-                                }
 
-                                if let Some(diag) = line_diag {
-                                    let (icon, color) = match diag.severity {
-                                        Some(DiagnosticSeverity::ERROR) => (icons::ERROR, theme.palette.red),
-                                        Some(DiagnosticSeverity::WARNING) => (icons::WARNING, theme.palette.yellow),
-                                        _ => ("●", theme.palette.blue),
-                                    };
-                                    spans.push(Span::styled(format!("{} ", icon), Style::default().fg(color)));
+                                        if let Some(diag) = line_diag {
+                                            let (icon, color) = match diag.severity {
+                                                Some(DiagnosticSeverity::ERROR) => (icons::ERROR, theme.palette.red),
+                                                Some(DiagnosticSeverity::WARNING) => (icons::WARNING, theme.palette.yellow),
+                                                _ => ("●", theme.palette.blue),
+                                            };
+                                            spans.push(Span::styled(format!("{} ", icon), Style::default().fg(color)));
+                                        } else {
+                                            spans.push(Span::raw("  "));
+                                        }
+                                    } else {
+                                        spans.push(Span::raw("  "));
+                                    }
                                 } else {
                                     spans.push(Span::raw("  "));
                                 }
@@ -712,26 +714,43 @@ impl TerminalUi {
                             spans.push(Span::raw("  "));
                         }
                     } else {
+                        spans.push(Span::raw("    "));
+                    }
+                }
+
+                // 2. Line Numbers
+                if vim.show_number || vim.relative_number {
+                    let display_num = if is_first_row {
+                        if vim.relative_number {
+                            if is_active && vim.show_number {
+                                format!("{:>3} ", actual_idx + 1)
+                            } else if is_active {
+                                "  0 ".to_string()
+                            } else {
+                                let cursor_actual_screen_y = screen_to_buffer_lines.iter().position(|&(idx, _)| idx == cursor.y).unwrap_or(0);
+                                let diff = (i as i32 - cursor_actual_screen_y as i32).abs();
+                                format!("{:>3} ", diff)
+                            }
+                        } else {
+                            format!("{:>3} ", actual_idx + 1)
+                        }
+                    } else {
+                        "    ".to_string()
+                    };
+                    spans.push(Span::styled(display_num, style));
+
+                    // Fold Indicator
+                    if is_first_row && buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx) {
+                        spans.push(Span::styled(" >", theme.get("Keyword")));
+                    } else {
                         spans.push(Span::raw("  "));
                     }
-                } else {
-                    spans.push(Span::raw("  "));
                 }
-            } else {
-                spans.push(Span::raw("    "));
+
+                line_numbers.lines.push(Line::from(spans));
             }
-
-            spans.push(Span::styled(display_num, style));
-
-            if is_first_row && buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx) {
-                spans.push(Span::styled(" >", theme.get("Keyword")));
-            } else {
-                spans.push(Span::raw("  "));
-            }
-
-            line_numbers.lines.push(Line::from(spans));
+            frame.render_widget(Paragraph::new(line_numbers).alignment(Alignment::Left), editor_layout[0]);
         }
-        frame.render_widget(Paragraph::new(line_numbers).alignment(Alignment::Left), editor_layout[0]);
 
         // Code Content
         let mut text = Text::default();
@@ -1142,7 +1161,9 @@ impl TerminalUi {
         let mut status_spans = Vec::new();
 
         // Section A: Mode
-        status_spans.push(Span::styled(mode_label, Style::default().fg(theme.palette.black).bg(mode_color).add_modifier(Modifier::BOLD)));
+        if vim.config.showmode {
+            status_spans.push(Span::styled(mode_label, Style::default().fg(theme.palette.black).bg(mode_color).add_modifier(Modifier::BOLD)));
+        }
 
         // Section B: Git
         if let Some(git) = &vim.git_info {
