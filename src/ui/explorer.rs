@@ -46,6 +46,7 @@ impl FileExplorer {
 
     pub fn init_root(&mut self) {
         self.entries.clear();
+        self.selected_idx = 0;
         if self.filter.is_empty() {
             // Add root entry
             self.entries.push(TreeEntry {
@@ -236,18 +237,25 @@ impl FileExplorer {
 
     pub fn refresh(&mut self) {
         let selected_path = self.selected_entry().map(|e| e.path.clone());
-        let expanded_paths: Vec<PathBuf> = self.entries.iter()
+        let mut expanded_paths: Vec<PathBuf> = self.entries.iter()
             .filter(|e| e.is_dir && e.is_expanded)
             .map(|e| e.path.clone())
             .collect();
+
+        // Sort by length (depth) to expand parents before children
+        expanded_paths.sort_by_key(|p| p.as_os_str().len());
 
         self.init_root();
         
         for path in expanded_paths {
             if let Some(pos) = self.entries.iter().position(|e| e.path == path) {
+                // Temporarily set selected_idx to toggle_expand target
+                let old_idx = self.selected_idx;
+                self.selected_idx = pos;
                 if !self.entries[pos].is_expanded {
                     self.toggle_expand();
                 }
+                self.selected_idx = old_idx;
             }
         }
 
@@ -255,6 +263,11 @@ impl FileExplorer {
             if let Some(pos) = self.entries.iter().position(|e| e.path == path) {
                 self.selected_idx = pos;
             }
+        }
+        
+        // Final safety clamp
+        if !self.entries.is_empty() && self.selected_idx >= self.entries.len() {
+            self.selected_idx = self.entries.len() - 1;
         }
     }
 
