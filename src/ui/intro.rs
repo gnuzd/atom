@@ -37,16 +37,16 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
 
     let help_items = vec![
         ("type  :q<Enter> ", "to exit"),
-        ("type  :help<Enter>", "for help"),
-        ("type  \\           ", "toggle explorer"),
-        ("type  <Space>ff   ", "find files"),
-        ("type  <Space>th   ", "change theme"),
+        ("type  :help<Enter> ", "for help"),
+        ("type  \\ ", "toggle explorer"),
+        ("type  <Space>ff ", "find files"),
+        ("type  <Space>th ", "change theme"),
     ];
 
     for (cmd, desc) in help_items {
         content.push(Line::from(vec![
-            Span::styled(cmd, theme.get("Function")),
-            Span::styled(desc, theme.get("Normal")),
+            Span::styled(format!("{:>20}", cmd), theme.get("Function")),
+            Span::styled(format!("{:<20}", desc), theme.get("Normal")),
         ]).alignment(Alignment::Center));
     }
 
