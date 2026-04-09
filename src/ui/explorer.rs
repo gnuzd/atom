@@ -166,6 +166,31 @@ impl FileExplorer {
         });
     }
 
+    pub fn reveal_path(&mut self, target: &Path) {
+        if !target.starts_with(&self.root) { return; }
+        
+        let relative = target.strip_prefix(&self.root).unwrap_or(Path::new(""));
+        let mut current_path = self.root.clone();
+        
+        // Root is always at index 0 and expanded by default in init_root
+        for component in relative.components() {
+            let name = component.as_os_str();
+            current_path.push(name);
+            
+            // Find current_path in entries
+            if let Some(pos) = self.entries.iter().position(|e| e.path == current_path) {
+                self.selected_idx = pos;
+                if self.entries[pos].is_dir && !self.entries[pos].is_expanded {
+                    self.toggle_expand();
+                }
+            } else {
+                // If not found, it might be inside a collapsed dir we just expanded? 
+                // But we iterate components, so we should find it if we expand as we go.
+                break;
+            }
+        }
+    }
+
     pub fn expand(&mut self) {
         if self.entries.is_empty() { return; }
         let entry = self.entries[self.selected_idx].clone();
@@ -211,9 +236,25 @@ impl FileExplorer {
 
     pub fn refresh(&mut self) {
         let selected_path = self.selected_entry().map(|e| e.path.clone());
+        let expanded_paths: Vec<PathBuf> = self.entries.iter()
+            .filter(|e| e.is_dir && e.is_expanded)
+            .map(|e| e.path.clone())
+            .collect();
+
         self.init_root();
+        
+        for path in expanded_paths {
+            if let Some(pos) = self.entries.iter().position(|e| e.path == path) {
+                if !self.entries[pos].is_expanded {
+                    self.toggle_expand();
+                }
+            }
+        }
+
         if let Some(path) = selected_path {
-            if let Some(pos) = self.entries.iter().position(|e| e.path == path) { self.selected_idx = pos; }
+            if let Some(pos) = self.entries.iter().position(|e| e.path == path) {
+                self.selected_idx = pos;
+            }
         }
     }
 

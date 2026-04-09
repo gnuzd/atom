@@ -191,6 +191,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         vim.show_suggestions = !vim.filtered_suggestions.is_empty();
     };
 
+    let sync_explorer = |explorer: &mut FileExplorer, editor: &Editor| {
+        if explorer.visible {
+            if let Some(path) = editor.buffer().file_path.as_ref() {
+                explorer.reveal_path(path);
+            }
+        }
+    };
+
     let install_selected_package = |vim: &mut VimState, editor: &mut Editor, lsp_manager: &LspManager| {
         let selected_idx = vim.mason_state.selected().unwrap_or(0);
         if vim.mason_tab == 5 {
@@ -355,7 +363,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        if explorer_needs_refresh {
+        if explorer_needs_refresh && explorer.visible {
             explorer.refresh();
         }
 
@@ -577,7 +585,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         '/' => { vim.mode = Mode::Search; vim.search_query.clear(); }
                                                         '\\' => {
                                                             explorer.toggle();
-                                                            if explorer.visible { vim.focus = Focus::Explorer; }
+                                                            if explorer.visible {
+                                                                vim.focus = Focus::Explorer;
+                                                                if let Some(path) = editor.buffer().file_path.as_ref() {
+                                                                    explorer.reveal_path(path);
+                                                                }
+                                                            }
                                                         }
                                                         'j' => editor.move_down(),
                                                         'k' => editor.move_up(),
@@ -1020,6 +1033,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 } else {
                                                     editor.cursor_mut().y = line;
                                                     editor.cursor_mut().x = 0;
+                                                    sync_explorer(&mut explorer, &editor);
                                                 }
                                             }
                                         }
@@ -1217,13 +1231,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 editor.active_idx = current_idx;
                                                 should_quit = true;
                                             }
-                                            "bn" | "bnext" => editor.next_buffer(),
-                                            "bp" | "bprev" => editor.prev_buffer(),
+                                            "bn" | "bnext" => { editor.next_buffer(); sync_explorer(&mut explorer, &editor); }
+                                            "bp" | "bprev" => { editor.prev_buffer(); sync_explorer(&mut explorer, &editor); }
                                             "bd" | "bdelete" => {
                                                 if !force && editor.buffer().modified {
                                                     vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::CloseBuffer);
                                                 } else {
                                                     editor.close_current_buffer();
+                                                    sync_explorer(&mut explorer, &editor);
                                                 }
                                             }
                                             "e" | "edit" => {
@@ -1231,6 +1246,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     let path = PathBuf::from(*path_str);
                                                     if let Err(e) = editor.open_file(path) {
                                                         vim.set_message(format!("Error: {}", e));
+                                                    } else {
+                                                        sync_explorer(&mut explorer, &editor);
                                                     }
                                                 }
                                             }
