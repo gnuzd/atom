@@ -9,17 +9,11 @@ use crate::ui::colorscheme::ColorScheme;
 
 pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
     let logo = vec![
-        "      ___           ___           ___           ___     ",
-        "     /  /\\         /__/\\         /  /\\         /__/\\    ",
-        "    /  /::\\        \\  \\:\\       /  /::\\        \\  \\:\\   ",
-        "   /  /:/\\:\\        \\  \\:\\     /  /:/\\:\\        \\  \\:\\  ",
-        "  /  /:/~/::\\   _____\\__\\:\\   /  /:/  \\:\\   _____\\__\\:\\ ",
-        " /__/:/ /:/\\:\\ /__/::::::::\\ /__/:/ \\__\\:\\ /__/::::::::\\",
-        " \\  \\:\\/:/__\\/ \\  \\:\\~~\\~~\\/ \\  \\:\\ /  /:/ \\  \\:\\~~\\~~\\/ ",
-        "  \\  \\::/       \\  \\:\\  ~~~   \\  \\:\\  /:/   \\  \\:\\  ~~~  ",
-        "   \\  \\:\\        \\  \\:\\        \\  \\:\\/:/     \\  \\:\\      ",
-        "    \\  \\:\\        \\  \\:\\        \\  \\::/       \\  \\:\\     ",
-        "     \\__\\/         \\__\\/         \\__\\/         \\__\\/     ",
+        "      ___   __________  __  ___",
+        "     /   | /_  __/ __ \\/  |/  /",
+        "    / /| |  / / / / / / /|_/ / ",
+        "   / ___ | / / / /_/ / /  / /  ",
+        "  /_/  |_|/_/  \\____/_/  /_/   ",
     ];
 
     let mut content = Vec::new();
@@ -73,7 +67,7 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(1),
-            Constraint::Length(28), 
+            Constraint::Length(22), // Adjusted for shorter logo
             Constraint::Min(1),
         ])
         .split(area);
