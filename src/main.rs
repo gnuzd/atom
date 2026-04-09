@@ -731,6 +731,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 vim.set_message("Path copied to register".to_string());
                                             }
                                         }
+                                        KeyCode::Char(':') => {
+                                            vim.mode = Mode::Command;
+                                            vim.command_buffer.clear();
+                                        }
                                         KeyCode::Char('H') => {
                                             explorer.show_hidden = !explorer.show_hidden;
                                             explorer.refresh();
@@ -772,6 +776,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                                 KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
                                 KeyCode::Char('l') | KeyCode::Right => editor.move_right(),
+                                KeyCode::Char('w') => editor.move_word_forward(),
+                                KeyCode::Char('b') => editor.move_word_backward(),
+                                KeyCode::Char('e') => editor.move_word_end(),
                                 KeyCode::Char('y') => {
                                     let start = vim.selection_start.unwrap();
                                     let cur = editor.cursor();
