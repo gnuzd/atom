@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 use crate::ui::colorscheme::ColorScheme;
@@ -23,43 +23,57 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
     ];
 
     let mut content = Vec::new();
-    content.push(Line::from(""));
     
+    // 1. Logo
     for line in logo {
         content.push(Line::from(Span::styled(line, theme.get("Keyword"))).alignment(Alignment::Center));
     }
 
     content.push(Line::from(""));
-    content.push(Line::from(Span::styled("Atom IDE - High Performance Modal Editor", theme.get("String").add_modifier(Modifier::BOLD))).alignment(Alignment::Center));
-    content.push(Line::from(Span::styled("version 0.1.0 (Rust 2024)", theme.get("Comment"))).alignment(Alignment::Center));
-    content.push(Line::from(""));
-    content.push(Line::from(""));
+    content.push(Line::from(Span::styled("ATOM IDE v0.1.0", theme.get("String").add_modifier(Modifier::BOLD))).alignment(Alignment::Center));
+    
+    // 2. Horizontal separator
+    let separator = "──────────────────────────────────────────────────────────────────";
+    let sep_style = theme.get("Comment").add_modifier(Modifier::DIM);
+    content.push(Line::from(Span::styled(separator, sep_style)).alignment(Alignment::Center));
 
-    let help_items = vec![
-        ("type  :q<Enter> ", "to exit"),
+    // 3. Tagline
+    content.push(Line::from(Span::styled("Atom is open source and freely distributable", theme.get("Normal"))).alignment(Alignment::Center));
+    content.push(Line::from(Span::styled("https://github.com/chrisnguyen/atom", theme.get("String"))).alignment(Alignment::Center));
+    
+    content.push(Line::from(Span::styled(separator, sep_style)).alignment(Alignment::Center));
+
+    // 4. Main Menu
+    let main_items = vec![
         ("type  :help<Enter> ", "for help"),
-        ("type  \\ ", "toggle explorer"),
-        ("type  <Space>ff ", "find files"),
-        ("type  <Space>th ", "change theme"),
+        ("type  :checkhealth<Enter> ", "to optimize Atom"),
+        ("type  :q<Enter> ", "to exit"),
     ];
 
-    for (cmd, desc) in help_items {
+    for (cmd, desc) in main_items {
         content.push(Line::from(vec![
-            Span::styled(format!("{:>20}", cmd), theme.get("Function")),
+            Span::styled(format!("{:<26}", cmd), theme.get("Function")),
             Span::styled(format!("{:<20}", desc), theme.get("Normal")),
         ]).alignment(Alignment::Center));
     }
 
+    content.push(Line::from(Span::styled(separator, sep_style)).alignment(Alignment::Center));
+
+    // 5. Sub Menu
+    content.push(Line::from(vec![
+        Span::styled(format!("{:<26}", "type  :help news<Enter> "), theme.get("Function")),
+        Span::styled(format!("{:<20}", "for v0.1.0 notes"), theme.get("Normal")),
+    ]).alignment(Alignment::Center));
+
     let paragraph = Paragraph::new(content)
-        .alignment(Alignment::Center)
-        .block(Block::default());
+        .alignment(Alignment::Center);
 
     // Center vertically
     let vertical_center = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(1),
-            Constraint::Length(25), // Height of logo + text + help
+            Constraint::Length(28), 
             Constraint::Min(1),
         ])
         .split(area);
