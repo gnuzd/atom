@@ -559,6 +559,7 @@ impl Editor {
         };
 
         let start_char = self.buffer().text.line_to_char(s_y) + s_x;
+        // end_x is inclusive column index, so char index is start_of_line + end_x + 1
         let end_char = self.buffer().text.line_to_char(e_y) + e_x + 1;
         let end_char = end_char.min(self.buffer().text.len_chars());
 

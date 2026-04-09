@@ -320,7 +320,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if editor.buffers.is_empty() { editor.buffers.push(editor::buffer::Buffer::new()); editor.cursors.push(editor::cursor::Cursor::new()); }
         editor.active_idx = 0;
     } else {
-        editor.buffer_mut().text = ropey::Rope::from_str("Welcome to Atom IDE!\nPress 'i' for Insert mode, 'v' for Visual mode.\nPress '\\' to toggle Explorer.");
+        vim.show_intro = true;
     }
 
     loop {
@@ -483,6 +483,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 if let Event::Key(key) = event {
+                    vim.show_intro = false;
                     vim.yank_highlight_line = None;
                     if vim.blame_popup.is_some() { vim.blame_popup = None; continue; }
                     

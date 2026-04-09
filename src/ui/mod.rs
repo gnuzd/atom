@@ -1,6 +1,7 @@
 pub mod colorscheme;
 pub mod explorer;
 pub mod icons;
+pub mod intro;
 pub mod telescope;
 pub mod trouble;
 
@@ -630,20 +631,23 @@ impl TerminalUi {
             row == cursor_row
         }).map(|pos| pos.saturating_sub(scroll_y));
 
-        // Full width highlight for active line
-        if vim.config.cursorline {
-            if let Some(y) = cursor_screen_y {
-                if y < visible_height {
-                    let highlight_rect = Rect {
-                        x: editor_area.x,
-                        y: editor_area.y + y as u16,
-                        width: editor_area.width,
-                        height: 1,
-                    };
-                    frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+        if vim.show_intro {
+            intro::draw_intro(frame, main_chunks[1], theme);
+        } else {
+            // Full width highlight for active line
+            if vim.config.cursorline {
+                if let Some(y) = cursor_screen_y {
+                    if y < visible_height {
+                        let highlight_rect = Rect {
+                            x: editor_area.x,
+                            y: editor_area.y + y as u16,
+                            width: editor_area.width,
+                            height: 1,
+                        };
+                        frame.render_widget(Block::default().style(theme.get("CursorLine")), highlight_rect);
+                    }
                 }
             }
-        }
 
         // Line Numbers & Gutter
         if gutter_width > 0 {
@@ -1111,6 +1115,8 @@ impl TerminalUi {
                     frame.render_widget(doc_paragraph, doc_area);
                 }
             }
+        }
+
         }
 
         // 3. Status Line
