@@ -102,6 +102,16 @@ impl Editor {
         Ok(())
     }
 
+    pub fn open_scratch_buffer(&mut self, name: &str, content: &str) {
+        let mut new_buffer = buffer::Buffer::new();
+        new_buffer.text = ropey::Rope::from_str(content);
+        new_buffer.file_path = Some(PathBuf::from(name));
+        new_buffer.modified = false;
+        self.buffers.push(new_buffer);
+        self.cursors.push(cursor::Cursor::new());
+        self.active_idx = self.buffers.len() - 1;
+    }
+
     pub fn next_buffer(&mut self) {
         if !self.buffers.is_empty() {
             self.active_idx = (self.active_idx + 1) % self.buffers.len();

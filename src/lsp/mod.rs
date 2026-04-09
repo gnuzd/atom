@@ -183,7 +183,7 @@ pub const PACKAGES: &[Package] = &[
     },
 ];
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ClientState {
     Starting,
     Ready,

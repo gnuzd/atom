@@ -1149,7 +1149,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 "bn", "bnext", "bp", "bprev", "bd", "bdelete", "e", "edit", "e!", "Reload",
                                 "colorscheme", "Mason", "Trouble", "format", "Format",
                                 "FormatAll", "FormatEnable", "FormatDisable", "gd", "LspInfo", "LspRestart",
-                                "set", "config"
+                                "set", "config", "help", "checkhealth"
                             ];
 
                             match key.code {
@@ -1348,10 +1348,74 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     vim.set_message("Config saved".to_string());
                                                 }
                                             }
+                                            "help" => {
+                                                let help_text = "Atom IDE Help\n\n\
+                                                    Normal Mode Keybindings:\n\
+                                                    h, j, k, l       - Move cursor\n\
+                                                    w, b, e          - Word movement\n\
+                                                    i, a, o, O       - Enter Insert mode\n\
+                                                    v                - Enter Visual mode\n\
+                                                    :                - Enter Command mode\n\
+                                                    /                - Search\n\
+                                                    u                - Undo\n\
+                                                    Ctrl-r           - Redo\n\
+                                                    x, dd            - Delete char/line\n\
+                                                    yy               - Yank line\n\
+                                                    p, P             - Paste after/before\n\
+                                                    \\                - Toggle Explorer\n\
+                                                    [[ , ]]          - Jump to first/last line\n\
+                                                    gd               - Go to definition\n\
+                                                    <Space>ff        - Find files\n\
+                                                    <Space>fg        - Live grep\n\
+                                                    <Space>fb        - Show buffers\n\
+                                                    <Space>th        - Select theme\n\
+                                                    Tab / Shift-Tab  - Switch buffers\n\n\
+                                                    Insert Mode:\n\
+                                                    Esc              - Back to Normal mode\n\
+                                                    Ctrl-s           - Save and Format\n\
+                                                    Ctrl-Space       - Trigger Completion\n\
+                                                    Tab / Enter      - Navigate/Select completions";
+                                                editor.open_scratch_buffer("[Help]", help_text);
+                                            }
+                                            "checkhealth" => {
+                                                let git_status = if vim.git_info.is_some() { "OK" } else { "Not found" };
+                                                let lsp_clients = lsp_manager.clients.lock().unwrap();
+                                                let lsp_count = lsp_clients.values().map(|v| v.len()).sum::<usize>();
+                                                
+                                                let mut health_report = format!("Atom IDE Health Report\n\n\
+                                                    - Version: 0.1.0\n\
+                                                    - Project Root: {}\n\
+                                                    - Git Support: {}\n\
+                                                    - Active LSP Clients: {}\n\
+                                                    - Active Buffers: {}\n\n",
+                                                    vim.project_root.display(),
+                                                    git_status,
+                                                    lsp_count,
+                                                    editor.buffers.len());
+                                                
+                                                health_report.push_str("LSP Status:\n");
+                                                if lsp_count == 0 {
+                                                    health_report.push_str("  No LSP servers running. Try opening a supported file.\n");
+                                                } else {
+                                                    for (ext, clients) in lsp_clients.iter() {
+                                                        for (_, state, name) in clients {
+                                                            health_report.push_str(&format!("  - {} ({}): {:?}\n", name, ext, state));
+                                                        }
+                                                    }
+                                                }
+
+                                                health_report.push_str("\nConfiguration:\n");
+                                                health_report.push_str(&format!("  - Colorscheme: {}\n", vim.config.colorscheme));
+                                                health_report.push_str(&format!("  - Number: {}\n", vim.config.number));
+                                                health_report.push_str(&format!("  - RelativeNumber: {}\n", vim.config.relativenumber));
+                                                health_report.push_str(&format!("  - Mouse: {}\n", vim.config.mouse));
+
+                                                editor.open_scratch_buffer("[Health]", &health_report);
+                                            }
                                             _ => {
                                                 vim.set_message(format!("Not an editor command: {}", cmd_str));
                                             }
-                                        }
+                                        } 
                                     }
                                 }
                             }
