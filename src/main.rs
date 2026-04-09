@@ -587,8 +587,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         ':' => { vim.mode = Mode::Command; vim.command_buffer.clear(); }
                                                         '/' => { vim.mode = Mode::Search; vim.search_query.clear(); }
                                                         '\\' => {
-                                                            explorer.toggle();
                                                             if explorer.visible {
+                                                                if vim.focus == Focus::Explorer {
+                                                                    explorer.visible = false;
+                                                                    vim.focus = Focus::Editor;
+                                                                } else {
+                                                                    vim.focus = Focus::Explorer;
+                                                                    if let Some(path) = editor.buffer().file_path.as_ref() {
+                                                                        explorer.reveal_path(path);
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                explorer.visible = true;
+                                                                explorer.init_root();
                                                                 vim.focus = Focus::Explorer;
                                                                 if let Some(path) = editor.buffer().file_path.as_ref() {
                                                                     explorer.reveal_path(path);
