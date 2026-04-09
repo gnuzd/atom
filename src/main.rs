@@ -429,6 +429,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let _ = editor.open_file(path);
                                         editor.cursor_mut().y = pos.y;
                                         editor.cursor_mut().x = pos.x;
+                                        sync_explorer(&mut explorer, &editor);
                                     }
                                     _ => {} // Handle multiple locations if needed
                                 }
@@ -495,6 +496,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
                                         }
                                         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
+                                        KeyCode::Tab => { editor.next_buffer(); sync_explorer(&mut explorer, &editor); }
+                                        KeyCode::BackTab => { editor.prev_buffer(); sync_explorer(&mut explorer, &editor); }
                                         KeyCode::Char(c) => {
                                             vim.input_buffer.push(c);
                                             let seq = vim.input_buffer.clone();
@@ -1023,6 +1026,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             vim::mode::TelescopeKind::Buffers => {
                                                 if let Some(idx) = result.buffer_idx {
                                                     editor.active_idx = idx;
+                                                    sync_explorer(&mut explorer, &editor);
                                                 }
                                             }
                                             _ => {
