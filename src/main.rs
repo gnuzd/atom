@@ -317,9 +317,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        if editor.buffers.is_empty() { editor.buffers.push(editor::buffer::Buffer::new()); editor.cursors.push(editor::cursor::Cursor::new()); }
+        if editor.buffers.is_empty() { 
+            editor.buffers.push(editor::buffer::Buffer::new()); 
+            editor.cursors.push(editor::cursor::Cursor::new()); 
+        }
         editor.active_idx = 0;
-    } else {
+    }
+
+    if args.len() == 1 {
         vim.show_intro = true;
     }
 

@@ -1157,7 +1157,7 @@ impl TerminalUi {
         }
 
         // Section C: Filename
-        let file_name = buffer.file_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("[No Name]");
+        let file_name = if vim.show_intro { "ATOM DASHBOARD" } else { buffer.file_path.as_ref().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("[No Name]") };
         let modified_icon = if buffer.modified { " ●" } else { "" };
         status_spans.push(Span::styled(format!(" {}{} ", file_name, modified_icon), theme.get("StatusLineC")));
 
@@ -1283,7 +1283,7 @@ impl TerminalUi {
                 } else {
                     frame.render_widget(Paragraph::new("").style(theme.get("Normal")), root_chunks[2]);
                 }
-                if vim.focus == Focus::Editor && cursor.y < buffer.len_lines() {
+                if !vim.show_intro && vim.focus == Focus::Editor && cursor.y < buffer.len_lines() {
                     let line = buffer.line(cursor.y).unwrap();
                     let mut screen_x = 0;
                     for (i, c) in line.chars().enumerate() {

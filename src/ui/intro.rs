@@ -58,9 +58,9 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
     let vertical_center = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(20),
             Constraint::Min(1),
-            Constraint::Percentage(20),
+            Constraint::Length(25), // Height of logo + text + help
+            Constraint::Min(1),
         ])
         .split(area);
 
