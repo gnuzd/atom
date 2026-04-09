@@ -1,4 +1,4 @@
-use std::{fs, io, path::PathBuf};
+use std::{fs, io, path::PathBuf, time::SystemTime};
 use crate::git::GitSign;
 use ropey::Rope;
 
@@ -11,6 +11,7 @@ pub struct Buffer {
     pub modified: bool,
     pub folded_ranges: Vec<(usize, usize)>,
     pub git_signs: Vec<(usize, GitSign)>,
+    pub last_modified: Option<SystemTime>,
 }
 
 impl Buffer {
@@ -23,11 +24,13 @@ impl Buffer {
             modified: false,
             folded_ranges: Vec::new(),
             git_signs: Vec::new(),
+            last_modified: None,
         }
     }
 
     pub fn load(path: PathBuf) -> io::Result<Self> {
         let content = fs::read_to_string(&path)?;
+        let last_modified = fs::metadata(&path)?.modified().ok();
         let text = Rope::from_str(&content);
         Ok(Self {
             text,
@@ -37,7 +40,20 @@ impl Buffer {
             modified: false,
             folded_ranges: Vec::new(),
             git_signs: Vec::new(),
+            last_modified,
         })
+    }
+
+    pub fn reload(&mut self) -> io::Result<()> {
+        if let Some(path) = &self.file_path {
+            let content = fs::read_to_string(path)?;
+            self.last_modified = fs::metadata(path)?.modified().ok();
+            self.text = Rope::from_str(&content);
+            self.modified = false;
+            self.history.clear();
+            self.redo_stack.clear();
+        }
+        Ok(())
     }
 
     pub fn save(&mut self) -> io::Result<()> {
@@ -45,6 +61,7 @@ impl Buffer {
             let file = fs::File::create(path)?;
             self.text.write_to(io::BufWriter::new(file))?;
             self.modified = false;
+            self.last_modified = fs::metadata(path)?.modified().ok();
         }
         Ok(())
     }
@@ -52,8 +69,9 @@ impl Buffer {
     pub fn save_as(&mut self, path: PathBuf) -> io::Result<()> {
         let file = fs::File::create(&path)?;
         self.text.write_to(io::BufWriter::new(file))?;
-        self.file_path = Some(path);
+        self.file_path = Some(path.clone());
         self.modified = false;
+        self.last_modified = fs::metadata(&path)?.modified().ok();
         Ok(())
     }
 

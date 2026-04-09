@@ -5,7 +5,8 @@ pub mod ui;
 pub mod vim;
 pub mod git;
 
-use std::{env, error::Error, io, path::PathBuf, time::Duration};
+use std::{env, error::Error, io, path::PathBuf, time::Duration, sync::mpsc};
+use notify::{Watcher, RecursiveMode, RecommendedWatcher, Config};
 
 use crossterm::{
     cursor::SetCursorStyle,
@@ -91,6 +92,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut explorer = FileExplorer::new();
     let mut trouble = ui::trouble::TroubleList::new();
     let mut lsp_manager = LspManager::new();
+
+    // File Watcher Setup
+    let (tx, rx) = mpsc::channel();
+    let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
+    watcher.watch(&vim.project_root, RecursiveMode::Recursive)?;
 
     // Helper functions for common logic
     let format_buffer = |editor: &mut Editor, lsp_manager: &LspManager, vim: &mut VimState, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ui: &TerminalUi, explorer: &FileExplorer, trouble: &ui::trouble::TroubleList| -> Result<(), String> {
@@ -326,7 +332,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
             vim.last_git_update = Some(std::time::Instant::now());
         }
 
+        // File Watcher Events
+        let mut explorer_needs_refresh = false;
+        let mut buffers_to_reload = Vec::new();
+
+        while let Ok(res) = rx.try_recv() {
+            if let Ok(event) = res {
+                use notify::EventKind;
+                match event.kind {
+                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                        explorer_needs_refresh = true;
+                        for path in event.paths {
+                            if let Some(active_path) = editor.buffer().file_path.as_ref() {
+                                if path == *active_path {
+                                    buffers_to_reload.push(path);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if explorer_needs_refresh {
+            explorer.refresh();
+        }
+
+        for _path in buffers_to_reload {
+            if !editor.buffer().modified {
+                if let Err(e) = editor.buffer_mut().reload() {
+                    vim.set_message(format!("Error reloading file: {}", e));
+                } else {
+                    vim.set_message("File reloaded from disk".to_string());
+                    editor.refresh_syntax();
+                }
+            }
+        }
+
         // LSP ensure/debouncing/message processing
+
         if let Some(path) = editor.buffer().file_path.clone() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                 let _ = lsp_manager.start_client(&ext, vim.project_root.clone());
@@ -1095,12 +1140,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                                 KeyCode::Enter => {
-                                    if !vim.command_suggestions.is_empty() {
-                                        vim.command_buffer = vim.command_suggestions[vim.selected_command_suggestion].clone();
-                                        vim.command_suggestions.clear();
+                                    let selected_suggestion = if !vim.command_suggestions.is_empty() {
+                                        Some(vim.command_suggestions[vim.selected_command_suggestion].clone())
                                     } else {
-                                        let cmd_str = vim.command_buffer.trim().to_string();
+                                        None
+                                    };
+
+                                    let should_execute = if let Some(ref suggestion) = selected_suggestion {
+                                        vim.command_buffer == *suggestion
+                                    } else {
+                                        true
+                                    };
+
+                                    if should_execute {
+                                        let cmd_str = if let Some(suggestion) = selected_suggestion {
+                                            suggestion
+                                        } else {
+                                            vim.command_buffer.trim().to_string()
+                                        };
+                                        
                                         vim.command_buffer.clear();
+                                        vim.command_suggestions.clear();
                                         vim.mode = Mode::Normal;
                                         
                                         if !cmd_str.is_empty() {
