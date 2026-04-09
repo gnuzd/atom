@@ -672,7 +672,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             explorer.visible = false;
                                             vim.focus = Focus::Editor;
                                         }
+                                        KeyCode::Char(':') => {
+                                            vim.mode = Mode::Command;
+                                            vim.command_buffer.clear();
+                                        }
                                         KeyCode::Char('j') | KeyCode::Down => explorer.move_down(),
+
                                         KeyCode::Char('k') | KeyCode::Up => explorer.move_up(),
                                         KeyCode::Char('h') | KeyCode::Left => explorer.collapse(),
                                         KeyCode::Char('l') | KeyCode::Right => {
@@ -731,10 +736,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 vim.set_message("Path copied to register".to_string());
                                             }
                                         }
-                                        KeyCode::Char(':') => {
-                                            vim.mode = Mode::Command;
-                                            vim.command_buffer.clear();
-                                        }
                                         KeyCode::Char('H') => {
                                             explorer.show_hidden = !explorer.show_hidden;
                                             explorer.refresh();
@@ -778,8 +779,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::Char('l') | KeyCode::Right => editor.move_right(),
                                 KeyCode::Char('w') => editor.move_word_forward(),
                                 KeyCode::Char('b') => editor.move_word_backward(),
-                                KeyCode::Char('e') => editor.move_word_end(),
                                 KeyCode::Char('y') => {
+
                                     let start = vim.selection_start.unwrap();
                                     let cur = editor.cursor();
                                     vim.register = editor.yank(start.x, start.y, cur.x, cur.y);
