@@ -129,7 +129,28 @@ impl Highlighter {
             // Comments
             if chars[i] == '/' && i + 1 < chars.len() && chars[i+1] == '/' {
                 let style = self.theme.get("Comment");
-                for j in i..chars.len() { styles[j] = style; }
+                let todo_style = self.theme.get("Todo");
+                let special_keywords = ["TODO", "FIXME", "BUG", "HACK", "NOTE"];
+                
+                let mut j = i;
+                while j < chars.len() {
+                    let mut found_special = false;
+                    for kw in &special_keywords {
+                        if j + kw.len() <= chars.len() {
+                            let word: String = chars[j..j+kw.len()].iter().collect();
+                            if word == *kw {
+                                for k in 0..kw.len() { styles[j+k] = todo_style; }
+                                j += kw.len();
+                                found_special = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_special {
+                        styles[j] = style;
+                        j += 1;
+                    }
+                }
                 break;
             }
 

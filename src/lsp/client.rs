@@ -103,6 +103,15 @@ impl LspClient {
                         line_folding_only: Some(true),
                         ..Default::default()
                     }),
+                    publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                        related_information: Some(true),
+                        tag_support: Some(TagSupport {
+                            value_set: vec![DiagnosticTag::DEPRECATED, DiagnosticTag::UNNECESSARY],
+                        }),
+                        version_support: Some(true),
+                        code_description_support: Some(true),
+                        data_support: Some(true),
+                    }),
                     ..Default::default()
                 }),
                 ..Default::default()

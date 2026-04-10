@@ -832,6 +832,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::End => editor.move_to_line_end(),
                                 KeyCode::Char('w') => editor.move_word_forward(),
                                 KeyCode::Char('b') => editor.move_word_backward(),
+                                KeyCode::Char('p') => {
+                                    let start = vim.selection_start.unwrap();
+                                    let cur = editor.cursor();
+                                    let _ = editor.delete_selection(start.x, start.y, cur.x, cur.y);
+                                    let text = vim.register.clone();
+                                    let y_type = vim.yank_type;
+                                    editor.paste_after(&text, y_type);
+                                    vim.mode = Mode::Normal;
+                                    vim.selection_start = None;
+                                }
+                                KeyCode::Char('s') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    let start = vim.selection_start.unwrap();
+                                    let cur = editor.cursor();
+                                    let _ = editor.delete_selection(start.x, start.y, cur.x, cur.y);
+                                    vim.mode = Mode::Insert;
+                                    vim.selection_start = None;
+                                }
                                 KeyCode::Char('y') => {
 
                                     let start = vim.selection_start.unwrap();
@@ -1430,7 +1447,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let lsp_count = lsp_clients.values().map(|v| v.len()).sum::<usize>();
                                                 
                                                 let mut health_report = format!("Atom IDE Health Report\n\n\
-                                                    - Version: 0.1.2\n\
+                                                    - Version: 0.1.3\n\
                                                     - Project Root: {}\n\
                                                     - Git Support: {}\n\
                                                     - Active LSP Clients: {}\n\

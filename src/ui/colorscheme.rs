@@ -173,6 +173,7 @@ impl ColorScheme {
         hl.insert("Tag".into(), Style::default().fg(palette.orange));
         hl.insert("Attribute".into(), Style::default().fg(palette.cyan));
         hl.insert("Property".into(), Style::default().fg(palette.blue));
+        hl.insert("Todo".into(), Style::default().fg(palette.black).bg(palette.yellow).add_modifier(Modifier::BOLD));
 
         // Statusline
         hl.insert("StatusLine".into(), Style::default().fg(palette.white).bg(palette.black2));
