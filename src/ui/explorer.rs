@@ -22,6 +22,7 @@ pub struct FileExplorer {
     pub show_hidden: bool,
     pub show_ignored: bool,
     pub width: u16,
+    pub scroll_y: usize,
 }
 
 impl FileExplorer {
@@ -36,9 +37,18 @@ impl FileExplorer {
             show_hidden: false,
             show_ignored: false,
             width: 30,
+            scroll_y: 0,
         };
         explorer.init_root();
         explorer
+    }
+
+    pub fn scroll_into_view(&mut self, height: usize) {
+        if self.selected_idx < self.scroll_y {
+            self.scroll_y = self.selected_idx;
+        } else if self.selected_idx >= self.scroll_y + height {
+            self.scroll_y = self.selected_idx - height + 1;
+        }
     }
 
     pub fn increase_width(&mut self) { self.width = self.width.saturating_add(2).min(80); }

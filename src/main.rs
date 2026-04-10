@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     watcher.watch(&vim.project_root, RecursiveMode::Recursive)?;
 
     // Helper functions for common logic
-    let format_buffer = |editor: &mut Editor, lsp_manager: &LspManager, vim: &mut VimState, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ui: &TerminalUi, explorer: &FileExplorer, trouble: &ui::trouble::TroubleList| -> Result<(), String> {
+    let format_buffer = |editor: &mut Editor, lsp_manager: &LspManager, vim: &mut VimState, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ui: &TerminalUi, explorer: &mut FileExplorer, trouble: &ui::trouble::TroubleList| -> Result<(), String> {
         if let Some(path) = editor.buffer().file_path.clone() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                 vim.lsp_status = LspStatus::Formatting;
@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(())
     };
 
-    let save_and_format = |editor: &mut Editor, lsp_manager: &LspManager, vim: &mut VimState, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ui: &TerminalUi, explorer: &FileExplorer, trouble: &ui::trouble::TroubleList, path_to_save: Option<PathBuf>| {
+    let save_and_format = |editor: &mut Editor, lsp_manager: &LspManager, vim: &mut VimState, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, ui: &TerminalUi, explorer: &mut FileExplorer, trouble: &ui::trouble::TroubleList, path_to_save: Option<PathBuf>| {
         let mut format_info = String::new();
         if !vim.config.disable_autoformat {
             let _ = format_buffer(editor, lsp_manager, vim, terminal, ui, explorer, trouble);
@@ -377,7 +377,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if let Err(e) = editor.buffer_mut().reload() {
                     vim.set_message(format!("Error reloading file: {}", e));
                 } else {
-                    vim.set_message("File reloaded from disk".to_string());
                     editor.refresh_syntax();
                 }
             }
@@ -499,7 +498,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     match key.code {
                                         KeyCode::Esc => { vim.input_buffer.clear(); vim.selection_start = None; }
                                         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                         }
                                         KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => { editor.redo(); }
                                         KeyCode::Tab => { editor.next_buffer(); sync_explorer(&mut explorer, &editor); }
@@ -853,7 +852,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                 }
                                 KeyCode::Char(' ') | KeyCode::Null if key.modifiers.contains(KeyModifiers::CONTROL) || key.code == KeyCode::Null => {
                                     if let Some(path) = editor.buffer().file_path.clone() {
@@ -1034,11 +1033,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 KeyCode::Char('y') | KeyCode::Char('Y') => {
                                     match action {
                                         crate::vim::mode::ConfirmAction::Quit => {
-                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                             should_quit = true;
                                         }
                                         crate::vim::mode::ConfirmAction::CloseBuffer => {
-                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                            save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                             editor.close_current_buffer();
                                             vim.mode = Mode::Normal;
                                         }
@@ -1260,18 +1259,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                             "w" | "write" => {
                                                 let path_to_save = args.get(0).map(|s| PathBuf::from(*s));
-                                                save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, path_to_save);
+                                                save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, path_to_save);
                                             }
                                             "wa" | "wall" => {
                                                 let current_idx = editor.active_idx;
                                                 for i in 0..editor.buffers.len() {
                                                     editor.active_idx = i;
-                                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                                 }
                                                 editor.active_idx = current_idx;
                                             }
                                             "wq" | "x" => {
-                                                save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                                save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                                 if editor.buffers.len() > 1 {
                                                     editor.close_current_buffer();
                                                 } else {
@@ -1282,7 +1281,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let current_idx = editor.active_idx;
                                                 for i in 0..editor.buffers.len() {
                                                     editor.active_idx = i;
-                                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble, None);
+                                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
                                                 }
                                                 editor.active_idx = current_idx;
                                                 should_quit = true;
@@ -1334,12 +1333,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     vim.focus = Focus::Editor;
                                                 }
                                             }
-                                            "format" | "Format" => { let _ = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble); }
+                                            "format" | "Format" => { let _ = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble); }
                                             "FormatAll" => {
                                                 let current_idx = editor.active_idx;
                                                 for i in 0..editor.buffers.len() {
                                                     editor.active_idx = i;
-                                                    let _ = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble);
+                                                    let _ = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble);
                                                 }
                                                 editor.active_idx = current_idx;
                                             }
@@ -1476,7 +1475,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         editor.scroll_into_view(visible_height, editor_width, vim.config.wrap);
         
         editor.refresh_syntax();
-        terminal.draw(|f| ui.draw(f, &editor, &mut vim, &explorer, &trouble, &lsp_manager))?;
+        terminal.draw(|f| ui.draw(f, &editor, &mut vim, &mut explorer, &trouble, &lsp_manager))?;
 
         let cursor_style = match vim.mode {
             Mode::Insert => SetCursorStyle::SteadyBar,

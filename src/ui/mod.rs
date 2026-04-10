@@ -398,7 +398,7 @@ impl TerminalUi {
         frame: &mut Frame,
         editor: &crate::editor::Editor,
         vim: &mut crate::vim::VimState,
-        explorer: &explorer::FileExplorer,
+        explorer: &mut explorer::FileExplorer,
         trouble: &trouble::TroubleList,
         lsp_manager: &crate::lsp::LspManager,
     ) {
@@ -491,11 +491,18 @@ impl TerminalUi {
             }
 
             let diagnostics = lsp_manager.diagnostics.lock().unwrap();
+            let view_height = explorer_layout[1].height as usize;
+            explorer.scroll_into_view(view_height);
+            
+            let start = explorer.scroll_y;
+            let end = (start + view_height).min(explorer.entries.len());
+
             let items: Vec<ListItem> = explorer
-                .entries
+                .entries[start..end]
                 .iter()
                 .enumerate()
-                .map(|(i, entry)| {
+                .map(|(rel_i, entry)| {
+                    let i = start + rel_i;
                     let name = if entry.path == explorer.root {
                         explorer.root.file_name()
                             .and_then(|n| n.to_str())
