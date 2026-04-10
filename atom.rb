@@ -1,8 +1,8 @@
 class Atom < Formula
   desc "A lightning-fast, modal terminal editor written in Rust"
   homepage "https://github.com/gnuzd/atom"
-  url "https://github.com/gnuzd/atom/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "36ae46b42f0d6dc19ab6a69359046f278c77c8bbbc43527be3f247788a3fd24d"
+  url "https://github.com/gnuzd/atom/archive/refs/tags/v0.1.1.tar.gz"
+  sha256 "faf4decb5ca2b8b0d7e50fcbb7e75d803314533e49715be33cd0424844b90add"
   license "MIT"
 
   depends_on "rust" => :build
