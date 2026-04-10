@@ -488,19 +488,21 @@ impl Editor {
     }
 
     pub fn open_line_below(&mut self) {
-        self.buffer_mut().push_history();
         let y = self.cursor().y;
         let line_start = self.buffer().text.line_to_char(y + 1);
-        self.buffer_mut().text.insert(line_start, "\n");
+        self.buffer_mut().apply_edit(|t| {
+            t.insert(line_start, "\n");
+        });
         self.cursor_mut().y = y + 1;
         self.cursor_mut().x = 0;
     }
 
     pub fn open_line_above(&mut self) {
-        self.buffer_mut().push_history();
         let y = self.cursor().y;
         let line_start = self.buffer().text.line_to_char(y);
-        self.buffer_mut().text.insert(line_start, "\n");
+        self.buffer_mut().apply_edit(|t| {
+            t.insert(line_start, "\n");
+        });
         self.cursor_mut().y = y;
         self.cursor_mut().x = 0;
     }
@@ -521,7 +523,6 @@ impl Editor {
 
     pub fn paste_before(&mut self, text: &str, yank_type: crate::vim::mode::YankType) {
         if text.is_empty() { return; }
-        self.buffer_mut().push_history();
 
         let cursor_y = self.cursor().y;
         let cursor_x = self.cursor().x;
@@ -532,12 +533,16 @@ impl Editor {
             if !paste_text.ends_with('\n') {
                 paste_text.push('\n');
             }
-            self.buffer_mut().text.insert(line_start, &paste_text);
+            self.buffer_mut().apply_edit(|t| {
+                t.insert(line_start, &paste_text);
+            });
             self.cursor_mut().y = cursor_y;
             self.cursor_mut().x = 0;
         } else {
             let char_idx = self.buffer().text.line_to_char(cursor_y) + cursor_x;
-            self.buffer_mut().text.insert(char_idx, text);
+            self.buffer_mut().apply_edit(|t| {
+                t.insert(char_idx, text);
+            });
             
             // Move cursor to end of paste
             let new_char_idx = char_idx + text.chars().count();
@@ -552,14 +557,15 @@ impl Editor {
         if text.is_empty() { return; }
         
         if yank_type == crate::vim::mode::YankType::Line {
-            self.buffer_mut().push_history();
             let cursor_y = self.cursor().y;
             let line_end = self.buffer().text.line_to_char(cursor_y + 1);
             let mut paste_text = text.to_string();
             if !paste_text.ends_with('\n') {
                 paste_text.push('\n');
             }
-            self.buffer_mut().text.insert(line_end, &paste_text);
+            self.buffer_mut().apply_edit(|t| {
+                t.insert(line_end, &paste_text);
+            });
             self.cursor_mut().y = cursor_y + 1;
             self.cursor_mut().x = 0;
         } else {
@@ -586,8 +592,9 @@ impl Editor {
         let end_char = end_char.min(self.buffer().text.len_chars());
 
         let yanked = self.buffer().text.slice(start_char..end_char).to_string();
-        self.buffer_mut().push_history();
-        self.buffer_mut().text.remove(start_char..end_char);
+        self.buffer_mut().apply_edit(|t| {
+            t.remove(start_char..end_char);
+        });
 
         self.cursor_mut().x = s_x;
         self.cursor_mut().y = s_y;
@@ -599,7 +606,6 @@ impl Editor {
         let num_lines = self.buffer().len_lines();
         if num_lines == 0 { return String::new(); }
         
-        self.buffer_mut().push_history();
         let start_char = self.buffer().text.line_to_char(y);
         let end_char = if y + 1 < num_lines {
             self.buffer().text.line_to_char(y + 1)
@@ -609,14 +615,18 @@ impl Editor {
         
         let mut yanked = self.buffer().text.slice(start_char..end_char).to_string();
         
-        // If it's the last line and we don't have a newline to delete, 
-        // try to delete the preceding newline to "remove the row"
+        self.buffer_mut().apply_edit(|t| {
+            // If it's the last line and we don't have a newline to delete, 
+            // try to delete the preceding newline to "remove the row"
+            if y > 0 && y + 1 == num_lines && !yanked.ends_with('\n') {
+                t.remove(start_char - 1 .. end_char);
+            } else {
+                t.remove(start_char..end_char);
+            }
+        });
+
         if y > 0 && y + 1 == num_lines && !yanked.ends_with('\n') {
-            self.buffer_mut().text.remove(start_char - 1 .. end_char);
-            // We should probably include that newline in yanked if we want it to be a "line" yank
             if !yanked.ends_with('\n') { yanked.push('\n'); }
-        } else {
-            self.buffer_mut().text.remove(start_char..end_char);
         }
         
         if self.buffer().text.len_chars() == 0 {

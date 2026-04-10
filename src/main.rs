@@ -280,20 +280,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let line_start_char = editor.buffer().text.line_to_char(y);
             if all_commented {
                 if let Some(pos) = line_str.find(comment_prefix) {
-                    editor.buffer_mut().text.remove((line_start_char + pos)..(line_start_char + pos + comment_prefix.len()));
+                    editor.buffer_mut().apply_edit(|t| {
+                        t.remove((line_start_char + pos)..(line_start_char + pos + comment_prefix.len()));
+                    });
                 }
                 if !comment_suffix.is_empty() {
                     let updated = editor.buffer().line(y).unwrap().to_string();
                     if let Some(pos) = updated.rfind(comment_suffix) {
-                        editor.buffer_mut().text.remove((line_start_char + pos)..(line_start_char + pos + comment_suffix.len()));
+                        editor.buffer_mut().apply_edit(|t| {
+                            t.remove((line_start_char + pos)..(line_start_char + pos + comment_suffix.len()));
+                        });
                     }
                 }
             } else {
                 let indent = line_str.chars().take_while(|c| c.is_whitespace()).count();
-                editor.buffer_mut().text.insert(line_start_char + indent, comment_prefix);
+                editor.buffer_mut().apply_edit(|t| {
+                    t.insert(line_start_char + indent, comment_prefix);
+                });
                 let end_pos = line_start_char + editor.buffer().line(y).unwrap().len_chars();
                 let has_newline = editor.buffer().line(y).unwrap().to_string().ends_with('\n');
-                editor.buffer_mut().text.insert(if has_newline { end_pos - 1 } else { end_pos }, comment_suffix);
+                editor.buffer_mut().apply_edit(|t| {
+                    t.insert(if has_newline { end_pos - 1 } else { end_pos }, comment_suffix);
+                });
             }
         }
     };
@@ -917,7 +925,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         _ => {}
                                     }
 
-                                    editor.buffer_mut().text.insert(idx, &to_insert);
+                                    editor.buffer_mut().apply_edit(|t| {
+                                        t.insert(idx, &to_insert);
+                                    });
                                     editor.cursor_mut().x += 1;
 
                                     // Trigger LSP completion
@@ -936,7 +946,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     let (y, x) = (editor.cursor().y, editor.cursor().x);
                                     if x > 0 {
                                         let idx = editor.buffer().text.line_to_char(y) + x;
-                                        editor.buffer_mut().text.remove((idx-1)..idx);
+                                        editor.buffer_mut().apply_edit(|t| {
+                                            t.remove((idx-1)..idx);
+                                        });
                                         editor.cursor_mut().x -= 1;
                                         if let Some(path) = editor.buffer().file_path.clone() {
                                             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
@@ -956,7 +968,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         let (y, x) = (editor.cursor().y, editor.cursor().x);
                                         let idx = editor.buffer().text.line_to_char(y) + x;
                                         let spaces = " ".repeat(vim.config.tabstop);
-                                        editor.buffer_mut().text.insert(idx, &spaces);
+                                        editor.buffer_mut().apply_edit(|t| {
+                                            t.insert(idx, &spaces);
+                                        });
                                         editor.cursor_mut().x += vim.config.tabstop;
                                     }
                                 }
@@ -974,8 +988,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         }
                                         
                                         let line_start_char = editor.buffer().text.line_to_char(y);
-                                        editor.buffer_mut().text.remove((line_start_char + start_x)..(line_start_char + x));
-                                        editor.buffer_mut().text.insert(line_start_char + start_x, &selected.label);
+                                        editor.buffer_mut().apply_edit(|t| {
+                                            t.remove((line_start_char + start_x)..(line_start_char + x));
+                                            t.insert(line_start_char + start_x, &selected.label);
+                                        });
                                         editor.cursor_mut().x = start_x + selected.label.len();
                                         
                                         vim.show_suggestions = false;
@@ -984,7 +1000,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     } else {
                                         let (y, x) = (editor.cursor().y, editor.cursor().x);
                                         let idx = editor.buffer().text.line_to_char(y) + x;
-                                        editor.buffer_mut().text.insert(idx, "\n");
+                                        editor.buffer_mut().apply_edit(|t| {
+                                            t.insert(idx, "\n");
+                                        });
                                         editor.cursor_mut().y += 1; editor.cursor_mut().x = 0;
                                     }
                                 }
@@ -1447,7 +1465,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let lsp_count = lsp_clients.values().map(|v| v.len()).sum::<usize>();
                                                 
                                                 let mut health_report = format!("Atom IDE Health Report\n\n\
-                                                    - Version: 0.1.3\n\
+                                                    - Version: 0.1.4\n\
                                                     - Project Root: {}\n\
                                                     - Git Support: {}\n\
                                                     - Active LSP Clients: {}\n\

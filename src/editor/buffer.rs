@@ -81,6 +81,12 @@ impl Buffer {
         self.modified = true;
     }
 
+    pub fn apply_edit<F>(&mut self, edit_func: F) 
+    where F: FnOnce(&mut Rope) {
+        self.push_history();
+        edit_func(&mut self.text);
+    }
+
     pub fn undo(&mut self) -> bool {
         if let Some(prev_state) = self.history.pop() {
             self.redo_stack.push(self.text.clone());
