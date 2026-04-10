@@ -1183,36 +1183,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                                 KeyCode::Enter => {
-                                    let selected_suggestion = if !vim.command_suggestions.is_empty() {
-                                        Some(vim.command_suggestions[vim.selected_command_suggestion].clone())
+                                    let cmd_str = if !vim.command_suggestions.is_empty() {
+                                        vim.command_suggestions[vim.selected_command_suggestion].clone()
                                     } else {
-                                        None
+                                        vim.command_buffer.trim().to_string()
                                     };
+                                    
+                                    vim.command_buffer.clear();
+                                    vim.command_suggestions.clear();
+                                    vim.mode = Mode::Normal;
+                                    
+                                    if !cmd_str.is_empty() {
+                                        let mut parts = cmd_str.split_whitespace();
+                                        let first_part = parts.next().unwrap_or("");
+                                        let force = first_part.ends_with('!');
+                                        let cmd = if force { &first_part[..first_part.len()-1] } else { first_part };
+                                        let args: Vec<&str> = parts.collect();
 
-                                    let should_execute = if let Some(ref suggestion) = selected_suggestion {
-                                        vim.command_buffer == *suggestion
-                                    } else {
-                                        true
-                                    };
-
-                                    if should_execute {
-                                        let cmd_str = if let Some(suggestion) = selected_suggestion {
-                                            suggestion
+                                        if let Ok(line) = cmd.parse::<usize>() {
+                                            editor.cursor_mut().y = line.saturating_sub(1);
+                                            editor.clamp_cursor();
                                         } else {
-                                            vim.command_buffer.trim().to_string()
-                                        };
-                                        
-                                        vim.command_buffer.clear();
-                                        vim.command_suggestions.clear();
-                                        vim.mode = Mode::Normal;
-                                        
-                                        if !cmd_str.is_empty() {
-                                            let mut parts = cmd_str.split_whitespace();
-                                            let first_part = parts.next().unwrap_or("");
-                                            let force = first_part.ends_with('!');
-                                            let cmd = if force { &first_part[..first_part.len()-1] } else { first_part };
-                                            let args: Vec<&str> = parts.collect();
-
                                             match cmd {
                                             "q" | "quit" => {
                                                 if !force && editor.buffer().modified {
@@ -1415,10 +1406,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             _ => {
                                                 vim.set_message(format!("Not an editor command: {}", cmd_str));
                                             }
-                                        } 
+                                        }
+                                        }
                                     }
                                 }
-                            }
                             _ => {}
                         }
                     }
