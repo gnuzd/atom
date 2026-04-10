@@ -329,6 +329,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     loop {
+        let area = terminal.size()?;
+        let visible_height = area.height.saturating_sub(2) as usize;
+
         // 0. Updates
         if let Some(time) = vim.message_time {
             if time.elapsed().as_secs() >= 3 { vim.message = None; vim.message_time = None; }
@@ -700,8 +703,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 KeyCode::Up => editor.move_up(),
                                                 KeyCode::Left => editor.move_left(),
                                                 KeyCode::Right => editor.move_right(),
-                                                KeyCode::PageUp => editor.move_to_line_start(),
-                                                KeyCode::PageDown => editor.move_to_line_end(),
+                                                KeyCode::PageUp => editor.move_page_up(visible_height),
+                                                KeyCode::PageDown => editor.move_page_down(visible_height),
+                                                KeyCode::Home => editor.move_to_line_start(),
+                                                KeyCode::End => editor.move_to_line_end(),
                                                 _ => {}
                                             }
                                         }
@@ -814,10 +819,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         Mode::Visual => {
                             match key.code {
                                 KeyCode::Esc => { vim.mode = Mode::Normal; vim.selection_start = None; }
+                                KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    save_and_format(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &mut explorer, &trouble, None);
+                                }
                                 KeyCode::Char('j') | KeyCode::Down => editor.move_down(),
                                 KeyCode::Char('k') | KeyCode::Up => editor.move_up(),
                                 KeyCode::Char('h') | KeyCode::Left => editor.move_left(),
                                 KeyCode::Char('l') | KeyCode::Right => editor.move_right(),
+                                KeyCode::PageUp => editor.move_page_up(visible_height),
+                                KeyCode::PageDown => editor.move_page_down(visible_height),
+                                KeyCode::Home => editor.move_to_line_start(),
+                                KeyCode::End => editor.move_to_line_end(),
                                 KeyCode::Char('w') => editor.move_word_forward(),
                                 KeyCode::Char('b') => editor.move_word_backward(),
                                 KeyCode::Char('y') => {
@@ -959,8 +971,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         editor.cursor_mut().y += 1; editor.cursor_mut().x = 0;
                                     }
                                 }
-                                KeyCode::PageUp => editor.move_to_line_start(),
-                                KeyCode::PageDown => editor.move_to_line_end(),
+                                KeyCode::PageUp => editor.move_page_up(visible_height),
+                                KeyCode::PageDown => editor.move_page_down(visible_height),
+                                KeyCode::Home => editor.move_to_line_start(),
+                                KeyCode::End => editor.move_to_line_end(),
                                 KeyCode::Down => {
                                     if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
                                         vim.selected_suggestion = (vim.selected_suggestion + 1) % vim.filtered_suggestions.len();
@@ -1416,7 +1430,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let lsp_count = lsp_clients.values().map(|v| v.len()).sum::<usize>();
                                                 
                                                 let mut health_report = format!("Atom IDE Health Report\n\n\
-                                                    - Version: 0.1.1\n\
+                                                    - Version: 0.1.2\n\
                                                     - Project Root: {}\n\
                                                     - Git Support: {}\n\
                                                     - Active LSP Clients: {}\n\
@@ -1469,8 +1483,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             trouble.scanned = true;
         }
 
-        let area = terminal.size()?;
-        let visible_height = area.height.saturating_sub(2) as usize;
         let editor_width = if explorer.visible { (area.width as f32 * 0.85) as usize - 8 } else { area.width as usize - 8 };
         editor.scroll_into_view(visible_height, editor_width, vim.config.wrap);
         

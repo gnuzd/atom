@@ -285,6 +285,18 @@ impl Editor {
         }
     }
 
+    pub fn move_page_up(&mut self, height: usize) {
+        for _ in 0..height {
+            self.move_up();
+        }
+    }
+
+    pub fn move_page_down(&mut self, height: usize) {
+        for _ in 0..height {
+            self.move_down();
+        }
+    }
+
     pub fn move_left(&mut self) {
         if self.cursor().x > 0 {
             self.cursor_mut().x -= 1;
