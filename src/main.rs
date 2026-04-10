@@ -505,6 +505,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         KeyCode::Tab => { editor.next_buffer(); sync_explorer(&mut explorer, &editor); }
                                         KeyCode::BackTab => { editor.prev_buffer(); sync_explorer(&mut explorer, &editor); }
                                         KeyCode::Char(c) => {
+                                            if c.is_ascii_digit() && (vim.input_buffer.is_empty() || vim.input_buffer.chars().all(|c| c.is_ascii_digit())) {
+                                                vim.input_buffer.push(c);
+                                                continue;
+                                            }
+                                            
+                                            let count = if !vim.input_buffer.is_empty() && vim.input_buffer.chars().all(|c| c.is_ascii_digit()) {
+                                                let c_val = vim.input_buffer.parse::<usize>().unwrap_or(1);
+                                                vim.input_buffer.clear();
+                                                c_val
+                                            } else {
+                                                1
+                                            };
+
                                             vim.input_buffer.push(c);
                                             let seq = vim.input_buffer.clone();
                                             
@@ -542,18 +555,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                         editor.close_current_buffer();
                                                     }
                                                 }
-                                                "gg" => { editor.jump_to_first_line(); }
+                                                "gg" => {
+                                                    if count > 1 {
+                                                        editor.cursor_mut().y = count.saturating_sub(1);
+                                                        editor.clamp_cursor();
+                                                    } else {
+                                                        editor.jump_to_first_line();
+                                                    }
+                                                }
                                                 "dd" => {
-                                                    let y = editor.cursor().y;
-                                                    vim.register = editor.delete_line(y);
+                                                    let mut deleted = String::new();
+                                                    for _ in 0..count {
+                                                        let y = editor.cursor().y;
+                                                        deleted.push_str(&editor.delete_line(y));
+                                                    }
+                                                    vim.register = deleted;
                                                     vim.yank_type = YankType::Line;
                                                 }
                                                 "yy" => {
-                                                    let y = editor.cursor().y;
-                                                    let line = editor.buffer().line(y).unwrap().to_string();
-                                                    vim.register = line;
+                                                    let mut yanked = String::new();
+                                                    let start_y = editor.cursor().y;
+                                                    for i in 0..count {
+                                                        if let Some(line) = editor.buffer().line(start_y + i) {
+                                                            yanked.push_str(&line.to_string());
+                                                        }
+                                                    }
+                                                    vim.register = yanked;
                                                     vim.yank_type = YankType::Line;
-                                                    vim.set_message("Line yanked".to_string());
+                                                    vim.set_message(format!("{} lines yanked", count));
                                                 }
                                                 "[[" => { editor.jump_to_first_line(); }
                                                 "]]" => { editor.jump_to_last_line(); }
@@ -612,14 +641,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                                 }
                                                             }
                                                         }
-                                                        'j' => editor.move_down(),
-                                                        'k' => editor.move_up(),
-                                                        'h' => editor.move_left(),
-                                                        'l' => editor.move_right(),
+                                                        'j' => { for _ in 0..count { editor.move_down(); } }
+                                                        'k' => { for _ in 0..count { editor.move_up(); } }
+                                                        'h' => { for _ in 0..count { editor.move_left(); } }
+                                                        'l' => { for _ in 0..count { editor.move_right(); } }
                                                         'u' => { editor.undo(); }
-                                                        'w' => editor.move_word_forward(),
-                                                        'b' => editor.move_word_backward(),
-                                                        'e' => editor.move_word_end(),
+                                                        'w' => { for _ in 0..count { editor.move_word_forward(); } }
+                                                        'b' => { for _ in 0..count { editor.move_word_backward(); } }
+                                                        'e' => { for _ in 0..count { editor.move_word_end(); } }
                                                         'x' => {
                                                             let y = editor.cursor().y;
                                                             let x = editor.cursor().x;
