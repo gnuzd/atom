@@ -542,7 +542,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 }
                                                 " n" => { vim.relative_number = !vim.relative_number; }
                                                 " /" => { toggle_comment(&mut editor, &mut vim); }
-                                                " tt" => { trouble.toggle(); }
+                                                " tt" => {
+                                                    trouble.toggle();
+                                                    if trouble.visible {
+                                                        vim.focus = Focus::Trouble;
+                                                    } else {
+                                                        vim.focus = Focus::Editor;
+                                                    }
+                                                }
                                                 " bb" => {
                                                     vim.config.disable_autoformat = !vim.config.disable_autoformat;
                                                     vim.set_message(format!("Autoformat {}", if vim.config.disable_autoformat { "disabled" } else { "enabled" }));
@@ -1319,7 +1326,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 }
                                             }
                                             "Mason" => { vim.mode = Mode::Mason; }
-                                            "Trouble" => { trouble.toggle(); }
+                                            "Trouble" => {
+                                                trouble.toggle();
+                                                if trouble.visible {
+                                                    vim.focus = Focus::Trouble;
+                                                } else {
+                                                    vim.focus = Focus::Editor;
+                                                }
+                                            }
                                             "format" | "Format" => { let _ = format_buffer(&mut editor, &lsp_manager, &mut vim, &mut terminal, &ui, &explorer, &trouble); }
                                             "FormatAll" => {
                                                 let current_idx = editor.active_idx;
@@ -1449,6 +1463,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if should_quit { break; }
 
         // 2. State & Render
+        if trouble.visible && !trouble.scanned {
+            let todos = crate::editor::todo::scan_project_todos(&vim.project_root);
+            let diagnostics = lsp_manager.diagnostics.lock().unwrap();
+            trouble.update_from_lsp(&diagnostics, todos);
+            trouble.scanned = true;
+        }
+
         let area = terminal.size()?;
         let visible_height = area.height.saturating_sub(2) as usize;
         let editor_width = if explorer.visible { (area.width as f32 * 0.85) as usize - 8 } else { area.width as usize - 8 };
