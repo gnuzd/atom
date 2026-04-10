@@ -5,7 +5,7 @@ pub mod ui;
 pub mod vim;
 pub mod git;
 
-use std::{env, error::Error, io, path::PathBuf, time::Duration, sync::mpsc};
+use std::{env, error::Error, io, path::{Path, PathBuf}, time::Duration, sync::mpsc};
 use notify::{Watcher, RecursiveMode, RecommendedWatcher, Config};
 
 use crossterm::{
@@ -790,6 +790,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 vim.set_message("Path copied to register".to_string());
                                             }
                                         }
+                                        KeyCode::Char('o') => {
+                                            explorer.open_in_system_explorer();
+                                        }
+                                        KeyCode::Char('m') => {
+                                            vim.mode = Mode::ExplorerInput(ExplorerInputType::Move);
+                                            vim.input_buffer.clear();
+                                        }
+                                        KeyCode::Char('f') => {
+                                            vim.mode = Mode::ExplorerInput(ExplorerInputType::Filter);
+                                            vim.input_buffer.clear();
+                                        }
                                         KeyCode::Char('H') => {
                                             explorer.show_hidden = !explorer.show_hidden;
                                             explorer.refresh();
@@ -1046,9 +1057,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                         Mode::ExplorerInput(input_type) => {
                             match key.code {
-                                KeyCode::Esc => { vim.mode = Mode::Normal; }
-                                KeyCode::Char(c) => { vim.input_buffer.push(c); }
-                                KeyCode::Backspace => { vim.input_buffer.pop(); }
+                                KeyCode::Esc => { 
+                                    if let ExplorerInputType::Filter = input_type {
+                                        explorer.filter.clear();
+                                        explorer.refresh();
+                                    }
+                                    vim.mode = Mode::Normal; 
+                                }
+                                KeyCode::Char(c) => { 
+                                    vim.input_buffer.push(c); 
+                                    if let ExplorerInputType::Filter = input_type {
+                                        explorer.filter = vim.input_buffer.clone();
+                                        explorer.refresh();
+                                    }
+                                }
+                                KeyCode::Backspace => { 
+                                    vim.input_buffer.pop(); 
+                                    if let ExplorerInputType::Filter = input_type {
+                                        explorer.filter = vim.input_buffer.clone();
+                                        explorer.refresh();
+                                    }
+                                }
                                 KeyCode::Enter => {
                                     let input = vim.input_buffer.clone();
                                     vim.input_buffer.clear();
@@ -1064,6 +1093,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 vim.set_message(format!("Error: {}", e));
                                             }
                                         }
+                                        ExplorerInputType::Move => {
+                                            if let Err(e) = explorer.move_selected(Path::new(&input)) {
+                                                vim.set_message(format!("Error: {}", e));
+                                            }
+                                        }
                                         ExplorerInputType::DeleteConfirm => {
                                             if input.to_lowercase() == "y" {
                                                 if let Err(e) = explorer.delete_selected() {
@@ -1071,7 +1105,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 }
                                             }
                                         }
-                                        _ => {}
+                                        ExplorerInputType::Filter => {
+                                            explorer.filter = input;
+                                            explorer.refresh();
+                                        }
                                     }
                                 }
                                 _ => {}
@@ -1452,6 +1489,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                     <Space>fb        - Show buffers\n\
                                                     <Space>th        - Select theme\n\
                                                     Tab / Shift-Tab  - Switch buffers\n\n\
+                                                    Explorer:\n\
+                                                    \\                - Toggle Explorer\n\
+                                                    j, k             - Navigate\n\
+                                                    h, l             - Collapse/Expand\n\
+                                                    Enter            - Open file/Toggle dir\n\
+                                                    a, r, d          - Add, Rename, Delete\n\
+                                                    m, o             - Move, Open in System\n\
+                                                    f                - Filter entries\n\
+                                                    y                - Copy path\n\
+                                                    H                - Toggle hidden files\n\n\
                                                     Insert Mode:\n\
                                                     Esc              - Back to Normal mode\n\
                                                     Ctrl-s           - Save and Format\n\
@@ -1465,7 +1512,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let lsp_count = lsp_clients.values().map(|v| v.len()).sum::<usize>();
                                                 
                                                 let mut health_report = format!("Atom IDE Health Report\n\n\
-                                                    - Version: 0.1.4\n\
+                                                    - Version: 0.1.5\n\
                                                     - Project Root: {}\n\
                                                     - Git Support: {}\n\
                                                     - Active LSP Clients: {}\n\
