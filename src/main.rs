@@ -1416,7 +1416,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                                 let lsp_count = lsp_clients.values().map(|v| v.len()).sum::<usize>();
                                                 
                                                 let mut health_report = format!("Atom IDE Health Report\n\n\
-                                                    - Version: 0.1.0\n\
+                                                    - Version: 0.1.1\n\
                                                     - Project Root: {}\n\
                                                     - Git Support: {}\n\
                                                     - Active LSP Clients: {}\n\

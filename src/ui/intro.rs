@@ -24,7 +24,7 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
     }
 
     content.push(Line::from(""));
-    content.push(Line::from(Span::styled("ATOM IDE v0.1.0", theme.get("String").add_modifier(Modifier::BOLD))).alignment(Alignment::Center));
+    content.push(Line::from(Span::styled("ATOM IDE v0.1.1", theme.get("String").add_modifier(Modifier::BOLD))).alignment(Alignment::Center));
     
     // 2. Horizontal separator
     let separator = "──────────────────────────────────────────────────────────────────";
@@ -33,7 +33,7 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
 
     // 3. Tagline
     content.push(Line::from(Span::styled("Atom is open source and freely distributable", theme.get("Normal"))).alignment(Alignment::Center));
-    content.push(Line::from(Span::styled("https://github.com/chrisnguyen/atom", theme.get("String"))).alignment(Alignment::Center));
+    content.push(Line::from(Span::styled("https://github.com/gnuzd/atom", theme.get("String"))).alignment(Alignment::Center));
     
     content.push(Line::from(Span::styled(separator, sep_style)).alignment(Alignment::Center));
 
@@ -56,7 +56,7 @@ pub fn draw_intro(frame: &mut Frame, area: Rect, theme: &ColorScheme) {
     // 5. Sub Menu
     content.push(Line::from(vec![
         Span::styled(format!("{:<26}", "type  :help news<Enter> "), theme.get("Function")),
-        Span::styled(format!("{:<20}", "for v0.1.0 notes"), theme.get("Normal")),
+        Span::styled(format!("{:<20}", "for v0.1.1 notes"), theme.get("Normal")),
     ]).alignment(Alignment::Center));
 
     let paragraph = Paragraph::new(content)
