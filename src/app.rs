@@ -886,22 +886,29 @@ impl App {
                             MouseEventKind::ScrollDown => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_down(3); } else { self.editor.move_down(); } }
                             MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
                                 if self.explorer.visible && mouse.column <= self.explorer.width {
-                                    let click_row = mouse.row.saturating_sub(1) as usize; // adjust for header
-                                    let target_idx = self.explorer.scroll_y + click_row;
-                                    if target_idx < self.explorer.entries.len() {
-                                        let now = Instant::now();
-                                        let is_double_click = if let Some((last_time, last_col, last_row)) = self.last_click {
-                                            now.duration_since(last_time).as_millis() < 500 && last_col == mouse.column && last_row == mouse.row
-                                        } else { false };
+                                    // The explorer list starts after the header (3 lines) + potentially main offset
+                                    // Based on src/ui/mod.rs: explorer_layout[1] is the list area.
+                                    // explorer_layout[0] has height 3.
+                                    // So the list starts at y = 3 (if main_chunks[0].y is 0).
+                                    let list_start_y = 3; 
+                                    if mouse.row >= list_start_y {
+                                        let click_row = (mouse.row - list_start_y) as usize;
+                                        let target_idx = self.explorer.scroll_y + click_row;
+                                        if target_idx < self.explorer.entries.len() {
+                                            let now = Instant::now();
+                                            let is_double_click = if let Some((last_time, last_col, last_row)) = self.last_click {
+                                                now.duration_since(last_time).as_millis() < 500 && last_col == mouse.column && last_row == mouse.row
+                                            } else { false };
 
-                                        self.explorer.selected_idx = target_idx;
-                                        self.vim.focus = Focus::Explorer;
-                                        
-                                        if is_double_click {
-                                            self.dispatch_action(Action::ExplorerToggleExpand, 1);
-                                            self.last_click = None;
-                                        } else {
-                                            self.last_click = Some((now, mouse.column, mouse.row));
+                                            self.explorer.selected_idx = target_idx;
+                                            self.vim.focus = Focus::Explorer;
+                                            
+                                            if is_double_click {
+                                                self.dispatch_action(Action::ExplorerToggleExpand, 1);
+                                                self.last_click = None;
+                                            } else {
+                                                self.last_click = Some((now, mouse.column, mouse.row));
+                                            }
                                         }
                                     }
                                 }
