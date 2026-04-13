@@ -36,6 +36,8 @@ pub struct App {
     pub keymap_explorer: Keymap,
     pub plugin_manager: PluginManager,
     pub last_click: Option<(Instant, u16, u16)>,
+    pub last_lsp_update: Option<Instant>,
+    pub pending_saves: std::collections::HashSet<PathBuf>,
     pub should_quit: bool,
 }
 
@@ -99,6 +101,8 @@ impl App {
             keymap_explorer,
             plugin_manager,
             last_click: None,
+            last_lsp_update: None,
+            pending_saves: std::collections::HashSet::new(),
             should_quit: false,
         })
     }
@@ -128,10 +132,22 @@ impl App {
     }
 
     pub fn save_and_format(&mut self, path_to_save: Option<PathBuf>) {
+        let current_path = path_to_save.or_else(|| self.editor.buffer().file_path.clone());
+        
         if !self.vim.config.disable_autoformat {
-            self.format_buffer();
+            if let Some(path) = &current_path {
+                self.pending_saves.insert(path.clone());
+                self.vim.set_message(format!("Formatting \"{}\"...", path.to_string_lossy()));
+                self.format_buffer();
+                return;
+            }
         }
         
+        // Immediate save if autoformat is disabled or no path
+        self.perform_save(current_path);
+    }
+
+    fn perform_save(&mut self, path_to_save: Option<PathBuf>) {
         let res = if let Some(path) = path_to_save {
             self.editor.save_file_as(path.clone()).map(|_| path.to_string_lossy().to_string())
         } else {
@@ -157,13 +173,17 @@ impl App {
 
     pub fn refresh_filtered_suggestions(&mut self) {
         let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
-        let line = self.editor.buffer().line(y).unwrap().to_string();
+        let Some(line) = self.editor.buffer().line(y) else {
+            self.vim.show_suggestions = false;
+            return;
+        };
+        let line_str = line.to_string();
         let mut start_x = x;
-        let chars: Vec<char> = line.chars().collect();
-        while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
+        let chars: Vec<char> = line_str.chars().collect();
+        while start_x > 0 && (chars.get(start_x-1).map_or(false, |&c| c.is_alphanumeric() || c == '_' || c == '$')) {
             start_x -= 1;
         }
-        let prefix = if start_x < x { line[start_x..x].to_lowercase() } else { String::new() };
+        let prefix = if start_x < x { line_str[start_x..x].to_lowercase() } else { String::new() };
 
         let mut unique_items = std::collections::HashSet::new();
         let mut filtered: Vec<lsp_types::CompletionItem> = self.vim.suggestions.iter()
@@ -273,12 +293,15 @@ impl App {
         };
 
         let all_commented = (s_y..=e_y).all(|y| {
-            let line = self.editor.buffer().line(y).unwrap().to_string();
-            line.trim().is_empty() || line.trim().starts_with(comment_prefix)
+            if let Some(line) = self.editor.buffer().line(y) {
+                let line_str = line.to_string();
+                line_str.trim().is_empty() || line_str.trim().starts_with(comment_prefix)
+            } else { true }
         });
 
         for y in s_y..=e_y {
-            let line_str = self.editor.buffer().line(y).unwrap().to_string();
+            let Some(line) = self.editor.buffer().line(y) else { continue; };
+            let line_str = line.to_string();
             if line_str.trim().is_empty() { continue; }
             let line_start_char = self.editor.buffer().text.line_to_char(y);
             if all_commented {
@@ -288,11 +311,13 @@ impl App {
                     });
                 }
                 if !comment_suffix.is_empty() {
-                    let updated = self.editor.buffer().line(y).unwrap().to_string();
-                    if let Some(pos) = updated.rfind(comment_suffix) {
-                        self.editor.buffer_mut().apply_edit(|t| {
-                            t.remove((line_start_char + pos)..(line_start_char + pos + comment_suffix.len()));
-                        });
+                    if let Some(updated_line) = self.editor.buffer().line(y) {
+                        let updated = updated_line.to_string();
+                        if let Some(pos) = updated.rfind(comment_suffix) {
+                            self.editor.buffer_mut().apply_edit(|t| {
+                                t.remove((line_start_char + pos)..(line_start_char + pos + comment_suffix.len()));
+                            });
+                        }
                     }
                 }
             } else {
@@ -300,11 +325,13 @@ impl App {
                 self.editor.buffer_mut().apply_edit(|t| {
                     t.insert(line_start_char + indent, comment_prefix);
                 });
-                let end_pos = line_start_char + self.editor.buffer().line(y).unwrap().len_chars();
-                let has_newline = self.editor.buffer().line(y).unwrap().to_string().ends_with('\n');
-                self.editor.buffer_mut().apply_edit(|t| {
-                    t.insert(if has_newline { end_pos - 1 } else { end_pos }, comment_suffix);
-                });
+                if let Some(curr_line) = self.editor.buffer().line(y) {
+                    let end_pos = line_start_char + curr_line.len_chars();
+                    let has_newline = curr_line.to_string().ends_with('\n');
+                    self.editor.buffer_mut().apply_edit(|t| {
+                        t.insert(if has_newline { end_pos - 1 } else { end_pos }, comment_suffix);
+                    });
+                }
             }
         }
     }
@@ -673,10 +700,12 @@ impl App {
                         }
                     } else {
                         // Fallback: find the start of the word/identifier
-                        let line = self.editor.buffer().line(y).unwrap().to_string();
-                        let chars: Vec<char> = line.chars().collect();
-                        while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
-                            start_x -= 1;
+                        if let Some(line) = self.editor.buffer().line(y) {
+                            let line_str = line.to_string();
+                            let chars: Vec<char> = line_str.chars().collect();
+                            while start_x > 0 && (chars.get(start_x-1).map_or(false, |&c| c.is_alphanumeric() || c == '_' || c == '$')) {
+                                start_x -= 1;
+                            }
                         }
                     }
                     
@@ -818,20 +847,29 @@ impl App {
             // Async Formatting Results
             while let Ok((path, _ext, res, signs)) = self.format_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
+                let was_pending_save = self.pending_saves.remove(&path);
+                
                 match res {
                     Ok(formatted) => {
-                        // Find the buffer for this path
                         if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
                             self.editor.buffers[buf_idx].text = ropey::Rope::from_str(&formatted);
                             self.editor.buffers[buf_idx].git_signs = signs;
                             if buf_idx == self.editor.active_idx {
                                 self.editor.clamp_cursor();
                             }
-                            self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
+                            
+                            if was_pending_save {
+                                self.perform_save(Some(path));
+                            } else {
+                                self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
+                            }
                         }
                     }
                     Err(e) => {
                         self.vim.set_message(format!("Format Error: {}", e));
+                        if was_pending_save {
+                            self.perform_save(Some(path));
+                        }
                     }
                 }
             }
@@ -1136,16 +1174,29 @@ impl App {
                                                 self.editor.cursor_mut().x += 1;
                                                 if let Some(path) = self.editor.buffer().file_path.clone() {
                                                     if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                                                        let text = self.editor.buffer().text.to_string();
-                                                        let _ = self.lsp_manager.did_change(&ext, &path, text);
-                                                        
                                                         let is_trigger = c == '.' || c == ':' || c == '>';
                                                         let is_alpha = c.is_alphanumeric() || c == '_';
                                                         
-                                                        if is_trigger || is_alpha {
-                                                            let trigger_kind = if is_trigger { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
-                                                            let trigger_char = if is_trigger { Some(c.to_string()) } else { None };
+                                                        // Debounce did_change or fire immediately on trigger
+                                                        let should_update = is_trigger || self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(500));
+                                                        
+                                                        if should_update {
+                                                            let text = self.editor.buffer().text.to_string();
+                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                            self.last_lsp_update = Some(Instant::now());
+                                                        }
+
+                                                        if is_trigger {
+                                                            let trigger_kind = CompletionTriggerKind::TRIGGER_CHARACTER;
+                                                            let trigger_char = Some(c.to_string());
                                                             let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
+                                                        } else if is_alpha && self.vim.show_suggestions {
+                                                            // If already showing, keep requesting to update list, or just filter locally
+                                                            // For better perf, we can just filter locally if we don't want to re-request
+                                                            self.refresh_filtered_suggestions();
+                                                        } else if is_alpha && !self.vim.show_suggestions {
+                                                            // Optionally trigger after some delay or if it's the start of a word
+                                                            // For now, let's only trigger on trigger characters or Ctrl+Space as requested
                                                         } else {
                                                             self.vim.show_suggestions = false;
                                                             self.vim.suggestions.clear();
@@ -1163,9 +1214,14 @@ impl App {
                                                     self.editor.cursor_mut().x -= 1;
                                                     if let Some(path) = self.editor.buffer().file_path.clone() {
                                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                                                            let text = self.editor.buffer().text.to_string();
-                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                            let should_update = self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(500));
+                                                            if should_update {
+                                                                let text = self.editor.buffer().text.to_string();
+                                                                let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                                self.last_lsp_update = Some(Instant::now());
+                                                            }
                                                             // On backspace, we usually just want to filter existing suggestions
+
                                                             // rather than requesting new ones, unless it's empty.
                                                             if self.vim.suggestions.is_empty() {
                                                                 // optionally request if needed, but usually just hide
