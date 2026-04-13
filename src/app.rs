@@ -1264,26 +1264,15 @@ impl App {
                                                         let is_trigger = c == '.' || c == ':' || c == '>';
                                                         let is_alpha = c.is_alphanumeric() || c == '_';
                                                         
-                                                        // Debounce did_change or fire immediately on trigger
-                                                        let should_update = is_trigger || self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(200));
-                                                        
-                                                        if should_update {
-                                                            let text = self.editor.buffer().text.to_string();
-                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
-                                                            self.last_lsp_update = Some(Instant::now());
-                                                        }
+                                                        // Sync document state to LSP
+                                                        let text = self.editor.buffer().text.to_string();
+                                                        let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                        self.last_lsp_update = Some(Instant::now());
 
-                                                        if is_trigger {
-                                                            let trigger_kind = CompletionTriggerKind::TRIGGER_CHARACTER;
-                                                            let trigger_char = Some(c.to_string());
+                                                        if is_trigger || is_alpha {
+                                                            let trigger_kind = if is_trigger { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
+                                                            let trigger_char = if is_trigger { Some(c.to_string()) } else { None };
                                                             let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
-                                                        } else if is_alpha {
-                                                            if self.vim.show_suggestions {
-                                                                self.refresh_filtered_suggestions();
-                                                            } else {
-                                                                // Trigger completion if not already showing
-                                                                let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, CompletionTriggerKind::INVOKED, None);
-                                                            }
                                                         } else {
                                                             self.vim.show_suggestions = false;
                                                             self.vim.suggestions.clear();

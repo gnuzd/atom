@@ -55,7 +55,7 @@ pub fn key_to_string(key: &KeyEvent) -> String {
         KeyCode::Enter     => "CR".into(),
         KeyCode::Esc       => "Esc".into(),
         KeyCode::Tab       => "Tab".into(),
-        KeyCode::BackTab   => "S-Tab".into(),
+        KeyCode::BackTab   => "Tab".into(), // Base is Tab, modifier will add S-
         KeyCode::Backspace => "BS".into(),
         KeyCode::Delete    => "Del".into(),
         KeyCode::Up        => "Up".into(),
@@ -73,7 +73,10 @@ pub fn key_to_string(key: &KeyEvent) -> String {
     let mut mods = String::new();
     if ctrl  { mods.push_str("C-"); }
     if alt   { mods.push_str("A-"); }
-    if shift && !matches!(key.code, KeyCode::Char(_)) {
+    
+    // For BackTab, shift is always implied or explicitly present
+    let is_backtab = matches!(key.code, KeyCode::BackTab);
+    if (shift || is_backtab) && !matches!(key.code, KeyCode::Char(_)) {
         mods.push_str("S-");
     }
 
