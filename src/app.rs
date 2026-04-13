@@ -19,6 +19,11 @@ use crate::input::keymap::{Keymap, Action};
 use crate::plugins::PluginManager;
 use lsp_types::{GotoDefinitionResponse, CompletionResponse, PublishDiagnosticsParams, CompletionTriggerKind};
 
+pub enum BackgroundFileOp {
+    Format,
+    Save,
+}
+
 pub enum AsyncResult {
     Format(Result<String, String>),
     Save(Result<(), String>),
@@ -33,8 +38,8 @@ pub struct App {
     pub lsp_manager: LspManager,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub rx: mpsc::Receiver<notify::Result<notify::Event>>,
-    pub format_tx: mpsc::Sender<(PathBuf, String, AsyncResult, Vec<(usize, crate::git::GitSign)>)>,
-    pub format_rx: mpsc::Receiver<(PathBuf, String, AsyncResult, Vec<(usize, crate::git::GitSign)>)>,
+    pub format_tx: mpsc::Sender<(PathBuf, String, AsyncResult, Vec<(usize, crate::git::GitSign)>, BackgroundFileOp)>,
+    pub format_rx: mpsc::Receiver<(PathBuf, String, AsyncResult, Vec<(usize, crate::git::GitSign)>, BackgroundFileOp)>,
     pub watcher: RecommendedWatcher,
     pub keymap_normal: Keymap,
     pub keymap_insert: Keymap,
@@ -112,7 +117,7 @@ impl App {
         })
     }
 
-    pub fn format_buffer(&mut self) {
+    pub fn format_buffer(&mut self, op: BackgroundFileOp) {
         if let Some(path) = self.editor.buffer().file_path.clone() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                 self.vim.lsp_status = LspStatus::Formatting;
@@ -130,7 +135,7 @@ impl App {
                         } else {
                             Vec::new()
                         };
-                        let _ = tx.send((path, ext, AsyncResult::Format(r), signs));
+                        let _ = tx.send((path, ext, AsyncResult::Format(r), signs, op));
                     }
                 });
             }
@@ -144,7 +149,7 @@ impl App {
             if let Some(path) = &current_path {
                 self.pending_saves.insert(path.clone());
                 self.vim.set_message(format!("Formatting \"{}\"...", path.to_string_lossy()));
-                self.format_buffer();
+                self.format_buffer(BackgroundFileOp::Save);
                 return;
             }
         }
@@ -175,7 +180,7 @@ impl App {
                         let _ = lsp.did_save(&ext, &path, text.clone());
                     }
                     let signs = git.get_signs(&path, &text);
-                    let _ = tx.send((path, String::new(), AsyncResult::Save(Ok(())), signs));
+                    let _ = tx.send((path, String::new(), AsyncResult::Save(Ok(())), signs, BackgroundFileOp::Save));
                 });
             }
         } else {
@@ -588,7 +593,8 @@ impl App {
             Action::ToggleFold => { self.editor.toggle_fold(&self.vim.folding_ranges); }
             Action::NextHunk => { self.editor.jump_to_next_hunk(); }
             Action::PrevHunk => { self.editor.jump_to_prev_hunk(); }
-            Action::Format => { let _ = self.format_buffer(); }
+            Action::Format => { self.format_buffer(BackgroundFileOp::Format); }
+
 
             Action::ExplorerExpand => {
                 if let Some(entry) = self.explorer.selected_entry() {
@@ -857,7 +863,7 @@ impl App {
             }
 
             // Async Formatting and Save Results
-            while let Ok((path, _ext, async_res, signs)) = self.format_rx.try_recv() {
+            while let Ok((path, _ext, async_res, signs, _op)) = self.format_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
                 
                 match async_res {
@@ -1045,11 +1051,16 @@ impl App {
                         
                         match self.vim.mode {
                             Mode::Normal => {
-                                let action = match self.vim.focus {
-                                    Focus::Editor => self.keymap_normal.resolve(&key),
-                                    Focus::Explorer => self.keymap_explorer.resolve(&key),
-                                    Focus::Trouble => self.keymap_normal.resolve(&key), // or trouble specific
-                                };
+                                let mut action = Action::Unbound;
+                                let is_in_sequence = !self.vim.input_buffer.is_empty();
+                                
+                                if !is_in_sequence {
+                                    action = match self.vim.focus {
+                                        Focus::Editor => self.keymap_normal.resolve(&key),
+                                        Focus::Explorer => self.keymap_explorer.resolve(&key),
+                                        Focus::Trouble => self.keymap_normal.resolve(&key),
+                                    }.clone();
+                                }
 
                                 match action {
                                     Action::Unbound => {
@@ -1058,7 +1069,7 @@ impl App {
                                                 if let KeyCode::Char(c) = key.code {
                                                     if c.is_ascii_digit() && (self.vim.input_buffer.is_empty() || self.vim.input_buffer.chars().all(|c| c.is_ascii_digit())) {
                                                         self.vim.input_buffer.push(c);
-                                                        continue;
+                                                        return Ok(());
                                                     }
                                                     
                                                     let count = if !self.vim.input_buffer.is_empty() && self.vim.input_buffer.chars().all(|c| c.is_ascii_digit()) {
@@ -1101,6 +1112,11 @@ impl App {
                                                         let is_partial = match seq.as_str() { " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" | "d" | "y" | "g" | "Z" => true, _ => false, };
                                                         if !is_partial {
                                                             self.vim.input_buffer.clear();
+                                                            // Fallback to single-key map
+                                                            let fallback = self.keymap_normal.resolve(&key);
+                                                            if fallback != &Action::Unbound {
+                                                                self.dispatch_action(fallback.clone(), count);
+                                                            }
                                                         }
                                                     }
                                                 } else {
@@ -1384,7 +1400,7 @@ impl App {
                                                     "Mason" => self.dispatch_action(Action::EnterMason, 1),
                                                     "Trouble" => self.dispatch_action(Action::ToggleTrouble, 1),
                                                     "format" | "Format" => self.dispatch_action(Action::Format, 1),
-                                                    "FormatAll" => { let current = self.editor.active_idx; for i in 0..self.editor.buffers.len() { self.editor.active_idx = i; let _ = self.format_buffer(); } self.editor.active_idx = current; }
+                                                    "FormatAll" => { let current = self.editor.active_idx; for i in 0..self.editor.buffers.len() { self.editor.active_idx = i; self.format_buffer(BackgroundFileOp::Format); } self.editor.active_idx = current; }
                                                     "FormatEnable" => { self.vim.config.disable_autoformat = false; }
                                                     "FormatDisable" => { self.vim.config.disable_autoformat = true; }
                                                     "gd" | "Definition" => self.dispatch_action(Action::LspDefinition, 1),
