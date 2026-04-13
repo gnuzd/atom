@@ -394,6 +394,15 @@ impl App {
         }
     }
 
+    fn safe_line_to_char(&self, y: usize) -> usize {
+        let buf = self.editor.buffer();
+        if y >= buf.text.len_lines() {
+            buf.text.len_chars()
+        } else {
+            buf.text.line_to_char(y)
+        }
+    }
+
     pub fn dispatch_action(&mut self, action: Action, count: usize) {
         match action {
             Action::EnterInsert => { self.editor.buffer_mut().push_history(); self.vim.mode = Mode::Insert; }
@@ -713,25 +722,21 @@ impl App {
                     let mut end_x = x;
                     let mut insert_text = selected.insert_text.clone().unwrap_or(selected.label.clone());
 
-                    // Priority 1: Use text_edit from LSP if available and non-empty
+                    // Priority 1: Use text_edit from LSP if available
                     let mut use_fallback = true;
                     if let Some(edit) = &selected.text_edit {
                         match edit {
                             lsp_types::CompletionTextEdit::Edit(te) => {
-                                if te.range.start.character != te.range.end.character {
-                                    start_x = te.range.start.character as usize;
-                                    end_x = te.range.end.character as usize;
-                                    insert_text = te.new_text.clone();
-                                    use_fallback = false;
-                                }
+                                start_x = te.range.start.character as usize;
+                                end_x = te.range.end.character as usize;
+                                insert_text = te.new_text.clone();
+                                use_fallback = false;
                             }
                             lsp_types::CompletionTextEdit::InsertAndReplace(ir) => {
-                                if ir.insert.start.character != ir.insert.end.character {
-                                    start_x = ir.insert.start.character as usize;
-                                    end_x = ir.insert.end.character as usize;
-                                    insert_text = ir.new_text.clone();
-                                    use_fallback = false;
-                                }
+                                start_x = ir.insert.start.character as usize;
+                                end_x = ir.insert.end.character as usize;
+                                insert_text = ir.new_text.clone();
+                                use_fallback = false;
                             }
                         }
                     } 
@@ -741,13 +746,13 @@ impl App {
                         if let Some(line) = self.editor.buffer().line(y) {
                             let line_str = line.to_string();
                             let chars: Vec<char> = line_str.chars().collect();
-                            while start_x > 0 {
-                                let c = chars[start_x - 1];
-                                if c.is_alphanumeric() || c == '_' || c == '$' {
-                                    start_x -= 1;
-                                } else {
-                                    break;
-                                }
+                            // Go back to start of word
+                            while start_x > 0 && (chars.get(start_x-1).map_or(false, |&c| c.is_alphanumeric() || c == '_' || c == '$')) {
+                                start_x -= 1;
+                            }
+                            // Go forward to end of word if cursor is in middle
+                            while end_x < chars.len() && (chars.get(end_x).map_or(false, |&c| c.is_alphanumeric() || c == '_' || c == '$')) {
+                                end_x += 1;
                             }
                         }
                     }
@@ -760,10 +765,13 @@ impl App {
                     self.editor.buffer_mut().apply_edit(|t| {
                         let remove_start = line_start_char + start_x;
                         let remove_end = line_start_char + end_x;
-                        if remove_end > remove_start {
-                            t.remove(remove_start..remove_end);
+                        let len = t.len_chars();
+                        let safe_start = remove_start.min(len);
+                        let safe_end = remove_end.min(len);
+                        if safe_end > safe_start {
+                            t.remove(safe_start..safe_end);
                         }
-                        t.insert(line_start_char + start_x, &insert_text);
+                        t.insert(safe_start, &insert_text);
                     });
                     
                     self.editor.cursor_mut().x = start_x + insert_text.len();
@@ -1214,22 +1222,21 @@ impl App {
                                     Action::ExitMode => self.dispatch_action(Action::ExitMode, 1),
                                     Action::Save => self.dispatch_action(Action::Save, 1),
                                     Action::Confirm => self.dispatch_action(Action::Confirm, 1),
+                                    Action::SelectNext => self.dispatch_action(Action::SelectNext, 1),
+                                    Action::SelectPrev => self.dispatch_action(Action::SelectPrev, 1),
                                     Action::Indent => self.dispatch_action(Action::Indent, 1),
                                     _ => {
                                         match key.code {
                                             KeyCode::Up => {
                                                 if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() {
-                                                    if self.vim.selected_suggestion > 0 { self.vim.selected_suggestion -= 1; } 
-                                                    else { self.vim.selected_suggestion = self.vim.filtered_suggestions.len() - 1; }
-                                                    self.vim.suggestion_state.select(Some(self.vim.selected_suggestion));
+                                                    self.dispatch_action(Action::SelectPrev, 1);
                                                 } else {
                                                     self.editor.move_up();
                                                 }
                                             }
                                             KeyCode::Down => {
                                                 if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() {
-                                                    self.vim.selected_suggestion = (self.vim.selected_suggestion + 1) % self.vim.filtered_suggestions.len();
-                                                    self.vim.suggestion_state.select(Some(self.vim.selected_suggestion));
+                                                    self.dispatch_action(Action::SelectNext, 1);
                                                 } else {
                                                     self.editor.move_down();
                                                 }
@@ -1239,7 +1246,7 @@ impl App {
                                             KeyCode::Char(' ') | KeyCode::Null if key.modifiers.contains(KeyModifiers::CONTROL) || key.code == KeyCode::Null => { if let Some(path) = self.editor.buffer().file_path.clone() { if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) { let (y, x) = (self.editor.cursor().y, self.editor.cursor().x); let _ = self.lsp_manager.request_completions(&ext, &path, y, x, CompletionTriggerKind::INVOKED, None); } } }
                                             KeyCode::Char(c) => {
                                                 let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
-                                                let idx = self.editor.buffer().text.line_to_char(y) + x;
+                                                let idx = self.safe_line_to_char(y) + x;
                                                 let mut to_insert = c.to_string();
                                                 match c {
                                                     '(' => { to_insert.push(')'); }
@@ -1257,15 +1264,26 @@ impl App {
                                                         let is_trigger = c == '.' || c == ':' || c == '>';
                                                         let is_alpha = c.is_alphanumeric() || c == '_';
                                                         
-                                                        // Always sync document before requesting completions
-                                                        let text = self.editor.buffer().text.to_string();
-                                                        let _ = self.lsp_manager.did_change(&ext, &path, text);
-                                                        self.last_lsp_update = Some(Instant::now());
+                                                        // Debounce did_change or fire immediately on trigger
+                                                        let should_update = is_trigger || self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(200));
+                                                        
+                                                        if should_update {
+                                                            let text = self.editor.buffer().text.to_string();
+                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                            self.last_lsp_update = Some(Instant::now());
+                                                        }
 
-                                                        if is_trigger || is_alpha {
-                                                            let trigger_kind = if is_trigger { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
-                                                            let trigger_char = if is_trigger { Some(c.to_string()) } else { None };
+                                                        if is_trigger {
+                                                            let trigger_kind = CompletionTriggerKind::TRIGGER_CHARACTER;
+                                                            let trigger_char = Some(c.to_string());
                                                             let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
+                                                        } else if is_alpha {
+                                                            if self.vim.show_suggestions {
+                                                                self.refresh_filtered_suggestions();
+                                                            } else {
+                                                                // Trigger completion if not already showing
+                                                                let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, CompletionTriggerKind::INVOKED, None);
+                                                            }
                                                         } else {
                                                             self.vim.show_suggestions = false;
                                                             self.vim.suggestions.clear();
@@ -1278,22 +1296,19 @@ impl App {
                                             KeyCode::Backspace => {
                                                 let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
                                                 if x > 0 {
-                                                    let idx = self.editor.buffer().text.line_to_char(y) + x;
+                                                    let idx = self.safe_line_to_char(y) + x;
                                                     self.editor.buffer_mut().apply_edit(|t| { t.remove((idx-1)..idx); });
                                                     self.editor.cursor_mut().x -= 1;
                                                     if let Some(path) = self.editor.buffer().file_path.clone() {
                                                         if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                                                            let should_update = self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(500));
+                                                            let should_update = self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(200));
                                                             if should_update {
                                                                 let text = self.editor.buffer().text.to_string();
                                                                 let _ = self.lsp_manager.did_change(&ext, &path, text);
                                                                 self.last_lsp_update = Some(Instant::now());
                                                             }
                                                             // On backspace, we usually just want to filter existing suggestions
-
-                                                            // rather than requesting new ones, unless it's empty.
                                                             if self.vim.suggestions.is_empty() {
-                                                                // optionally request if needed, but usually just hide
                                                                 self.vim.show_suggestions = false;
                                                             }
                                                         }
