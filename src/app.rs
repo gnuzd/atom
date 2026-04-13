@@ -33,6 +33,7 @@ pub struct App {
     pub keymap_insert: Keymap,
     pub keymap_explorer: Keymap,
     pub plugin_manager: PluginManager,
+    pub last_click: Option<(Instant, u16, u16)>,
     pub should_quit: bool,
 }
 
@@ -92,6 +93,7 @@ impl App {
             keymap_insert,
             keymap_explorer,
             plugin_manager,
+            last_click: None,
             should_quit: false,
         })
     }
@@ -882,6 +884,28 @@ impl App {
                         match mouse.kind {
                             MouseEventKind::ScrollUp => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_up(3); } else { self.editor.move_up(); } }
                             MouseEventKind::ScrollDown => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_down(3); } else { self.editor.move_down(); } }
+                            MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                                if self.explorer.visible && mouse.column <= self.explorer.width {
+                                    let click_row = mouse.row.saturating_sub(1) as usize; // adjust for header
+                                    let target_idx = self.explorer.scroll_y + click_row;
+                                    if target_idx < self.explorer.entries.len() {
+                                        let now = Instant::now();
+                                        let is_double_click = if let Some((last_time, last_col, last_row)) = self.last_click {
+                                            now.duration_since(last_time).as_millis() < 500 && last_col == mouse.column && last_row == mouse.row
+                                        } else { false };
+
+                                        self.explorer.selected_idx = target_idx;
+                                        self.vim.focus = Focus::Explorer;
+                                        
+                                        if is_double_click {
+                                            self.dispatch_action(Action::ExplorerToggleExpand, 1);
+                                            self.last_click = None;
+                                        } else {
+                                            self.last_click = Some((now, mouse.column, mouse.row));
+                                        }
+                                    }
+                                }
+                            }
                             _ => {}
                         }
                     }
