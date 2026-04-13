@@ -643,24 +643,42 @@ impl App {
                 if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() {
                     let selected = &self.vim.filtered_suggestions[self.vim.selected_suggestion];
                     let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
-                    let line = self.editor.buffer().line(y).unwrap().to_string();
-                    let mut start_x = x;
-                    let chars: Vec<char> = line.chars().collect();
-                    while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
-                        start_x -= 1;
-                    }
                     let line_start_char = self.editor.buffer().text.line_to_char(y);
                     
+                    let mut start_x = x;
+                    let mut end_x = x;
                     let mut insert_text = selected.insert_text.clone().unwrap_or(selected.label.clone());
+
+                    // If the completion item has a text_edit, use its range
+                    if let Some(edit) = &selected.text_edit {
+                        match edit {
+                            lsp_types::CompletionTextEdit::Edit(te) => {
+                                start_x = te.range.start.character as usize;
+                                end_x = te.range.end.character as usize;
+                                insert_text = te.new_text.clone();
+                            }
+                            lsp_types::CompletionTextEdit::InsertReplace(ir) => {
+                                start_x = ir.insert.start.character as usize;
+                                end_x = ir.insert.end.character as usize;
+                                insert_text = ir.new_text.clone();
+                            }
+                        }
+                    } else {
+                        // Fallback: find the start of the word/identifier
+                        let line = self.editor.buffer().line(y).unwrap().to_string();
+                        let chars: Vec<char> = line.chars().collect();
+                        while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
+                            start_x -= 1;
+                        }
+                    }
                     
-                    // Basic snippet support: remove $1, ${1:field} etc
+                    // Basic snippet support
                     if insert_text.contains('$') {
-                        // Very naive snippet cleaner for now
                         insert_text = insert_text.replace("$0", "").replace("$1", "").replace("${1:", "").replace("}", "");
                     }
 
                     self.editor.buffer_mut().apply_edit(|t| {
-                        t.remove((line_start_char + start_x)..(line_start_char + x));
+                        t.remove((line_start_char + start_x)..(line_start_char + end_x));
                         t.insert(line_start_char + start_x, &insert_text);
                     });
                     
