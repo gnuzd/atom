@@ -26,7 +26,7 @@ pub enum BackgroundFileOp {
 
 pub enum AsyncResult {
     Format(Result<String, String>),
-    Save(Result<(), String>),
+    Save(Result<String, String>), // Success contains final text
 }
 
 pub struct App {
@@ -47,7 +47,6 @@ pub struct App {
     pub plugin_manager: PluginManager,
     pub last_click: Option<(Instant, u16, u16)>,
     pub last_lsp_update: Option<Instant>,
-    pub pending_saves: std::collections::HashSet<PathBuf>,
     pub should_quit: bool,
 }
 
@@ -112,7 +111,6 @@ impl App {
             plugin_manager,
             last_click: None,
             last_lsp_update: None,
-            pending_saves: std::collections::HashSet::new(),
             should_quit: false,
         })
     }
@@ -144,21 +142,6 @@ impl App {
 
     pub fn save_and_format(&mut self, path_to_save: Option<PathBuf>) {
         let current_path = path_to_save.or_else(|| self.editor.buffer().file_path.clone());
-        
-        if !self.vim.config.disable_autoformat {
-            if let Some(path) = &current_path {
-                self.pending_saves.insert(path.clone());
-                self.vim.set_message(format!("Formatting \"{}\"...", path.to_string_lossy()));
-                self.format_buffer(BackgroundFileOp::Save);
-                return;
-            }
-        }
-        
-        self.perform_save(current_path);
-    }
-
-    fn perform_save(&mut self, path_to_save: Option<PathBuf>) {
-        let current_path = path_to_save.or_else(|| self.editor.buffer().file_path.clone());
         let Some(path) = current_path else {
             self.vim.set_message("Error: No file path to save".to_string());
             return;
@@ -168,31 +151,49 @@ impl App {
         let lsp = self.lsp_manager.clone();
         let git = self.vim.git_manager.clone();
         let tx = self.format_tx.clone();
-        
         let path_clone = path.clone();
+        let autoformat = !self.vim.config.disable_autoformat;
+
+        self.vim.lsp_status = if autoformat { LspStatus::Formatting } else { LspStatus::None };
+        
         tokio::task::spawn_blocking(move || {
             use std::fs;
             use std::io::{self, Write};
             
-            let res = (|| -> io::Result<()> {
+            let mut final_text = text;
+            let ext = path_clone.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()).unwrap_or_default();
+
+            // 1. Optional Format
+            if autoformat && !ext.is_empty() {
+                if let Some(res) = lsp.format_document(&ext, &path_clone, final_text.clone()) {
+                    if let Ok(formatted) = res {
+                        final_text = formatted;
+                        let _ = lsp.did_change(&ext, &path_clone, final_text.clone());
+                    }
+                }
+            }
+
+            // 2. Write to disk
+            let save_res = (|| -> io::Result<()> {
                 let file = fs::File::create(&path_clone)?;
                 let mut writer = io::BufWriter::new(file);
-                writer.write_all(text.as_bytes())?;
+                writer.write_all(final_text.as_bytes())?;
                 writer.flush()?;
                 Ok(())
             })();
 
-            let signs = git.get_signs(&path_clone, &text);
+            // 3. Post-save logic (git signs, didSave)
+            let signs = git.get_signs(&path_clone, &final_text);
+            if !ext.is_empty() {
+                let _ = lsp.did_save(&ext, &path_clone, final_text.clone());
+            }
             
-            match res {
+            match save_res {
                 Ok(_) => {
-                    if let Some(ext) = path_clone.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                        let _ = lsp.did_save(&ext, &path_clone, text);
-                    }
-                    let _ = tx.send((path_clone, String::new(), AsyncResult::Save(Ok(())), signs, BackgroundFileOp::Save));
+                    let _ = tx.send((path_clone, ext, AsyncResult::Save(Ok(final_text)), signs, BackgroundFileOp::Save));
                 }
                 Err(e) => {
-                    let _ = tx.send((path_clone, String::new(), AsyncResult::Save(Err(e.to_string())), signs, BackgroundFileOp::Save));
+                    let _ = tx.send((path_clone, ext, AsyncResult::Save(Err(e.to_string())), signs, BackgroundFileOp::Save));
                 }
             }
         });
@@ -669,7 +670,7 @@ impl App {
                             self.vim.selected_suggestion = (self.vim.selected_suggestion + 1) % self.vim.filtered_suggestions.len();
                             self.vim.suggestion_state.select(Some(self.vim.selected_suggestion));
                         } else {
-                            self.editor.move_down();
+                            self.dispatch_action(Action::Indent, 1);
                         }
                     }
                     _ => {}
@@ -878,7 +879,6 @@ impl App {
                 
                 match async_res {
                     AsyncResult::Format(res) => {
-                        let was_pending_save = self.pending_saves.remove(&path);
                         match res {
                             Ok(formatted) => {
                                 if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
@@ -887,34 +887,32 @@ impl App {
                                     if buf_idx == self.editor.active_idx {
                                         self.editor.clamp_cursor();
                                     }
-                                    
-                                    if was_pending_save {
-                                        // Now perform the actual disk save with formatted text
-                                        self.perform_save(Some(path));
-                                    } else {
-                                        self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
-                                    }
+                                    self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
                                 }
                             }
                             Err(e) => {
                                 self.vim.set_message(format!("Format Error: {}", e));
-                                if was_pending_save {
-                                    self.perform_save(Some(path));
-                                }
                             }
                         }
                     }
                     AsyncResult::Save(res) => {
                         match res {
-                            Ok(_) => {
+                            Ok(final_text) => {
                                 if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
-                                    let buf = &mut self.editor.buffers[buf_idx];
-                                    buf.modified = false;
-                                    buf.git_signs = signs;
-                                    if let Ok(meta) = std::fs::metadata(&path) {
-                                        buf.last_modified = meta.modified().ok();
+                                    {
+                                        let buf = &mut self.editor.buffers[buf_idx];
+                                        buf.text = ropey::Rope::from_str(&final_text);
+                                        buf.modified = false;
+                                        buf.git_signs = signs;
+                                        if let Ok(meta) = std::fs::metadata(&path) {
+                                            buf.last_modified = meta.modified().ok();
+                                        }
+                                    }
+                                    if buf_idx == self.editor.active_idx {
+                                        self.editor.clamp_cursor();
                                     }
                                     
+                                    let buf = &self.editor.buffers[buf_idx];
                                     let line_count = buf.len_lines();
                                     let char_count = buf.text.len_chars();
                                     self.vim.set_message(format!("\"{}\" {}L, {}C written", path.to_string_lossy(), line_count, char_count));

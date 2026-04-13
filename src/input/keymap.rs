@@ -176,8 +176,9 @@ impl Keymap {
         let mut km = Self::new();
         km.bind("Esc", Action::ExitMode);
         km.bind("<C-s>", Action::Save);
-        km.bind("Enter", Action::Confirm);
-        km.bind("Tab", Action::Indent);
+        km.bind("CR", Action::Confirm);
+        km.bind("Tab", Action::SelectNext);
+        km.bind("S-Tab", Action::SelectPrev);
         km.bind("BS", Action::DeleteCharBefore); // Usually handled specially
         km
     }
