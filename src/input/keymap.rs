@@ -6,6 +6,7 @@ use crate::input::event::key_to_string;
 pub enum Action {
     // Mode transitions
     EnterInsert,
+    EnterInsertLineStart,
     EnterVisual,
     EnterCommand,
     EnterSearch,
@@ -19,6 +20,8 @@ pub enum Action {
     SaveAs,
     Quit,
     QuitAll,
+    SaveAndQuit,
+    QuitWithoutSaving,
     CloseBuffer,
     NextBuffer,
     PrevBuffer,
@@ -138,6 +141,7 @@ impl Keymap {
 
         // Editing
         km.bind("i", Action::EnterInsert);
+        km.bind("I", Action::EnterInsertLineStart);
         km.bind("v", Action::EnterVisual);
         km.bind(":", Action::EnterCommand);
         km.bind("/", Action::EnterSearch);

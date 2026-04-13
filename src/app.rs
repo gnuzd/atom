@@ -71,13 +71,12 @@ impl App {
         plugin_manager.register_all_keymaps(&mut keymap_insert, Mode::Insert);
         
         // Populate keymap_explorer from plugins that have explorer bindings
-        plugin_manager.register_all_keymaps(&mut keymap_explorer, Mode::Normal);
+        plugin_manager.register_focused_keymaps("explorer", &mut keymap_explorer, Mode::Normal);
+        
         // Explicitly bind generic ones if not handled by plugins
         keymap_explorer.bind("Esc", Action::ExitMode);
         keymap_explorer.bind("\\", Action::ExitMode);
         keymap_explorer.bind(":", Action::EnterCommand);
-        keymap_explorer.bind("Up", Action::MoveUp);
-        keymap_explorer.bind("Down", Action::MoveDown);
 
         Ok(Self {
             vim,
@@ -334,6 +333,17 @@ impl App {
     pub fn dispatch_action(&mut self, action: Action, count: usize) {
         match action {
             Action::EnterInsert => { self.editor.buffer_mut().push_history(); self.vim.mode = Mode::Insert; }
+            Action::EnterInsertLineStart => {
+                self.editor.buffer_mut().push_history();
+                self.editor.move_to_line_start();
+                let (y, _) = (self.editor.cursor().y, self.editor.cursor().x);
+                if let Some(line) = self.editor.buffer().line(y) {
+                    let line_str = line.to_string();
+                    let indent = line_str.chars().take_while(|c| c.is_whitespace()).count();
+                    self.editor.cursor_mut().x = indent;
+                }
+                self.vim.mode = Mode::Insert;
+            }
             Action::EnterVisual => { self.vim.mode = Mode::Visual; let c = self.editor.cursor(); self.vim.selection_start = Some(Position { x: c.x, y: c.y }); }
             Action::EnterCommand => { self.vim.mode = Mode::Command; self.vim.command_buffer.clear(); }
             Action::EnterSearch => { self.vim.mode = Mode::Search; self.vim.search_query.clear(); }
@@ -353,6 +363,8 @@ impl App {
             Action::EnterKeymaps => { self.vim.mode = Mode::Keymaps; self.vim.keymap_filter.clear(); self.vim.keymap_state.select(Some(0)); }
 
             Action::Save => { self.save_and_format(None); }
+            Action::SaveAndQuit => { self.save_and_format(None); self.should_quit = true; }
+            Action::QuitWithoutSaving => { self.should_quit = true; }
             Action::Quit => { 
                 if self.editor.buffer().modified {
                     self.vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::Quit);
@@ -923,13 +935,15 @@ impl App {
                                                         "zc" | "za" => self.dispatch_action(Action::ToggleFold, count),
                                                         "]g" => self.dispatch_action(Action::NextHunk, count),
                                                         "[g" => self.dispatch_action(Action::PrevHunk, count),
+                                                        "ZZ" => self.dispatch_action(Action::SaveAndQuit, 1),
+                                                        "ZQ" => self.dispatch_action(Action::QuitWithoutSaving, 1),
                                                         _ => { matched = false; }
                                                     }
 
                                                     if matched {
                                                         self.vim.input_buffer.clear();
                                                     } else {
-                                                        let is_partial = match seq.as_str() { " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" | "d" | "y" | "g" => true, _ => false, };
+                                                        let is_partial = match seq.as_str() { " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" | "d" | "y" | "g" | "Z" => true, _ => false, };
                                                         if !is_partial {
                                                             self.vim.input_buffer.clear();
                                                         }
