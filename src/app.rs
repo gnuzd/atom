@@ -1370,6 +1370,25 @@ impl App {
                                                         }
                                                     }
                                                     self.refresh_filtered_suggestions();
+                                                } else if y > 0 {
+                                                    let prev_line_idx = y - 1;
+                                                    let prev_line = self.editor.buffer().text.line(prev_line_idx);
+                                                    let prev_line_len = prev_line.len_chars();
+                                                    let has_newline = prev_line.chars().last().map(|c| c == '\n' || c == '\r').unwrap_or(false);
+                                                    let new_x = if has_newline { prev_line_len - 1 } else { prev_line_len };
+                                                    
+                                                    let char_idx = self.safe_line_to_char(y);
+                                                    self.editor.buffer_mut().apply_edit(|t| { t.remove((char_idx-1)..char_idx); });
+                                                    
+                                                    self.editor.cursor_mut().y -= 1;
+                                                    self.editor.cursor_mut().x = new_x;
+
+                                                    if let Some(path) = self.editor.buffer().file_path.clone() {
+                                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                            let text = self.editor.buffer().text.to_string();
+                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                        }
+                                                    }
                                                 }
                                             }
                                             _ => {}
