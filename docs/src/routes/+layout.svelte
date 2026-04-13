@@ -106,7 +106,7 @@
 				<Package size={20} weight="fill" />
 			</div>
 			<div class="flex flex-col">
-				<span class="text-xs font-bold text-tokyo-text">Atom v0.1.5</span>
+				<span class="text-xs font-bold text-tokyo-text">Atom v0.1.7</span>
 				<span class="text-[10px] font-medium text-tokyo-muted">MIT Licensed</span>
 			</div>
 		</div>

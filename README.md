@@ -27,7 +27,7 @@ Atom is a modern, Vim-inspired terminal editor designed for speed and productivi
 - 🔭 **Telescope-like Fuzzy Finder**: Quickly find files, search text, and navigate your project.
 - 🌳 **Tree-sitter Integration**: High-performance, language-aware syntax highlighting and indentation.
 - 🚀 **Native LSP Support**: Auto-completion, diagnostics, go-to-definition, and refactoring out of the box.
-- 📁 **Integrated File Explorer**: Navigate your project structure without leaving the editor.
+- 📁 **Integrated File Explorer**: Navigate your project structure with support for **scrolling**, **PageUp/PageDown**, and file operations.
 - ⚠️ **Trouble List**: A centralized view for project-wide diagnostics and warnings.
 - 🌿 **Git Integration**: Real-time branch status and file changes in the status line.
 - 🎨 **Beautiful UI**: Modern aesthetics with rounded borders, icons, and customizable themes.
@@ -69,8 +69,12 @@ atom [file or directory]
 - `:w` - Save file
 - `:q` - Quit
 - `<Space>ff` - Find files (Telescope)
-- `<Space>e` - Toggle File Explorer
+- `\` - Toggle File Explorer
+- `<Space>tt` - Toggle Trouble List
 - `<Space>m` - Open Mason (Package Manager)
+- `gg` / `G` - Jump to start/end (Editor or Explorer)
+- `PageUp` / `PageDown` - Page scrolling (Editor or Explorer)
+
 
 ## ⚙️ Customization
 

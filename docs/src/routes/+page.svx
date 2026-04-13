@@ -47,6 +47,8 @@ Stay in flow with integrated version control information.
 ### Integrated File Explorer
 Navigate your project structure with a modern tree view.
 - **File Operations**: Create, rename, and delete files or directories without leaving Atom.
+- **Advanced Navigation**: Support for **PageUp/PageDown**, **gg** (Jump to Top), and **G** (Jump to Bottom).
+- **Smooth Scrolling**: Full support for mouse wheel scrolling and keyboard navigation in large file trees.
 - **Nerd Font Icons**: Beautiful icons for file types and git status.
 
 ### Beautiful & Customizable
