@@ -115,7 +115,9 @@ impl App {
                 let lsp = self.lsp_manager.clone();
                 let git = self.vim.git_manager.clone();
                 let tx = self.format_tx.clone();
-                tokio::spawn(async move {
+                
+                // Use spawn_blocking for CPU-bound/blocking I/O (spawning processes)
+                tokio::task::spawn_blocking(move || {
                     let res = lsp.format_document(&ext, &path, text);
                     if let Some(r) = res {
                         let signs = if let Ok(formatted) = &r {
@@ -161,10 +163,17 @@ impl App {
             
             if let Some(path) = self.editor.buffer().file_path.clone() {
                 let text = self.editor.buffer().text.to_string();
-                self.editor.buffer_mut().git_signs = self.vim.git_manager.get_signs(&path, &text);
-                if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                    let _ = self.lsp_manager.did_save(&ext, &path, text);
-                }
+                let lsp = self.lsp_manager.clone();
+                let git = self.vim.git_manager.clone();
+                let tx = self.format_tx.clone();
+                
+                tokio::task::spawn_blocking(move || {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                        let _ = lsp.did_save(&ext, &path, text.clone());
+                    }
+                    let signs = git.get_signs(&path, &text);
+                    let _ = tx.send((path, String::new(), Ok(text), signs));
+                });
             }
         } else {
             self.vim.set_message("Error: Could not save file".to_string());
