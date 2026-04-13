@@ -16,7 +16,7 @@ use crate::ui::explorer::FileExplorer;
 use crate::lsp::LspManager;
 use crate::ui::trouble::TroubleList;
 use crate::input::keymap::{Keymap, Action};
-use crate::plugin::PluginManager;
+use crate::plugins::PluginManager;
 use lsp_types::{GotoDefinitionResponse, CompletionResponse, PublishDiagnosticsParams, CompletionTriggerKind};
 
 pub struct App {
@@ -76,6 +76,8 @@ impl App {
         keymap_explorer.bind("Esc", Action::ExitMode);
         keymap_explorer.bind("\\", Action::ExitMode);
         keymap_explorer.bind(":", Action::EnterCommand);
+        keymap_explorer.bind("Up", Action::MoveUp);
+        keymap_explorer.bind("Down", Action::MoveDown);
 
         Ok(Self {
             vim,
@@ -376,8 +378,18 @@ impl App {
                     self.sync_explorer();
                 }
             }
-            Action::NextBuffer => { self.editor.next_buffer(); self.sync_explorer(); }
-            Action::PrevBuffer => { self.editor.prev_buffer(); self.sync_explorer(); }
+            Action::NextBuffer => {
+                match self.vim.focus {
+                    Focus::Editor => { self.editor.next_buffer(); self.sync_explorer(); }
+                    _ => {}
+                }
+            }
+            Action::PrevBuffer => {
+                match self.vim.focus {
+                    Focus::Editor => { self.editor.prev_buffer(); self.sync_explorer(); }
+                    _ => {}
+                }
+            }
             Action::ReloadFile => {
                 if let Some(path) = self.editor.buffer().file_path.clone() {
                     let _ = self.editor.open_file(path);
@@ -887,10 +899,6 @@ impl App {
                                                     self.vim.input_buffer.clear();
                                                     match key.code {
                                                         KeyCode::Esc => { self.vim.input_buffer.clear(); self.vim.selection_start = None; }
-                                                        KeyCode::Down => self.dispatch_action(Action::MoveDown, 1),
-                                                        KeyCode::Up => self.dispatch_action(Action::MoveUp, 1),
-                                                        KeyCode::Left => self.dispatch_action(Action::MoveLeft, 1),
-                                                        KeyCode::Right => self.dispatch_action(Action::MoveRight, 1),
                                                         _ => {}
                                                     }
                                                 }
@@ -961,6 +969,25 @@ impl App {
                                     Action::Indent => self.dispatch_action(Action::Indent, 1),
                                     _ => {
                                         match key.code {
+                                            KeyCode::Up => {
+                                                if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() {
+                                                    if self.vim.selected_suggestion > 0 { self.vim.selected_suggestion -= 1; } 
+                                                    else { self.vim.selected_suggestion = self.vim.filtered_suggestions.len() - 1; }
+                                                    self.vim.suggestion_state.select(Some(self.vim.selected_suggestion));
+                                                } else {
+                                                    self.editor.move_up();
+                                                }
+                                            }
+                                            KeyCode::Down => {
+                                                if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() {
+                                                    self.vim.selected_suggestion = (self.vim.selected_suggestion + 1) % self.vim.filtered_suggestions.len();
+                                                    self.vim.suggestion_state.select(Some(self.vim.selected_suggestion));
+                                                } else {
+                                                    self.editor.move_down();
+                                                }
+                                            }
+                                            KeyCode::Left => self.editor.move_left(),
+                                            KeyCode::Right => self.editor.move_right(),
                                             KeyCode::Char(' ') | KeyCode::Null if key.modifiers.contains(KeyModifiers::CONTROL) || key.code == KeyCode::Null => { if let Some(path) = self.editor.buffer().file_path.clone() { if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) { let (y, x) = (self.editor.cursor().y, self.editor.cursor().x); let _ = self.lsp_manager.request_completions(&ext, &path, y, x, CompletionTriggerKind::INVOKED, None); } } }
                                             KeyCode::Char(c) => {
                                                 let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
@@ -981,10 +1008,6 @@ impl App {
                                                 self.refresh_filtered_suggestions();
                                             }
                                             KeyCode::Backspace => { let (y, x) = (self.editor.cursor().y, self.editor.cursor().x); if x > 0 { let idx = self.editor.buffer().text.line_to_char(y) + x; self.editor.buffer_mut().apply_edit(|t| { t.remove((idx-1)..idx); }); self.editor.cursor_mut().x -= 1; if let Some(path) = self.editor.buffer().file_path.clone() { if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) { let text = self.editor.buffer().text.to_string(); let _ = self.lsp_manager.did_change(&ext, &path, text); let _ = self.lsp_manager.request_completions(&ext, &path, y, x - 1, CompletionTriggerKind::INVOKED, None); } } self.refresh_filtered_suggestions(); } }
-                                            KeyCode::Down => { if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() { self.vim.selected_suggestion = (self.vim.selected_suggestion + 1) % self.vim.filtered_suggestions.len(); self.vim.suggestion_state.select(Some(self.vim.selected_suggestion)); } else { self.editor.move_down(); } }
-                                            KeyCode::Up => { if self.vim.show_suggestions && !self.vim.filtered_suggestions.is_empty() { if self.vim.selected_suggestion > 0 { self.vim.selected_suggestion -= 1; } else { self.vim.selected_suggestion = self.vim.filtered_suggestions.len() - 1; } self.vim.suggestion_state.select(Some(self.vim.selected_suggestion)); } else { self.editor.move_up(); } }
-                                            KeyCode::Left => self.editor.move_left(),
-                                            KeyCode::Right => self.editor.move_right(),
                                             _ => {}
                                         }
                                     }

@@ -6,6 +6,7 @@ pub mod ui;
 pub mod vim;
 pub mod git;
 pub mod input;
+pub mod plugins;
 
 use std::error::Error;
 use app::App;
