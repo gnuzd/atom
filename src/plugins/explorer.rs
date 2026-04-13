@@ -33,6 +33,8 @@ impl Plugin for ExplorerPlugin {
             keymap.bind("f", Action::ExplorerFilter);
             keymap.bind("o", Action::ExplorerOpenSystem);
             keymap.bind("H", Action::ExplorerToggleHidden);
+            keymap.bind("I", Action::ExplorerToggleIgnored);
+            keymap.bind("Z", Action::ExplorerCloseAll);
         }
     }
 }

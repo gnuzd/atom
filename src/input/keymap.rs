@@ -85,6 +85,8 @@ pub enum Action {
     ExplorerFilter,
     ExplorerOpenSystem,
     ExplorerToggleHidden,
+    ExplorerToggleIgnored,
+    ExplorerCloseAll,
 
     // Generic
     SelectNext,

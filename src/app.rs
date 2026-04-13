@@ -586,6 +586,8 @@ impl App {
             Action::ExplorerFilter => { self.vim.mode = Mode::ExplorerInput(ExplorerInputType::Filter); self.vim.input_buffer.clear(); }
             Action::ExplorerOpenSystem => { self.explorer.open_in_system_explorer(); }
             Action::ExplorerToggleHidden => { self.explorer.show_hidden = !self.explorer.show_hidden; self.explorer.refresh(); }
+            Action::ExplorerToggleIgnored => { self.explorer.show_ignored = !self.explorer.show_ignored; self.explorer.refresh(); }
+            Action::ExplorerCloseAll => { self.explorer.close_all(); }
 
             Action::SelectNext => {
                 match self.vim.mode {
