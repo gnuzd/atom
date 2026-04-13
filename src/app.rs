@@ -6,7 +6,11 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    Terminal,
+};
 use anyhow::Result;
 
 use crate::editor::Editor;
@@ -1059,11 +1063,26 @@ impl App {
                             MouseEventKind::ScrollUp => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_up(3); } else { self.editor.move_up(); } }
                             MouseEventKind::ScrollDown => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_down(3); } else { self.editor.move_down(); } }
                             MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-                                if self.explorer.visible && mouse.column <= self.explorer.width {
+                                let root_chunks = Layout::default()
+                                    .direction(Direction::Vertical)
+                                    .constraints([
+                                        Constraint::Min(1),
+                                        Constraint::Length(if self.vim.config.laststatus >= 2 { 1 } else { 0 }),
+                                        Constraint::Length(1),
+                                    ])
+                                    .split(area.into());
+
+                                let main_chunks = Layout::default()
+                                    .direction(Direction::Horizontal)
+                                    .constraints(if self.explorer.visible {
+                                        [Constraint::Length(self.explorer.width), Constraint::Min(1)]
+                                    } else {
+                                        [Constraint::Length(0), Constraint::Min(1)]
+                                    })
+                                    .split(root_chunks[0]);
+
+                                if self.explorer.visible && mouse.column < self.explorer.width && mouse.row < root_chunks[0].height {
                                     // The explorer list starts after the header (3 lines) + potentially main offset
-                                    // Based on src/ui/mod.rs: explorer_layout[1] is the list area.
-                                    // explorer_layout[0] has height 3.
-                                    // So the list starts at y = 3 (if main_chunks[0].y is 0).
                                     let list_start_y = 3; 
                                     if mouse.row >= list_start_y {
                                         let click_row = (mouse.row - list_start_y) as usize;
@@ -1081,11 +1100,39 @@ impl App {
                                                 self.dispatch_action(Action::ExplorerToggleExpand, 1);
                                                 self.last_click = None;
                                             } else {
-
                                                 self.last_click = Some((now, mouse.column, mouse.row));
                                             }
                                         }
                                     }
+                                } else if mouse.row < root_chunks[0].height {
+                                    // Main area (Editor or Trouble)
+                                    let editor_trouble_chunks = Layout::default()
+                                        .direction(Direction::Vertical)
+                                        .constraints(if self.trouble.visible {
+                                            [Constraint::Percentage(70), Constraint::Percentage(30)]
+                                        } else {
+                                            [Constraint::Percentage(100), Constraint::Percentage(0)]
+                                        })
+                                        .split(main_chunks[1]);
+
+                                    if self.trouble.visible && mouse.row >= editor_trouble_chunks[1].y {
+                                        self.vim.focus = Focus::Trouble;
+                                        // Handle item selection in trouble list if needed
+                                        let click_row = (mouse.row - editor_trouble_chunks[1].y) as usize;
+                                        if click_row > 0 { // Skip header if there is one
+                                            // self.trouble.selected_idx = ...
+                                        }
+                                    } else {
+                                        self.vim.focus = Focus::Editor;
+                                    }
+                                } else if root_chunks[1].height > 0 && mouse.row == root_chunks[1].y {
+                                    // Status Line click - could handle buffer switching here
+                                    // Section Z is roughly at the end of the status line
+                                    if mouse.column > root_chunks[1].width.saturating_sub(20) {
+                                        self.editor.next_buffer();
+                                        self.sync_explorer();
+                                    }
+                                    self.vim.focus = Focus::Editor;
                                 }
                             }
                             _ => {}
