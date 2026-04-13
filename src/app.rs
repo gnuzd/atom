@@ -19,6 +19,11 @@ use crate::input::keymap::{Keymap, Action};
 use crate::plugins::PluginManager;
 use lsp_types::{GotoDefinitionResponse, CompletionResponse, PublishDiagnosticsParams, CompletionTriggerKind};
 
+pub enum AsyncResult {
+    Format(Result<String, String>),
+    Save(Result<(), String>),
+}
+
 pub struct App {
     pub vim: VimState,
     pub editor: Editor,
@@ -28,8 +33,8 @@ pub struct App {
     pub lsp_manager: LspManager,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub rx: mpsc::Receiver<notify::Result<notify::Event>>,
-    pub format_tx: mpsc::Sender<(PathBuf, String, Result<String, String>, Vec<(usize, crate::git::GitSign)>)>,
-    pub format_rx: mpsc::Receiver<(PathBuf, String, Result<String, String>, Vec<(usize, crate::git::GitSign)>)>,
+    pub format_tx: mpsc::Sender<(PathBuf, String, AsyncResult, Vec<(usize, crate::git::GitSign)>)>,
+    pub format_rx: mpsc::Receiver<(PathBuf, String, AsyncResult, Vec<(usize, crate::git::GitSign)>)>,
     pub watcher: RecommendedWatcher,
     pub keymap_normal: Keymap,
     pub keymap_insert: Keymap,
@@ -116,7 +121,6 @@ impl App {
                 let git = self.vim.git_manager.clone();
                 let tx = self.format_tx.clone();
                 
-                // Use spawn_blocking for CPU-bound/blocking I/O (spawning processes)
                 tokio::task::spawn_blocking(move || {
                     let res = lsp.format_document(&ext, &path, text);
                     if let Some(r) = res {
@@ -126,7 +130,7 @@ impl App {
                         } else {
                             Vec::new()
                         };
-                        let _ = tx.send((path, ext, r, signs));
+                        let _ = tx.send((path, ext, AsyncResult::Format(r), signs));
                     }
                 });
             }
@@ -145,7 +149,6 @@ impl App {
             }
         }
         
-        // Immediate save if autoformat is disabled or no path
         self.perform_save(current_path);
     }
 
@@ -172,7 +175,7 @@ impl App {
                         let _ = lsp.did_save(&ext, &path, text.clone());
                     }
                     let signs = git.get_signs(&path, &text);
-                    let _ = tx.send((path, String::new(), Ok(text), signs));
+                    let _ = tx.send((path, String::new(), AsyncResult::Save(Ok(())), signs));
                 });
             }
         } else {
@@ -853,31 +856,44 @@ impl App {
                 self.explorer.refresh();
             }
 
-            // Async Formatting Results
-            while let Ok((path, _ext, res, signs)) = self.format_rx.try_recv() {
+            // Async Formatting and Save Results
+            while let Ok((path, _ext, async_res, signs)) = self.format_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
-                let was_pending_save = self.pending_saves.remove(&path);
                 
-                match res {
-                    Ok(formatted) => {
-                        if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
-                            self.editor.buffers[buf_idx].text = ropey::Rope::from_str(&formatted);
-                            self.editor.buffers[buf_idx].git_signs = signs;
-                            if buf_idx == self.editor.active_idx {
-                                self.editor.clamp_cursor();
+                match async_res {
+                    AsyncResult::Format(res) => {
+                        let was_pending_save = self.pending_saves.remove(&path);
+                        match res {
+                            Ok(formatted) => {
+                                if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
+                                    self.editor.buffers[buf_idx].text = ropey::Rope::from_str(&formatted);
+                                    self.editor.buffers[buf_idx].git_signs = signs;
+                                    if buf_idx == self.editor.active_idx {
+                                        self.editor.clamp_cursor();
+                                    }
+                                    
+                                    if was_pending_save {
+                                        // Now perform the actual disk save with formatted text
+                                        self.perform_save(Some(path));
+                                    } else {
+                                        self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
+                                    }
+                                }
                             }
-                            
-                            if was_pending_save {
-                                self.perform_save(Some(path));
-                            } else {
-                                self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
+                            Err(e) => {
+                                self.vim.set_message(format!("Format Error: {}", e));
+                                if was_pending_save {
+                                    self.perform_save(Some(path));
+                                }
                             }
                         }
                     }
-                    Err(e) => {
-                        self.vim.set_message(format!("Format Error: {}", e));
-                        if was_pending_save {
-                            self.perform_save(Some(path));
+                    AsyncResult::Save(res) => {
+                        if let Ok(_) = res {
+                            // Update git signs if they were re-computed during save
+                            if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
+                                self.editor.buffers[buf_idx].git_signs = signs;
+                            }
                         }
                     }
                 }
