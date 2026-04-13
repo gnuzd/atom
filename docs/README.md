@@ -1,42 +1,35 @@
-# sv
+# Atom Documentation Site
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+This is the source code for the official documentation of the [Atom Editor](https://github.com/gnuzd/atom), a high-performance, modal terminal editor written in Rust.
 
-## Creating a project
+## Getting Started
 
-If you're seeing this, you've probably already done this step. Congrats!
+To run the documentation site locally:
 
-```sh
-# create a new project
-npx sv create my-app
+### 1. Install Dependencies
+```bash
+npm install
 ```
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.14.1 create --template minimal --types ts --no-install docs
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+### 2. Start the Development Server
+```bash
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+The site will be available at `http://localhost:5173`.
 
-To create a production version of your app:
+## Building for Production
 
-```sh
+To create a production-ready static site:
+
+```bash
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
+The output will be in the `.svelte-kit/output` (or `build` if an adapter is configured for it) directory.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+## Tech Stack
+- **Framework**: [SvelteKit](https://kit.svelte.dev/)
+- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
+- **Content**: [mdsvex](https://mdsvex.com/) (Markdown for Svelte)
+- **Icons**: [Phosphor Svelte](https://github.com/lucide-svelte/phosphor-svelte)

@@ -51,6 +51,6 @@ Navigate your project structure with a modern tree view.
 
 ### Beautiful & Customizable
 Atom is built to look good out of the box.
-- **Themes**: Support for `Catppuccin`, `OneDark`, `Ayu Dark`, and `Gruvbox`.
+- **Themes**: Support for `Catppuccin`, `OneDark`, `Ayu Dark`, `Gruvbox`, `TokyoNight`, and `Everforest`.
 - **UI Components**: Rounded borders, glassmorphism-inspired headers, and a clean status line.
 - **Configurable**: Simple `config.toml` for customizing your keybindings and preferences.
