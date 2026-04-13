@@ -28,8 +28,8 @@ pub struct App {
     pub lsp_manager: LspManager,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub rx: mpsc::Receiver<notify::Result<notify::Event>>,
-    pub format_tx: mpsc::Sender<(PathBuf, String, Result<String, String>)>,
-    pub format_rx: mpsc::Receiver<(PathBuf, String, Result<String, String>)>,
+    pub format_tx: mpsc::Sender<(PathBuf, String, Result<String, String>, Vec<(usize, crate::git::GitSign)>)>,
+    pub format_rx: mpsc::Receiver<(PathBuf, String, Result<String, String>, Vec<(usize, crate::git::GitSign)>)>,
     pub watcher: RecommendedWatcher,
     pub keymap_normal: Keymap,
     pub keymap_insert: Keymap,
@@ -109,11 +109,18 @@ impl App {
                 self.vim.lsp_status = LspStatus::Formatting;
                 let text = self.editor.buffer().text.to_string();
                 let lsp = self.lsp_manager.clone();
+                let git = self.vim.git_manager.clone();
                 let tx = self.format_tx.clone();
                 tokio::spawn(async move {
                     let res = lsp.format_document(&ext, &path, text);
                     if let Some(r) = res {
-                        let _ = tx.send((path, ext, r));
+                        let signs = if let Ok(formatted) = &r {
+                            let _ = lsp.did_change(&ext, &path, formatted.clone());
+                            git.get_signs(&path, formatted)
+                        } else {
+                            Vec::new()
+                        };
+                        let _ = tx.send((path, ext, r, signs));
                     }
                 });
             }
@@ -809,15 +816,14 @@ impl App {
             }
 
             // Async Formatting Results
-            while let Ok((path, ext, res)) = self.format_rx.try_recv() {
+            while let Ok((path, _ext, res, signs)) = self.format_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
                 match res {
                     Ok(formatted) => {
                         // Find the buffer for this path
                         if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
                             self.editor.buffers[buf_idx].text = ropey::Rope::from_str(&formatted);
-                            let _ = self.lsp_manager.did_change(&ext, &path, formatted.clone());
-                            self.editor.buffers[buf_idx].git_signs = self.vim.git_manager.get_signs(&path, &formatted);
+                            self.editor.buffers[buf_idx].git_signs = signs;
                             if buf_idx == self.editor.active_idx {
                                 self.editor.clamp_cursor();
                             }
