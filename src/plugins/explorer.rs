@@ -6,7 +6,16 @@ pub struct ExplorerPlugin;
 
 impl Plugin for ExplorerPlugin {
     fn name(&self) -> &'static str { "explorer" }
+    
+    // Global bindings for explorer (e.g. toggle)
     fn register_keymaps(&self, keymap: &mut Keymap, mode: Mode) {
+        if let Mode::Normal = mode {
+            keymap.bind("\\", Action::ToggleExplorer);
+        }
+    }
+
+    // Bindings when explorer is focused
+    fn register_focused_keymaps(&self, keymap: &mut Keymap, mode: Mode) {
         if let Mode::Normal = mode {
             keymap.bind("j", Action::MoveDown);
             keymap.bind("k", Action::MoveUp);
@@ -14,7 +23,9 @@ impl Plugin for ExplorerPlugin {
             keymap.bind("Up", Action::MoveUp);
             keymap.bind("h", Action::ExplorerCollapse);
             keymap.bind("l", Action::ExplorerExpand);
-            keymap.bind("Enter", Action::ExplorerToggleExpand);
+            keymap.bind("Left", Action::ExplorerCollapse);
+            keymap.bind("Right", Action::ExplorerExpand);
+            keymap.bind("CR", Action::ExplorerToggleExpand);
             keymap.bind("a", Action::ExplorerAdd);
             keymap.bind("r", Action::ExplorerRename);
             keymap.bind("d", Action::ExplorerDelete);

@@ -10,7 +10,8 @@ use crate::vim::mode::Mode;
 
 pub trait Plugin {
     fn name(&self) -> &'static str;
-    fn register_keymaps(&self, keymap: &mut Keymap, mode: Mode);
+    fn register_keymaps(&self, _keymap: &mut Keymap, _mode: Mode) {}
+    fn register_focused_keymaps(&self, _keymap: &mut Keymap, _mode: Mode) {}
 }
 
 pub struct PluginManager {
@@ -34,6 +35,14 @@ impl PluginManager {
     pub fn register_all_keymaps(&self, keymap: &mut Keymap, mode: Mode) {
         for plugin in &self.plugins {
             plugin.register_keymaps(keymap, mode);
+        }
+    }
+
+    pub fn register_focused_keymaps(&self, name: &str, keymap: &mut Keymap, mode: Mode) {
+        for plugin in &self.plugins {
+            if plugin.name() == name {
+                plugin.register_focused_keymaps(keymap, mode);
+            }
         }
     }
 }
