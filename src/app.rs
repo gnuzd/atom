@@ -158,34 +158,44 @@ impl App {
     }
 
     fn perform_save(&mut self, path_to_save: Option<PathBuf>) {
-        let res = if let Some(path) = path_to_save {
-            self.editor.save_file_as(path.clone()).map(|_| path.to_string_lossy().to_string())
-        } else {
-            self.editor.save_file().map(|_| self.editor.buffer().file_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default())
+        let current_path = path_to_save.or_else(|| self.editor.buffer().file_path.clone());
+        let Some(path) = current_path else {
+            self.vim.set_message("Error: No file path to save".to_string());
+            return;
         };
 
-        if let Ok(path_str) = res {
-            let line_count = self.editor.buffer().len_lines();
-            let char_count = self.editor.buffer().text.len_chars();
-            self.vim.set_message(format!("\"{}\" {}L, {}C written", path_str, line_count, char_count));
+        let text = self.editor.buffer().text.to_string();
+        let lsp = self.lsp_manager.clone();
+        let git = self.vim.git_manager.clone();
+        let tx = self.format_tx.clone();
+        
+        let path_clone = path.clone();
+        tokio::task::spawn_blocking(move || {
+            use std::fs;
+            use std::io::{self, Write};
             
-            if let Some(path) = self.editor.buffer().file_path.clone() {
-                let text = self.editor.buffer().text.to_string();
-                let lsp = self.lsp_manager.clone();
-                let git = self.vim.git_manager.clone();
-                let tx = self.format_tx.clone();
-                
-                tokio::task::spawn_blocking(move || {
-                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
-                        let _ = lsp.did_save(&ext, &path, text.clone());
+            let res = (|| -> io::Result<()> {
+                let file = fs::File::create(&path_clone)?;
+                let mut writer = io::BufWriter::new(file);
+                writer.write_all(text.as_bytes())?;
+                writer.flush()?;
+                Ok(())
+            })();
+
+            let signs = git.get_signs(&path_clone, &text);
+            
+            match res {
+                Ok(_) => {
+                    if let Some(ext) = path_clone.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                        let _ = lsp.did_save(&ext, &path_clone, text);
                     }
-                    let signs = git.get_signs(&path, &text);
-                    let _ = tx.send((path, String::new(), AsyncResult::Save(Ok(())), signs, BackgroundFileOp::Save));
-                });
+                    let _ = tx.send((path_clone, String::new(), AsyncResult::Save(Ok(())), signs, BackgroundFileOp::Save));
+                }
+                Err(e) => {
+                    let _ = tx.send((path_clone, String::new(), AsyncResult::Save(Err(e.to_string())), signs, BackgroundFileOp::Save));
+                }
             }
-        } else {
-            self.vim.set_message("Error: Could not save file".to_string());
-        }
+        });
     }
 
     pub fn refresh_filtered_suggestions(&mut self) {
@@ -895,10 +905,23 @@ impl App {
                         }
                     }
                     AsyncResult::Save(res) => {
-                        if let Ok(_) = res {
-                            // Update git signs if they were re-computed during save
-                            if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
-                                self.editor.buffers[buf_idx].git_signs = signs;
+                        match res {
+                            Ok(_) => {
+                                if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
+                                    let buf = &mut self.editor.buffers[buf_idx];
+                                    buf.modified = false;
+                                    buf.git_signs = signs;
+                                    if let Ok(meta) = std::fs::metadata(&path) {
+                                        buf.last_modified = meta.modified().ok();
+                                    }
+                                    
+                                    let line_count = buf.len_lines();
+                                    let char_count = buf.text.len_chars();
+                                    self.vim.set_message(format!("\"{}\" {}L, {}C written", path.to_string_lossy(), line_count, char_count));
+                                }
+                            }
+                            Err(e) => {
+                                self.vim.set_message(format!("Error saving file: {}", e));
                             }
                         }
                     }
