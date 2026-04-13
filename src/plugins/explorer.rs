@@ -10,6 +10,8 @@ impl Plugin for ExplorerPlugin {
         if let Mode::Normal = mode {
             keymap.bind("j", Action::MoveDown);
             keymap.bind("k", Action::MoveUp);
+            keymap.bind("Down", Action::MoveDown);
+            keymap.bind("Up", Action::MoveUp);
             keymap.bind("h", Action::ExplorerCollapse);
             keymap.bind("l", Action::ExplorerExpand);
             keymap.bind("Enter", Action::ExplorerToggleExpand);

@@ -470,8 +470,8 @@ impl App {
             Action::Undo => { self.editor.undo(); }
             Action::Redo => { self.editor.redo(); }
             Action::ToggleComment => { self.toggle_comment(); }
-            Action::OpenLineBelow => { self.editor.open_line_below(); self.vim.mode = Mode::Insert; }
-            Action::OpenLineAbove => { self.editor.open_line_above(); self.vim.mode = Mode::Insert; }
+            Action::OpenLineBelow => { self.editor.buffer_mut().push_history(); self.editor.open_line_below(); self.vim.mode = Mode::Insert; }
+            Action::OpenLineAbove => { self.editor.buffer_mut().push_history(); self.editor.open_line_above(); self.vim.mode = Mode::Insert; }
             Action::DeleteSelection => {
                 if let Mode::Visual = self.vim.mode {
                     let start = self.vim.selection_start.unwrap();
@@ -668,6 +668,40 @@ impl App {
                     }
                     self.vim.mode = Mode::Normal;
                     self.vim.telescope.close();
+                } else if self.vim.focus == Focus::Explorer {
+                    if let Some(entry) = self.explorer.selected_entry() {
+                        if entry.is_dir {
+                            self.explorer.toggle_expand();
+                        } else {
+                            let path = entry.path.clone();
+                            if let Err(e) = self.editor.open_file(path.clone()) {
+                                self.vim.set_message(format!("Error: {}", e));
+                            } else {
+                                self.vim.focus = Focus::Editor;
+                                if let Some(buf) = self.editor.buffers.last_mut() {
+                                    let content = buf.text.to_string();
+                                    buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
+                                }
+                            }
+                        }
+                    }
+                } else if self.vim.focus == Focus::Trouble {
+                    if let Some(item) = self.trouble.selected_item() {
+                        let path = item.path.clone();
+                        let line = item.line;
+                        let col = item.col;
+                        if let Err(e) = self.editor.open_file(path.clone()) {
+                            self.vim.set_message(format!("Error: {}", e));
+                        } else {
+                            self.editor.cursor_mut().y = line;
+                            self.editor.cursor_mut().x = col;
+                            self.vim.focus = Focus::Editor;
+                            if let Some(buf) = self.editor.buffers.last_mut() {
+                                let content = buf.text.to_string();
+                                buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
+                            }
+                        }
+                    }
                 } else if let Mode::Insert = self.vim.mode {
                     let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
                     let idx = self.editor.buffer().text.line_to_char(y) + x;
@@ -844,11 +878,16 @@ impl App {
                         
                         match self.vim.mode {
                             Mode::Normal => {
-                                match self.vim.focus {
-                                    Focus::Editor => {
-                                        let action = self.keymap_normal.resolve(&key);
-                                        match action {
-                                            Action::Unbound => {
+                                let action = match self.vim.focus {
+                                    Focus::Editor => self.keymap_normal.resolve(&key),
+                                    Focus::Explorer => self.keymap_explorer.resolve(&key),
+                                    Focus::Trouble => self.keymap_normal.resolve(&key), // or trouble specific
+                                };
+
+                                match action {
+                                    Action::Unbound => {
+                                        match self.vim.focus {
+                                            Focus::Editor | Focus::Trouble => {
                                                 if let KeyCode::Char(c) = key.code {
                                                     if c.is_ascii_digit() && (self.vim.input_buffer.is_empty() || self.vim.input_buffer.chars().all(|c| c.is_ascii_digit())) {
                                                         self.vim.input_buffer.push(c);
@@ -903,21 +942,7 @@ impl App {
                                                     }
                                                 }
                                             }
-                                            action => {
-                                                let count = if !self.vim.input_buffer.is_empty() && self.vim.input_buffer.chars().all(|c| c.is_ascii_digit()) {
-                                                    let c_val = self.vim.input_buffer.parse::<usize>().unwrap_or(1);
-                                                    self.vim.input_buffer.clear();
-                                                    c_val
-                                                } else { 1 };
-                                                self.vim.input_buffer.clear();
-                                                self.dispatch_action(action.clone(), count);
-                                            }
-                                        }
-                                    }
-                                    Focus::Explorer => {
-                                        let action = self.keymap_explorer.resolve(&key);
-                                        match action {
-                                            Action::Unbound => {
+                                            Focus::Explorer => {
                                                 match key.code {
                                                     KeyCode::Char('<') => self.explorer.decrease_width(),
                                                     KeyCode::Char('>') => self.explorer.increase_width(),
@@ -925,17 +950,16 @@ impl App {
                                                     _ => {}
                                                 }
                                             }
-                                            action => self.dispatch_action(action.clone(), 1),
                                         }
                                     }
-                                    Focus::Trouble => {
-                                        match key.code {
-                                            KeyCode::Char('j') | KeyCode::Down => self.trouble.move_down(),
-                                            KeyCode::Char('k') | KeyCode::Up => self.trouble.move_up(),
-                                            KeyCode::Enter => { if let Some(item) = self.trouble.selected_item() { let path = item.path.clone(); let line = item.line; let col = item.col; if let Err(e) = self.editor.open_file(path) { self.vim.set_message(format!("Error: {}", e)); } else { self.editor.cursor_mut().y = line; self.editor.cursor_mut().x = col; self.vim.focus = Focus::Editor; } } }
-                                            KeyCode::Esc | KeyCode::Char('q') => self.dispatch_action(Action::ExitMode, 1),
-                                            _ => {}
-                                        }
+                                    action => {
+                                        let count = if !self.vim.input_buffer.is_empty() && self.vim.input_buffer.chars().all(|c| c.is_ascii_digit()) {
+                                            let c_val = self.vim.input_buffer.parse::<usize>().unwrap_or(1);
+                                            self.vim.input_buffer.clear();
+                                            c_val
+                                        } else { 1 };
+                                        self.vim.input_buffer.clear();
+                                        self.dispatch_action(action.clone(), count);
                                     }
                                 }
                             }

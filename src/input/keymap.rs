@@ -119,6 +119,10 @@ impl Keymap {
         km.bind("j", Action::MoveDown);
         km.bind("k", Action::MoveUp);
         km.bind("l", Action::MoveRight);
+        km.bind("Up", Action::MoveUp);
+        km.bind("Down", Action::MoveDown);
+        km.bind("Left", Action::MoveLeft);
+        km.bind("Right", Action::MoveRight);
         km.bind("w", Action::MoveWordForward);
         km.bind("b", Action::MoveWordBackward);
         km.bind("e", Action::MoveWordEnd);
@@ -150,9 +154,9 @@ impl Keymap {
         // These will be resolved if we move sequence handling into Keymap later.
         // For now, App::run still does sequence detection.
 
-        // Tab navigation
         km.bind("Tab", Action::NextBuffer);
         km.bind("S-Tab", Action::PrevBuffer);
+        km.bind("CR", Action::Confirm);
 
         // Global shortcuts
         km.bind("<C-s>", Action::Save);
