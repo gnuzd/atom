@@ -506,10 +506,38 @@ impl App {
             Action::MoveWordEnd => { for _ in 0..count { self.editor.move_word_end(); } }
             Action::MoveLineStart => { self.editor.move_to_line_start(); }
             Action::MoveLineEnd => { self.editor.move_to_line_end(); }
-            Action::JumpToFirstLine => { self.editor.jump_to_first_line(); }
-            Action::JumpToLastLine => { self.editor.jump_to_last_line(); }
-            Action::MovePageUp => { let area = self.terminal.size().unwrap(); let h = area.height.saturating_sub(2) as usize; self.editor.move_page_up(h); }
-            Action::MovePageDown => { let area = self.terminal.size().unwrap(); let h = area.height.saturating_sub(2) as usize; self.editor.move_page_down(h); }
+            Action::JumpToFirstLine => {
+                match self.vim.focus {
+                    Focus::Editor => self.editor.jump_to_first_line(),
+                    Focus::Explorer => { self.explorer.selected_idx = 0; }
+                    Focus::Trouble => { self.trouble.selected_idx = 0; }
+                }
+            }
+            Action::JumpToLastLine => {
+                match self.vim.focus {
+                    Focus::Editor => self.editor.jump_to_last_line(),
+                    Focus::Explorer => { if !self.explorer.entries.is_empty() { self.explorer.selected_idx = self.explorer.entries.len().saturating_sub(1); } }
+                    Focus::Trouble => { if !self.trouble.items.is_empty() { self.trouble.selected_idx = self.trouble.items.len().saturating_sub(1); } }
+                }
+            }
+            Action::MovePageUp => {
+                let area = self.terminal.size().unwrap();
+                let h = area.height.saturating_sub(2) as usize;
+                match self.vim.focus {
+                    Focus::Editor => self.editor.move_page_up(h),
+                    Focus::Explorer => self.explorer.move_page_up(h.saturating_sub(3)), // sub header
+                    Focus::Trouble => {}
+                }
+            }
+            Action::MovePageDown => {
+                let area = self.terminal.size().unwrap();
+                let h = area.height.saturating_sub(2) as usize;
+                match self.vim.focus {
+                    Focus::Editor => self.editor.move_page_down(h),
+                    Focus::Explorer => self.explorer.move_page_down(h.saturating_sub(3)),
+                    Focus::Trouble => {}
+                }
+            }
 
             Action::DeleteChar => {
                 let y = self.editor.cursor().y;
@@ -1080,8 +1108,22 @@ impl App {
                     let event = event::read()?;
                     if let Event::Mouse(mouse) = &event {
                         match mouse.kind {
-                            MouseEventKind::ScrollUp => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_up(3); } else { self.editor.move_up(); } }
-                            MouseEventKind::ScrollDown => { if let Mode::Telescope(_) = self.vim.mode { self.vim.telescope.scroll_preview_down(3); } else { self.editor.move_down(); } }
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                                let is_up = matches!(mouse.kind, MouseEventKind::ScrollUp);
+                                if let Mode::Telescope(_) = self.vim.mode {
+                                    if is_up { self.vim.telescope.scroll_preview_up(3); }
+                                    else { self.vim.telescope.scroll_preview_down(3); }
+                                } else if self.explorer.visible && mouse.column < self.explorer.width {
+                                    if is_up { self.explorer.move_up(); }
+                                    else { self.explorer.move_down(); }
+                                } else if self.trouble.visible && mouse.row >= area.height.saturating_mul(7) / 10 { // approx
+                                    if is_up { self.trouble.move_up(); }
+                                    else { self.trouble.move_down(); }
+                                } else {
+                                    if is_up { self.editor.move_up(); }
+                                    else { self.editor.move_down(); }
+                                }
+                            }
                             MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
                                 let root_chunks = Layout::default()
                                     .direction(Direction::Vertical)

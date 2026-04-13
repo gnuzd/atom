@@ -44,10 +44,37 @@ impl FileExplorer {
     }
 
     pub fn scroll_into_view(&mut self, height: usize) {
+        if height == 0 { return; }
+        
+        if self.entries.is_empty() {
+            self.selected_idx = 0;
+            self.scroll_y = 0;
+            return;
+        }
+
+        // Ensure selected_idx is within bounds
+        self.selected_idx = self.selected_idx.min(self.entries.len() - 1);
+
         if self.selected_idx < self.scroll_y {
             self.scroll_y = self.selected_idx;
         } else if self.selected_idx >= self.scroll_y + height {
             self.scroll_y = self.selected_idx - height + 1;
+        }
+
+        // Clamp scroll_y in case entries list shrunk
+        let max_scroll = self.entries.len().saturating_sub(1);
+        if self.scroll_y > max_scroll {
+            self.scroll_y = max_scroll;
+        }
+    }
+
+    pub fn move_page_up(&mut self, height: usize) {
+        self.selected_idx = self.selected_idx.saturating_sub(height);
+    }
+
+    pub fn move_page_down(&mut self, height: usize) {
+        if !self.entries.is_empty() {
+            self.selected_idx = (self.selected_idx + height).min(self.entries.len() - 1);
         }
     }
 
