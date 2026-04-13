@@ -1483,7 +1483,9 @@ pub fn find_project_root(path: &PathBuf) -> PathBuf {
         current.pop();
     }
     while current.parent().is_some() {
-        if current.join("Cargo.toml").exists() || current.join(".git").exists() || current.join("package.json").exists() {
+        if current.join("Cargo.toml").exists() || current.join(".git").exists() || 
+           current.join("package.json").exists() || current.join("tsconfig.json").exists() ||
+           current.join("jsconfig.json").exists() {
             return current;
         }
         current.pop();
