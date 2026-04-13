@@ -102,7 +102,6 @@ impl App {
         if let Some(path) = self.editor.buffer().file_path.clone() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                 self.vim.lsp_status = LspStatus::Formatting;
-                let _ = self.terminal.draw(|f| self.ui.draw(f, &self.editor, &mut self.vim, &mut self.explorer, &self.trouble, &self.lsp_manager));
                 let text = self.editor.buffer().text.to_string();
                 match self.lsp_manager.format_document(&ext, &path, text) {
                     Some(Ok(formatted)) => {
@@ -647,13 +646,25 @@ impl App {
                     let line = self.editor.buffer().line(y).unwrap().to_string();
                     let mut start_x = x;
                     let chars: Vec<char> = line.chars().collect();
-                    while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') { start_x -= 1; }
+                    while start_x > 0 && (chars[start_x-1].is_alphanumeric() || chars[start_x-1] == '_' || chars[start_x-1] == '$') {
+                        start_x -= 1;
+                    }
                     let line_start_char = self.editor.buffer().text.line_to_char(y);
+                    
+                    let mut insert_text = selected.insert_text.clone().unwrap_or(selected.label.clone());
+                    
+                    // Basic snippet support: remove $1, ${1:field} etc
+                    if insert_text.contains('$') {
+                        // Very naive snippet cleaner for now
+                        insert_text = insert_text.replace("$0", "").replace("$1", "").replace("${1:", "").replace("}", "");
+                    }
+
                     self.editor.buffer_mut().apply_edit(|t| {
                         t.remove((line_start_char + start_x)..(line_start_char + x));
-                        t.insert(line_start_char + start_x, &selected.label);
+                        t.insert(line_start_char + start_x, &insert_text);
                     });
-                    self.editor.cursor_mut().x = start_x + selected.label.len();
+                    
+                    self.editor.cursor_mut().x = start_x + insert_text.len();
                     self.vim.show_suggestions = false;
                     self.vim.filtered_suggestions.clear();
                     self.vim.suggestions.clear();
@@ -1075,10 +1086,48 @@ impl App {
                                                 }
                                                 self.editor.buffer_mut().apply_edit(|t| { t.insert(idx, &to_insert); });
                                                 self.editor.cursor_mut().x += 1;
-                                                if let Some(path) = self.editor.buffer().file_path.clone() { if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) { let text = self.editor.buffer().text.to_string(); let _ = self.lsp_manager.did_change(&ext, &path, text); let trigger_kind = if c == '.' || c == ':' || c == '>' { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED }; let trigger_char = if trigger_kind == CompletionTriggerKind::TRIGGER_CHARACTER { Some(c.to_string()) } else { None }; let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char); } }
+                                                if let Some(path) = self.editor.buffer().file_path.clone() {
+                                                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                        let text = self.editor.buffer().text.to_string();
+                                                        let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                        
+                                                        let is_trigger = c == '.' || c == ':' || c == '>';
+                                                        let is_alpha = c.is_alphanumeric() || c == '_';
+                                                        
+                                                        if is_trigger || is_alpha {
+                                                            let trigger_kind = if is_trigger { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
+                                                            let trigger_char = if is_trigger { Some(c.to_string()) } else { None };
+                                                            let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
+                                                        } else {
+                                                            self.vim.show_suggestions = false;
+                                                            self.vim.suggestions.clear();
+                                                            self.vim.filtered_suggestions.clear();
+                                                        }
+                                                    }
+                                                }
                                                 self.refresh_filtered_suggestions();
                                             }
-                                            KeyCode::Backspace => { let (y, x) = (self.editor.cursor().y, self.editor.cursor().x); if x > 0 { let idx = self.editor.buffer().text.line_to_char(y) + x; self.editor.buffer_mut().apply_edit(|t| { t.remove((idx-1)..idx); }); self.editor.cursor_mut().x -= 1; if let Some(path) = self.editor.buffer().file_path.clone() { if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) { let text = self.editor.buffer().text.to_string(); let _ = self.lsp_manager.did_change(&ext, &path, text); let _ = self.lsp_manager.request_completions(&ext, &path, y, x - 1, CompletionTriggerKind::INVOKED, None); } } self.refresh_filtered_suggestions(); } }
+                                            KeyCode::Backspace => {
+                                                let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
+                                                if x > 0 {
+                                                    let idx = self.editor.buffer().text.line_to_char(y) + x;
+                                                    self.editor.buffer_mut().apply_edit(|t| { t.remove((idx-1)..idx); });
+                                                    self.editor.cursor_mut().x -= 1;
+                                                    if let Some(path) = self.editor.buffer().file_path.clone() {
+                                                        if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                                                            let text = self.editor.buffer().text.to_string();
+                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                            // On backspace, we usually just want to filter existing suggestions
+                                                            // rather than requesting new ones, unless it's empty.
+                                                            if self.vim.suggestions.is_empty() {
+                                                                // optionally request if needed, but usually just hide
+                                                                self.vim.show_suggestions = false;
+                                                            }
+                                                        }
+                                                    }
+                                                    self.refresh_filtered_suggestions();
+                                                }
+                                            }
                                             _ => {}
                                         }
                                     }
