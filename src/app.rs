@@ -94,7 +94,7 @@ impl App {
         
         // Explicitly bind generic ones if not handled by plugins
         keymap_explorer.bind("Esc", Action::ExitMode);
-        keymap_explorer.bind("\\", Action::ExitMode);
+        keymap_explorer.bind("\\", Action::ToggleExplorer);
         keymap_explorer.bind(":", Action::EnterCommand);
 
         Ok(Self {
