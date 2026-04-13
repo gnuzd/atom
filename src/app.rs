@@ -713,45 +713,63 @@ impl App {
                     let mut end_x = x;
                     let mut insert_text = selected.insert_text.clone().unwrap_or(selected.label.clone());
 
-                    // If the completion item has a text_edit, use its range
+                    // Priority 1: Use text_edit from LSP if available and non-empty
+                    let mut use_fallback = true;
                     if let Some(edit) = &selected.text_edit {
                         match edit {
                             lsp_types::CompletionTextEdit::Edit(te) => {
-                                start_x = te.range.start.character as usize;
-                                end_x = te.range.end.character as usize;
-                                insert_text = te.new_text.clone();
+                                if te.range.start.character != te.range.end.character {
+                                    start_x = te.range.start.character as usize;
+                                    end_x = te.range.end.character as usize;
+                                    insert_text = te.new_text.clone();
+                                    use_fallback = false;
+                                }
                             }
                             lsp_types::CompletionTextEdit::InsertAndReplace(ir) => {
-                                start_x = ir.insert.start.character as usize;
-                                end_x = ir.insert.end.character as usize;
-                                insert_text = ir.new_text.clone();
+                                if ir.insert.start.character != ir.insert.end.character {
+                                    start_x = ir.insert.start.character as usize;
+                                    end_x = ir.insert.end.character as usize;
+                                    insert_text = ir.new_text.clone();
+                                    use_fallback = false;
+                                }
                             }
                         }
-                    } else {
-                        // Fallback: find the start of the word/identifier
+                    } 
+                    
+                    if use_fallback {
+                        // Priority 2: Fallback to manual word start detection
                         if let Some(line) = self.editor.buffer().line(y) {
                             let line_str = line.to_string();
                             let chars: Vec<char> = line_str.chars().collect();
-                            while start_x > 0 && (chars.get(start_x-1).map_or(false, |&c| c.is_alphanumeric() || c == '_' || c == '$')) {
-                                start_x -= 1;
+                            while start_x > 0 {
+                                let c = chars[start_x - 1];
+                                if c.is_alphanumeric() || c == '_' || c == '$' {
+                                    start_x -= 1;
+                                } else {
+                                    break;
+                                }
                             }
                         }
                     }
                     
-                    // Basic snippet support
+                    // Simple snippet cleaning
                     if insert_text.contains('$') {
                         insert_text = insert_text.replace("$0", "").replace("$1", "").replace("${1:", "").replace("}", "");
                     }
 
                     self.editor.buffer_mut().apply_edit(|t| {
-                        t.remove((line_start_char + start_x)..(line_start_char + end_x));
+                        let remove_start = line_start_char + start_x;
+                        let remove_end = line_start_char + end_x;
+                        if remove_end > remove_start {
+                            t.remove(remove_start..remove_end);
+                        }
                         t.insert(line_start_char + start_x, &insert_text);
                     });
                     
                     self.editor.cursor_mut().x = start_x + insert_text.len();
                     self.vim.show_suggestions = false;
-                    self.vim.filtered_suggestions.clear();
                     self.vim.suggestions.clear();
+                    self.vim.filtered_suggestions.clear();
                 } else if let Mode::Telescope(_) = self.vim.mode {
                     if let Some(result) = self.vim.telescope.results.get(self.vim.telescope.selected_idx) {
                         match self.vim.telescope.kind {
@@ -1239,26 +1257,15 @@ impl App {
                                                         let is_trigger = c == '.' || c == ':' || c == '>';
                                                         let is_alpha = c.is_alphanumeric() || c == '_';
                                                         
-                                                        // Debounce did_change or fire immediately on trigger
-                                                        let should_update = is_trigger || self.last_lsp_update.map_or(true, |t| t.elapsed() > Duration::from_millis(500));
-                                                        
-                                                        if should_update {
-                                                            let text = self.editor.buffer().text.to_string();
-                                                            let _ = self.lsp_manager.did_change(&ext, &path, text);
-                                                            self.last_lsp_update = Some(Instant::now());
-                                                        }
+                                                        // Always sync document before requesting completions
+                                                        let text = self.editor.buffer().text.to_string();
+                                                        let _ = self.lsp_manager.did_change(&ext, &path, text);
+                                                        self.last_lsp_update = Some(Instant::now());
 
-                                                        if is_trigger {
-                                                            let trigger_kind = CompletionTriggerKind::TRIGGER_CHARACTER;
-                                                            let trigger_char = Some(c.to_string());
+                                                        if is_trigger || is_alpha {
+                                                            let trigger_kind = if is_trigger { CompletionTriggerKind::TRIGGER_CHARACTER } else { CompletionTriggerKind::INVOKED };
+                                                            let trigger_char = if is_trigger { Some(c.to_string()) } else { None };
                                                             let _ = self.lsp_manager.request_completions(&ext, &path, y, x + 1, trigger_kind, trigger_char);
-                                                        } else if is_alpha && self.vim.show_suggestions {
-                                                            // If already showing, keep requesting to update list, or just filter locally
-                                                            // For better perf, we can just filter locally if we don't want to re-request
-                                                            self.refresh_filtered_suggestions();
-                                                        } else if is_alpha && !self.vim.show_suggestions {
-                                                            // Optionally trigger after some delay or if it's the start of a word
-                                                            // For now, let's only trigger on trigger characters or Ctrl+Space as requested
                                                         } else {
                                                             self.vim.show_suggestions = false;
                                                             self.vim.suggestions.clear();
