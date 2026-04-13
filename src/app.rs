@@ -28,6 +28,8 @@ pub struct App {
     pub lsp_manager: LspManager,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub rx: mpsc::Receiver<notify::Result<notify::Event>>,
+    pub format_tx: mpsc::Sender<(PathBuf, String, Result<String, String>)>,
+    pub format_rx: mpsc::Receiver<(PathBuf, String, Result<String, String>)>,
     pub watcher: RecommendedWatcher,
     pub keymap_normal: Keymap,
     pub keymap_insert: Keymap,
@@ -60,6 +62,7 @@ impl App {
         let lsp_manager = LspManager::new();
 
         let (tx, rx) = mpsc::channel();
+        let (format_tx, format_rx) = mpsc::channel();
         let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
         watcher.watch(&vim.project_root, RecursiveMode::Recursive)?;
 
@@ -88,6 +91,8 @@ impl App {
             lsp_manager,
             terminal,
             rx,
+            format_tx,
+            format_rx,
             watcher,
             keymap_normal,
             keymap_insert,
@@ -98,43 +103,39 @@ impl App {
         })
     }
 
-    pub fn format_buffer(&mut self) -> Result<(), String> {
+    pub fn format_buffer(&mut self) {
         if let Some(path) = self.editor.buffer().file_path.clone() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
                 self.vim.lsp_status = LspStatus::Formatting;
                 let text = self.editor.buffer().text.to_string();
-                match self.lsp_manager.format_document(&ext, &path, text) {
-                    Some(Ok(formatted)) => {
-                        self.editor.buffer_mut().text = ropey::Rope::from_str(&formatted);
-                        self.editor.clamp_cursor();
-                        let _ = self.lsp_manager.did_change(&ext, &path, formatted);
-                        self.vim.lsp_status = LspStatus::None;
-                        return Ok(());
+                let lsp = self.lsp_manager.clone();
+                let tx = self.format_tx.clone();
+                tokio::spawn(async move {
+                    let res = lsp.format_document(&ext, &path, text);
+                    if let Some(r) = res {
+                        let _ = tx.send((path, ext, r));
                     }
-                    Some(Err(e)) => { self.vim.lsp_status = LspStatus::None; return Err(e); }
-                    None => { self.vim.lsp_status = LspStatus::None; return Err("No formatter available".to_string()); }
-                }
+                });
             }
         }
-        self.vim.lsp_status = LspStatus::None;
-        Ok(())
     }
 
     pub fn save_and_format(&mut self, path_to_save: Option<PathBuf>) {
-        let mut format_info = String::new();
         if !self.vim.config.disable_autoformat {
-            let _ = self.format_buffer();
-            format_info.push_str("formatted, ");
+            self.format_buffer();
         }
+        
         let res = if let Some(path) = path_to_save {
             self.editor.save_file_as(path.clone()).map(|_| path.to_string_lossy().to_string())
         } else {
             self.editor.save_file().map(|_| self.editor.buffer().file_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_default())
         };
+
         if let Ok(path_str) = res {
             let line_count = self.editor.buffer().len_lines();
             let char_count = self.editor.buffer().text.len_chars();
-            self.vim.set_message(format!("\"{}\" {} {}L, {}C written", path_str, format_info, line_count, char_count));
+            self.vim.set_message(format!("\"{}\" {}L, {}C written", path_str, line_count, char_count));
+            
             if let Some(path) = self.editor.buffer().file_path.clone() {
                 let text = self.editor.buffer().text.to_string();
                 self.editor.buffer_mut().git_signs = self.vim.git_manager.get_signs(&path, &text);
@@ -807,6 +808,28 @@ impl App {
                 self.explorer.refresh();
             }
 
+            // Async Formatting Results
+            while let Ok((path, ext, res)) = self.format_rx.try_recv() {
+                self.vim.lsp_status = LspStatus::None;
+                match res {
+                    Ok(formatted) => {
+                        // Find the buffer for this path
+                        if let Some(buf_idx) = self.editor.buffers.iter().position(|b| b.file_path.as_ref() == Some(&path)) {
+                            self.editor.buffers[buf_idx].text = ropey::Rope::from_str(&formatted);
+                            let _ = self.lsp_manager.did_change(&ext, &path, formatted.clone());
+                            self.editor.buffers[buf_idx].git_signs = self.vim.git_manager.get_signs(&path, &formatted);
+                            if buf_idx == self.editor.active_idx {
+                                self.editor.clamp_cursor();
+                            }
+                            self.vim.set_message(format!("Formatted \"{}\"", path.to_string_lossy()));
+                        }
+                    }
+                    Err(e) => {
+                        self.vim.set_message(format!("Format Error: {}", e));
+                    }
+                }
+            }
+
             for _path in buffers_to_reload {
                 if !self.editor.buffer().modified {
                     if let Err(e) = self.editor.buffer_mut().reload() {
@@ -936,6 +959,7 @@ impl App {
                                                 self.dispatch_action(Action::ExplorerToggleExpand, 1);
                                                 self.last_click = None;
                                             } else {
+
                                                 self.last_click = Some((now, mouse.column, mouse.row));
                                             }
                                         }
