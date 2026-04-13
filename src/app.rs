@@ -16,6 +16,7 @@ use crate::ui::explorer::FileExplorer;
 use crate::lsp::LspManager;
 use crate::ui::trouble::TroubleList;
 use crate::input::keymap::{Keymap, Action};
+use crate::plugin::PluginManager;
 use lsp_types::{GotoDefinitionResponse, CompletionResponse, PublishDiagnosticsParams, CompletionTriggerKind};
 
 pub struct App {
@@ -30,6 +31,8 @@ pub struct App {
     pub watcher: RecommendedWatcher,
     pub keymap_normal: Keymap,
     pub keymap_insert: Keymap,
+    pub keymap_explorer: Keymap,
+    pub plugin_manager: PluginManager,
     pub should_quit: bool,
 }
 
@@ -59,8 +62,20 @@ impl App {
         let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
         watcher.watch(&vim.project_root, RecursiveMode::Recursive)?;
 
-        let keymap_normal = Keymap::default_normal();
-        let keymap_insert = Keymap::default_insert();
+        let mut keymap_normal = Keymap::default_normal();
+        let mut keymap_insert = Keymap::default_insert();
+        let mut keymap_explorer = Keymap::new();
+        
+        let plugin_manager = PluginManager::new();
+        plugin_manager.register_all_keymaps(&mut keymap_normal, Mode::Normal);
+        plugin_manager.register_all_keymaps(&mut keymap_insert, Mode::Insert);
+        
+        // Populate keymap_explorer from plugins that have explorer bindings
+        plugin_manager.register_all_keymaps(&mut keymap_explorer, Mode::Normal);
+        // Explicitly bind generic ones if not handled by plugins
+        keymap_explorer.bind("Esc", Action::ExitMode);
+        keymap_explorer.bind("\\", Action::ExitMode);
+        keymap_explorer.bind(":", Action::EnterCommand);
 
         Ok(Self {
             vim,
@@ -74,6 +89,8 @@ impl App {
             watcher,
             keymap_normal,
             keymap_insert,
+            keymap_explorer,
+            plugin_manager,
             should_quit: false,
         })
     }
@@ -369,8 +386,20 @@ impl App {
 
             Action::MoveLeft => { for _ in 0..count { self.editor.move_left(); } }
             Action::MoveRight => { for _ in 0..count { self.editor.move_right(); } }
-            Action::MoveUp => { for _ in 0..count { self.editor.move_up(); } }
-            Action::MoveDown => { for _ in 0..count { self.editor.move_down(); } }
+            Action::MoveUp => {
+                match self.vim.focus {
+                    Focus::Editor => { for _ in 0..count { self.editor.move_up(); } }
+                    Focus::Explorer => { for _ in 0..count { self.explorer.move_up(); } }
+                    Focus::Trouble => { for _ in 0..count { self.trouble.move_up(); } }
+                }
+            }
+            Action::MoveDown => {
+                match self.vim.focus {
+                    Focus::Editor => { for _ in 0..count { self.editor.move_down(); } }
+                    Focus::Explorer => { for _ in 0..count { self.explorer.move_down(); } }
+                    Focus::Trouble => { for _ in 0..count { self.trouble.move_down(); } }
+                }
+            }
             Action::MoveWordForward => { for _ in 0..count { self.editor.move_word_forward(); } }
             Action::MoveWordBackward => { for _ in 0..count { self.editor.move_word_backward(); } }
             Action::MoveWordEnd => { for _ in 0..count { self.editor.move_word_end(); } }
@@ -489,9 +518,43 @@ impl App {
             Action::PrevHunk => { self.editor.jump_to_prev_hunk(); }
             Action::Format => { let _ = self.format_buffer(); }
 
-            Action::ExplorerExpand => { self.explorer.expand(); }
+            Action::ExplorerExpand => {
+                if let Some(entry) = self.explorer.selected_entry() {
+                    if entry.is_dir {
+                        self.explorer.expand();
+                    } else {
+                        let path = entry.path.clone();
+                        if let Err(e) = self.editor.open_file(path.clone()) {
+                            self.vim.set_message(format!("Error: {}", e));
+                        } else {
+                            self.vim.focus = Focus::Editor;
+                            if let Some(buf) = self.editor.buffers.last_mut() {
+                                let content = buf.text.to_string();
+                                buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
+                            }
+                        }
+                    }
+                }
+            }
             Action::ExplorerCollapse => { self.explorer.collapse(); }
-            Action::ExplorerToggleExpand => { self.explorer.toggle_expand(); }
+            Action::ExplorerToggleExpand => {
+                if let Some(entry) = self.explorer.selected_entry() {
+                    if entry.is_dir {
+                        self.explorer.toggle_expand();
+                    } else {
+                        let path = entry.path.clone();
+                        if let Err(e) = self.editor.open_file(path.clone()) {
+                            self.vim.set_message(format!("Error: {}", e));
+                        } else {
+                            self.vim.focus = Focus::Editor;
+                            if let Some(buf) = self.editor.buffers.last_mut() {
+                                let content = buf.text.to_string();
+                                buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
+                            }
+                        }
+                    }
+                }
+            }
             Action::ExplorerAdd => { self.vim.mode = Mode::ExplorerInput(ExplorerInputType::Add); self.vim.input_buffer.clear(); }
             Action::ExplorerRename => { self.vim.mode = Mode::ExplorerInput(ExplorerInputType::Rename); self.vim.input_buffer.clear(); }
             Action::ExplorerDelete => { self.vim.mode = Mode::ExplorerInput(ExplorerInputType::DeleteConfirm); self.vim.input_buffer.clear(); }
@@ -774,12 +837,12 @@ impl App {
                                         let action = self.keymap_normal.resolve(&key);
                                         match action {
                                             Action::Unbound => {
-                                                // Handle potential multi-key sequences and fallback
                                                 if let KeyCode::Char(c) = key.code {
                                                     if c.is_ascii_digit() && (self.vim.input_buffer.is_empty() || self.vim.input_buffer.chars().all(|c| c.is_ascii_digit())) {
                                                         self.vim.input_buffer.push(c);
                                                         continue;
                                                     }
+                                                    
                                                     let count = if !self.vim.input_buffer.is_empty() && self.vim.input_buffer.chars().all(|c| c.is_ascii_digit()) {
                                                         let c_val = self.vim.input_buffer.parse::<usize>().unwrap_or(1);
                                                         self.vim.input_buffer.clear();
@@ -818,20 +881,12 @@ impl App {
                                                         let is_partial = match seq.as_str() { " " | " f" | " t" | " g" | " b" | "[" | "]" | "z" | "d" | "y" | "g" => true, _ => false, };
                                                         if !is_partial {
                                                             self.vim.input_buffer.clear();
-                                                            // Fallback for single characters that aren't in keymap yet
-                                                            // Most are in Keymap::default_normal now, but let's be safe.
-                                                            match c {
-                                                                'j' => self.dispatch_action(Action::MoveDown, count),
-                                                                'k' => self.dispatch_action(Action::MoveUp, count),
-                                                                'h' => self.dispatch_action(Action::MoveLeft, count),
-                                                                'l' => self.dispatch_action(Action::MoveRight, count),
-                                                                _ => {}
-                                                            }
                                                         }
                                                     }
                                                 } else {
                                                     self.vim.input_buffer.clear();
                                                     match key.code {
+                                                        KeyCode::Esc => { self.vim.input_buffer.clear(); self.vim.selection_start = None; }
                                                         KeyCode::Down => self.dispatch_action(Action::MoveDown, 1),
                                                         KeyCode::Up => self.dispatch_action(Action::MoveUp, 1),
                                                         KeyCode::Left => self.dispatch_action(Action::MoveLeft, 1),
@@ -841,31 +896,28 @@ impl App {
                                                 }
                                             }
                                             action => {
+                                                let count = if !self.vim.input_buffer.is_empty() && self.vim.input_buffer.chars().all(|c| c.is_ascii_digit()) {
+                                                    let c_val = self.vim.input_buffer.parse::<usize>().unwrap_or(1);
+                                                    self.vim.input_buffer.clear();
+                                                    c_val
+                                                } else { 1 };
                                                 self.vim.input_buffer.clear();
-                                                self.dispatch_action(action.clone(), 1);
+                                                self.dispatch_action(action.clone(), count);
                                             }
                                         }
                                     }
                                     Focus::Explorer => {
-                                        match key.code {
-                                            KeyCode::Char('\\') | KeyCode::Esc => self.dispatch_action(Action::ExitMode, 1),
-                                            KeyCode::Char(':') => self.dispatch_action(Action::EnterCommand, 1),
-                                            KeyCode::Char('j') | KeyCode::Down => self.dispatch_action(Action::MoveDown, 1),
-                                            KeyCode::Char('k') | KeyCode::Up => self.dispatch_action(Action::MoveUp, 1),
-                                            KeyCode::Char('h') | KeyCode::Left => self.dispatch_action(Action::ExplorerCollapse, 1),
-                                            KeyCode::Char('l') | KeyCode::Right => self.dispatch_action(Action::ExplorerExpand, 1),
-                                            KeyCode::Char('<') => self.explorer.decrease_width(),
-                                            KeyCode::Char('>') => self.explorer.increase_width(),
-                                            KeyCode::Enter => self.dispatch_action(Action::ExplorerToggleExpand, 1),
-                                            KeyCode::Char('a') => self.dispatch_action(Action::ExplorerAdd, 1),
-                                            KeyCode::Char('r') => self.dispatch_action(Action::ExplorerRename, 1),
-                                            KeyCode::Char('d') => self.dispatch_action(Action::ExplorerDelete, 1),
-                                            KeyCode::Char('y') => { if let Some(entry) = self.explorer.selected_entry() { self.vim.register = entry.path.to_string_lossy().to_string(); self.vim.set_message("Path copied to register".to_string()); } }
-                                            KeyCode::Char('o') => self.dispatch_action(Action::ExplorerOpenSystem, 1),
-                                            KeyCode::Char('m') => self.dispatch_action(Action::ExplorerMove, 1),
-                                            KeyCode::Char('f') => self.dispatch_action(Action::ExplorerFilter, 1),
-                                            KeyCode::Char('H') => self.dispatch_action(Action::ExplorerToggleHidden, 1),
-                                            _ => {}
+                                        let action = self.keymap_explorer.resolve(&key);
+                                        match action {
+                                            Action::Unbound => {
+                                                match key.code {
+                                                    KeyCode::Char('<') => self.explorer.decrease_width(),
+                                                    KeyCode::Char('>') => self.explorer.increase_width(),
+                                                    KeyCode::Char('y') => { if let Some(entry) = self.explorer.selected_entry() { self.vim.register = entry.path.to_string_lossy().to_string(); self.vim.set_message("Path copied to register".to_string()); } }
+                                                    _ => {}
+                                                }
+                                            }
+                                            action => self.dispatch_action(action.clone(), 1),
                                         }
                                     }
                                     Focus::Trouble => {
