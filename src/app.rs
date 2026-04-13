@@ -657,7 +657,7 @@ impl App {
                                 end_x = te.range.end.character as usize;
                                 insert_text = te.new_text.clone();
                             }
-                            lsp_types::CompletionTextEdit::InsertReplace(ir) => {
+                            lsp_types::CompletionTextEdit::InsertAndReplace(ir) => {
                                 start_x = ir.insert.start.character as usize;
                                 end_x = ir.insert.end.character as usize;
                                 insert_text = ir.new_text.clone();
