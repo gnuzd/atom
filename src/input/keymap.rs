@@ -136,7 +136,7 @@ impl Keymap {
         km.bind("G", Action::JumpToLastLine);
         km.bind("Home", Action::MoveLineStart);
         km.bind("End", Action::MoveLineEnd);
-        km.bind("PageUp", Action::MovePageUp);
+        km.bind("PageUp", Action::MoveLineStart);
         km.bind("PageDown", Action::MovePageDown);
         km.bind("Left", Action::MoveLeft);
         km.bind("Down", Action::MoveDown);

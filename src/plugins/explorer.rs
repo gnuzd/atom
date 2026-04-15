@@ -22,7 +22,7 @@ impl Plugin for ExplorerPlugin {
             keymap.bind("Down", Action::MoveDown);
             keymap.bind("Up", Action::MoveUp);
             keymap.bind("PageDown", Action::MovePageDown);
-            keymap.bind("PageUp", Action::MovePageUp);
+            keymap.bind("PageUp", Action::MoveLineStart);
             keymap.bind("h", Action::ExplorerCollapse);
             keymap.bind("l", Action::ExplorerExpand);
             keymap.bind("Left", Action::ExplorerCollapse);

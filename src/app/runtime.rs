@@ -602,10 +602,10 @@ impl App {
                                 KeyCode::Char('h') | KeyCode::Left => {
                                     self.dispatch_action(Action::MoveLeft, 1)
                                 }
-                                KeyCode::Char('l') | KeyCode::Right => {
+                                Key Code::Char('l') | KeyCode::Right => {
                                     self.dispatch_action(Action::MoveRight, 1)
                                 }
-                                KeyCode::PageUp => self.dispatch_action(Action::MovePageUp, 1),
+                                KeyCode::PageUp => self.dispatch_action(Action::MoveLineStart, 1),
                                 KeyCode::PageDown => self.dispatch_action(Action::MovePageDown, 1),
                                 KeyCode::Home => self.dispatch_action(Action::MoveLineStart, 1),
                                 KeyCode::End => self.dispatch_action(Action::MoveLineEnd, 1),
