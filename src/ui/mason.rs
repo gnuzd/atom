@@ -22,7 +22,7 @@ impl TerminalUi {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Mason.atom ")
+            .title(" Manage.atom ")
             .border_style(theme.get("TreeExplorerConnector"))
             .style(theme.get("Normal"));
 
@@ -44,12 +44,12 @@ impl TerminalUi {
             .split(inner_area);
 
         let tabs = [
-            "(1) All",
-            "(2) LSP",
-            "(3) DAP",
-            "(4) Linter",
-            "(5) Formatter",
-            "(6) Treesitter",
+            "All",
+            "LSP",
+            "DAP",
+            "Linter",
+            "Formatter",
+            "Treesitter",
         ];
         let mut tab_spans = Vec::new();
         for (i, tab) in tabs.iter().enumerate() {

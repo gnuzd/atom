@@ -1,4 +1,5 @@
 use super::*;
+use arboard::Clipboard;
 
 impl App {
     pub fn format_buffer(&mut self, op: BackgroundFileOp) {
@@ -233,6 +234,13 @@ impl App {
         }
     }
 
+    pub fn enter_treesitter_manager(&mut self) {
+        self.vim.mode = Mode::Mason;
+        self.vim.mason_tab = 5;
+        self.vim.mason_filter.clear();
+        self.vim.mason_state.select(Some(0));
+    }
+
     pub fn toggle_comment(&mut self) {
         let path = self.editor.buffer().file_path.clone();
         let ext = path
@@ -368,6 +376,78 @@ impl App {
         } else {
             buf.text.line_to_char(y)
         }
+    }
+
+    fn copy_to_system_clipboard(&mut self, text: &str) -> bool {
+        if text.is_empty() {
+            self.vim
+                .set_message("Nothing to copy to clipboard".to_string());
+            return false;
+        }
+
+        match Clipboard::new().and_then(|mut clipboard| clipboard.set_text(text.to_string())) {
+            Ok(()) => true,
+            Err(err) => {
+                self.vim
+                    .set_message(format!("Clipboard copy failed: {}", err));
+                false
+            }
+        }
+    }
+
+    fn read_from_system_clipboard(&mut self) -> Option<String> {
+        match Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
+            Ok(text) => Some(text),
+            Err(err) => {
+                self.vim
+                    .set_message(format!("Clipboard paste failed: {}", err));
+                None
+            }
+        }
+    }
+
+    fn clipboard_yank_type(text: &str) -> YankType {
+        if text.ends_with('\n') {
+            YankType::Line
+        } else {
+            YankType::Char
+        }
+    }
+
+    fn notify_buffer_changed(&mut self) {
+        if let Some(path) = self.editor.buffer().file_path.clone() {
+            if let Some(ext) = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase())
+            {
+                let text = self.editor.buffer().text.to_string();
+                let _ = self.lsp_manager.did_change(&ext, &path, text);
+                self.last_lsp_update = Some(std::time::Instant::now());
+            }
+        }
+    }
+
+    fn insert_text_at_cursor(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+
+        self.editor.clamp_cursor();
+        let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
+        let char_idx = self.safe_line_to_char(y) + x;
+        self.editor.buffer_mut().apply_edit(|t| {
+            t.insert(char_idx, text);
+        });
+
+        let new_char_idx = char_idx + text.chars().count();
+        let new_y = self.editor.buffer().text.char_to_line(new_char_idx);
+        let new_x = new_char_idx - self.editor.buffer().text.line_to_char(new_y);
+        self.editor.cursor_mut().y = new_y;
+        self.editor.cursor_mut().x = new_x;
+
+        self.notify_buffer_changed();
+        self.refresh_filtered_suggestions();
     }
 
     pub(crate) fn dispatch_action(&mut self, action: Action, count: usize) {
@@ -670,7 +750,37 @@ impl App {
                 }
                 self.vim.register = yanked;
                 self.vim.yank_type = YankType::Line;
-                self.vim.set_message(format!("{} lines yanked", count));
+                if self.copy_to_system_clipboard(&self.vim.register.clone()) {
+                    self.vim
+                        .set_message(format!("{} lines yanked to clipboard", count));
+                }
+            }
+            Action::CopyToClipboard => {
+                let copied = if let Mode::Visual = self.vim.mode {
+                    if let Some(start) = self.vim.selection_start {
+                        let cur = self.editor.cursor();
+                        self.editor.yank(start.x, start.y, cur.x, cur.y)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    let y = self.editor.cursor().y;
+                    self.editor
+                        .buffer()
+                        .line(y)
+                        .map(|line| line.to_string())
+                        .unwrap_or_default()
+                };
+
+                if !copied.is_empty() && self.copy_to_system_clipboard(&copied) {
+                    self.vim.register = copied.clone();
+                    self.vim.yank_type = Self::clipboard_yank_type(&copied);
+                    self.vim.set_message("Copied to clipboard".to_string());
+                    if let Mode::Visual = self.vim.mode {
+                        self.vim.mode = Mode::Normal;
+                        self.vim.selection_start = None;
+                    }
+                }
             }
             Action::PasteAfter => {
                 let t = self.vim.register.clone();
@@ -681,6 +791,22 @@ impl App {
                 let t = self.vim.register.clone();
                 let y = self.vim.yank_type;
                 self.editor.paste_before(&t, y);
+            }
+            Action::PasteFromClipboard => {
+                if let Some(text) = self.read_from_system_clipboard() {
+                    self.vim.register = text.clone();
+                    self.vim.yank_type = Self::clipboard_yank_type(&text);
+                    if let Mode::Visual = self.vim.mode {
+                        if let Some(start) = self.vim.selection_start {
+                            let cur = self.editor.cursor();
+                            self.editor.delete_selection(start.x, start.y, cur.x, cur.y);
+                        }
+                        self.vim.mode = Mode::Normal;
+                        self.vim.selection_start = None;
+                    }
+                    self.insert_text_at_cursor(&text);
+                    self.vim.set_message("Pasted from clipboard".to_string());
+                }
             }
             Action::Undo => {
                 self.editor.undo();

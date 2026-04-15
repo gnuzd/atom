@@ -124,6 +124,7 @@ impl App {
                     if let Err(e) = self.editor.buffer_mut().reload() {
                         self.vim.set_message(format!("Error reloading file: {}", e));
                     } else {
+                        self.editor.clamp_cursor();
                         self.editor.refresh_syntax();
                     }
                 }
@@ -582,6 +583,16 @@ impl App {
                                 {
                                     self.dispatch_action(Action::Save, 1)
                                 }
+                                KeyCode::Char('c')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    self.dispatch_action(Action::CopyToClipboard, 1)
+                                }
+                                KeyCode::Char('v')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    self.dispatch_action(Action::PasteFromClipboard, 1)
+                                }
                                 KeyCode::Char('j') | KeyCode::Down => {
                                     self.dispatch_action(Action::MoveDown, 1)
                                 }
@@ -622,6 +633,9 @@ impl App {
                                     Action::ExitMode => self.dispatch_action(Action::ExitMode, 1),
                                     Action::Save => self.dispatch_action(Action::Save, 1),
                                     Action::Confirm => self.dispatch_action(Action::Confirm, 1),
+                                    Action::PasteFromClipboard => {
+                                        self.dispatch_action(Action::PasteFromClipboard, 1)
+                                    }
                                     Action::SelectNext => {
                                         self.dispatch_action(Action::SelectNext, 1)
                                     }
@@ -1079,7 +1093,9 @@ impl App {
                                     "e!",
                                     "Reload",
                                     "colorscheme",
-                                    "Mason",
+                                    "Manage",
+                                    "TreesitterManager",
+                                    "TressitterManager",
                                     "Trouble",
                                     "format",
                                     "Format",
@@ -1223,8 +1239,11 @@ impl App {
                                                             );
                                                         }
                                                     }
-                                                    "Mason" => {
+                                                    "Manage" => {
                                                         self.dispatch_action(Action::EnterMason, 1)
+                                                    }
+                                                    "TreesitterManager" | "TressitterManager" => {
+                                                        self.enter_treesitter_manager();
                                                     }
                                                     "Trouble" => self
                                                         .dispatch_action(Action::ToggleTrouble, 1),

@@ -524,6 +524,7 @@ impl Editor {
     pub fn paste_before(&mut self, text: &str, yank_type: crate::vim::mode::YankType) {
         if text.is_empty() { return; }
 
+        self.clamp_cursor();
         let cursor_y = self.cursor().y;
         let cursor_x = self.cursor().x;
 
@@ -539,7 +540,8 @@ impl Editor {
             self.cursor_mut().y = cursor_y;
             self.cursor_mut().x = 0;
         } else {
-            let char_idx = self.buffer().text.line_to_char(cursor_y) + cursor_x;
+            let line_start = self.buffer().text.line_to_char(cursor_y);
+            let char_idx = (line_start + cursor_x).min(self.buffer().text.len_chars());
             self.buffer_mut().apply_edit(|t| {
                 t.insert(char_idx, text);
             });
@@ -556,6 +558,7 @@ impl Editor {
     pub fn paste_after(&mut self, text: &str, yank_type: crate::vim::mode::YankType) {
         if text.is_empty() { return; }
         
+        self.clamp_cursor();
         if yank_type == crate::vim::mode::YankType::Line {
             let cursor_y = self.cursor().y;
             let line_end = self.buffer().text.line_to_char(cursor_y + 1);
@@ -570,7 +573,7 @@ impl Editor {
             self.cursor_mut().x = 0;
         } else {
             let cursor_x = self.cursor().x;
-            let line = self.buffer().line(self.cursor().y).unwrap();
+            let line = self.buffer().line(self.cursor().y).unwrap_or_else(|| self.buffer().line(0).unwrap());
             let line_len = if line.as_str().unwrap_or("").ends_with('\n') { line.len_chars().saturating_sub(1) } else { line.len_chars() };
             if cursor_x < line_len {
                 self.cursor_mut().x += 1;
@@ -580,6 +583,10 @@ impl Editor {
     }
 
     pub fn delete_selection(&mut self, start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> String {
+        let num_lines = self.buffer().len_lines();
+        let start_y = start_y.min(num_lines.saturating_sub(1));
+        let end_y = end_y.min(num_lines.saturating_sub(1));
+
         let (s_y, s_x, e_y, e_x) = if (start_y, start_x) < (end_y, end_x) {
             (start_y, start_x, end_y, end_x)
         } else {
@@ -587,9 +594,14 @@ impl Editor {
         };
 
         let start_char = self.buffer().text.line_to_char(s_y) + s_x;
+        let start_char = start_char.min(self.buffer().text.len_chars());
         // end_x is inclusive column index, so char index is start_of_line + end_x + 1
         let end_char = self.buffer().text.line_to_char(e_y) + e_x + 1;
         let end_char = end_char.min(self.buffer().text.len_chars());
+        
+        if start_char >= end_char {
+            return String::new();
+        }
 
         let yanked = self.buffer().text.slice(start_char..end_char).to_string();
         self.buffer_mut().apply_edit(|t| {

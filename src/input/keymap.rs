@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crossterm::event::KeyEvent;
 use crate::input::event::key_to_string;
+use crossterm::event::KeyEvent;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -47,8 +47,10 @@ pub enum Action {
     DeleteCharBefore,
     DeleteLine,
     YankLine,
+    CopyToClipboard,
     PasteAfter,
     PasteBefore,
+    PasteFromClipboard,
     Undo,
     Redo,
     ToggleComment,
@@ -92,7 +94,7 @@ pub enum Action {
     SelectNext,
     SelectPrev,
     Confirm,
-    
+
     // Raw key passthrough
     Unbound,
 }
@@ -118,7 +120,7 @@ impl Keymap {
 
     pub fn default_normal() -> Self {
         let mut km = Self::new();
-        
+
         // Motion
         km.bind("h", Action::MoveLeft);
         km.bind("j", Action::MoveDown);
@@ -154,6 +156,8 @@ impl Keymap {
         km.bind("O", Action::OpenLineAbove);
         km.bind("p", Action::PasteAfter);
         km.bind("P", Action::PasteBefore);
+        km.bind("<C-c>", Action::CopyToClipboard);
+        km.bind("<C-v>", Action::PasteFromClipboard);
         km.bind("s", Action::DeleteSelection); // 's' in normal mode usually deletes char and enters insert
 
         // Sequences (handled via input_buffer currently, but we can pre-bind first char)
@@ -180,6 +184,7 @@ impl Keymap {
         km.bind("Tab", Action::SelectNext);
         km.bind("<S-Tab>", Action::SelectPrev);
         km.bind("BS", Action::DeleteCharBefore); // Usually handled specially
+        km.bind("<C-v>", Action::PasteFromClipboard);
         km
     }
 }
