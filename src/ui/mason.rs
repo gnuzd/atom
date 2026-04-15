@@ -121,11 +121,13 @@ impl TerminalUi {
                 let is_installing = installing_set.contains(l.name);
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
-                    Span::styled(format!("{:<30} ", l.name), theme.get("Keyword")),
-                    Span::styled(l.repo, theme.get("Comment")),
+                    Span::styled(format!("{:<25} ", l.name), theme.get("Keyword")),
+                    Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
                 ];
                 if is_installing {
                     spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
+                } else {
+                    spans.push(Span::styled(" installed", theme.get("String")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -142,11 +144,11 @@ impl TerminalUi {
                 let is_installing = installing_set.contains(l.name);
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
-                    Span::styled(format!("{:<30} ", l.name), theme.get("Normal")),
-                    Span::styled(l.repo, theme.get("Comment")),
+                    Span::styled(format!("{:<25} ", l.name), theme.get("Normal")),
+                    Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
                 ];
                 if is_installing {
-                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
+                    spans.push(Span::styled(format!(" {} downloading...", vim.get_spinner()), theme.get("Type")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -186,11 +188,13 @@ impl TerminalUi {
                 let is_installing = installing_set.contains(p.cmd);
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
-                    Span::styled(format!("{:<30} ", p.name), theme.get("Keyword")),
-                    Span::styled(p.cmd, theme.get("Comment")),
+                    Span::styled(format!("{:<25} ", p.name), theme.get("Keyword")),
+                    Span::styled(format!("{:<40} ", p.cmd), theme.get("Comment")),
                 ];
                 if is_installing {
                     spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
+                } else {
+                    spans.push(Span::styled(" installed", theme.get("String")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -207,11 +211,11 @@ impl TerminalUi {
                 let is_installing = installing_set.contains(p.cmd);
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
-                    Span::styled(format!("{:<30} ", p.name), theme.get("Normal")),
-                    Span::styled(p.description, theme.get("Comment")),
+                    Span::styled(format!("{:<25} ", p.name), theme.get("Normal")),
+                    Span::styled(format!("{:<40} ", p.description), theme.get("Comment")),
                 ];
                 if is_installing {
-                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
+                    spans.push(Span::styled(format!(" {} downloading...", vim.get_spinner()), theme.get("Type")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }

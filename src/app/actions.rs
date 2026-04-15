@@ -186,6 +186,8 @@ impl App {
         };
 
         if self.vim.mason_tab == 5 {
+            let ts_manager = Arc::clone(&self.editor.treesitter);
+            let ts = ts_manager.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
                 .iter()
@@ -195,12 +197,35 @@ impl App {
                         .contains(&self.vim.mason_filter.to_lowercase())
                 })
                 .collect();
-            if let Some(lang) = filtered_langs.get(selected_idx) {
+
+            let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
+                .into_iter()
+                .partition(|l| ts.is_installed(l.name));
+            drop(ts);
+
+            // Mapping:
+            // 0: "Installed" Header
+            // 1..installed.len(): items
+            // installed.len() + 1: ""
+            // installed.len() + 2: "Available" Header
+            // installed.len() + 3..: available items
+            
+            let target = if selected_idx >= 1 && selected_idx <= installed.len() {
+                Some(installed[selected_idx - 1])
+            } else if selected_idx >= installed.len() + 3 {
+                let avail_idx = selected_idx - installed.len() - 3;
+                if avail_idx < available.len() {
+                    Some(available[avail_idx])
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(lang) = target {
                 let lang_name = lang.name.to_string();
-                let ts_manager = Arc::clone(&self.editor.treesitter);
                 let lsp_manager = self.lsp_manager.clone();
-                
-                lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
                 
                 match action_type {
                     "uninstall" => {
@@ -213,13 +238,10 @@ impl App {
                         lsp_manager.installing.lock().unwrap().remove(&lang_name);
                     }
                     _ => {
-                        // For install and update, use a background thread
                         self.vim.set_message(format!("{} parser {}...", if action_type == "update" { "Updating" } else { "Installing" }, lang_name));
+                        lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
                         
-                        // We need to pass the static reference to the thread
-                        // Find the static lang in LANGUAGES
                         let static_lang = crate::editor::treesitter::LANGUAGES.iter().find(|l| l.name == lang_name);
-                        
                         if let Some(l) = static_lang {
                             std::thread::spawn(move || {
                                 let ts = ts_manager.lock().unwrap();
@@ -258,10 +280,15 @@ impl App {
             installed.sort_by_key(|p| p.name);
             available.sort_by_key(|p| p.name);
 
-            let target = if selected_idx < installed.len() {
-                Some(installed[selected_idx])
-            } else if selected_idx < installed.len() + available.len() {
-                Some(available[selected_idx - installed.len()])
+            let target = if selected_idx >= 1 && selected_idx <= installed.len() {
+                Some(installed[selected_idx - 1])
+            } else if selected_idx >= installed.len() + 3 {
+                let avail_idx = selected_idx - installed.len() - 3;
+                if avail_idx < available.len() {
+                    Some(available[avail_idx])
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -511,6 +538,90 @@ impl App {
 
         self.notify_buffer_changed();
         self.refresh_filtered_suggestions();
+    }
+
+    fn get_mason_items_count(&self) -> usize {
+        if self.vim.mason_tab == 5 {
+            let ts = self.editor.treesitter.lock().unwrap();
+            let languages = &crate::editor::treesitter::LANGUAGES;
+            let filtered_langs: Vec<_> = languages
+                .iter()
+                .filter(|l| {
+                    l.name
+                        .to_lowercase()
+                        .contains(&self.vim.mason_filter.to_lowercase())
+                })
+                .collect();
+            let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
+                .into_iter()
+                .partition(|l| ts.is_installed(l.name));
+            installed.len() + available.len() + 3 // 2 headers + 1 empty line
+        } else {
+            let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
+                .iter()
+                .filter(|p| {
+                    let matches_tab = match self.vim.mason_tab {
+                        0 => true,
+                        1 => p.kind == crate::lsp::PackageKind::Lsp,
+                        2 => p.kind == crate::lsp::PackageKind::Dap,
+                        3 => p.kind == crate::lsp::PackageKind::Linter,
+                        4 => p.kind == crate::lsp::PackageKind::Formatter,
+                        _ => true,
+                    };
+                    let filter = self.vim.mason_filter.to_lowercase();
+                    let matches_filter = p.name.to_lowercase().contains(&filter)
+                        || p.description.to_lowercase().contains(&filter);
+                    matches_tab && matches_filter
+                })
+                .collect();
+            let (installed, available): (Vec<_>, Vec<_>) = packages
+                .into_iter()
+                .partition(|p| self.lsp_manager.is_managed(p.cmd));
+            installed.len() + available.len() + 3 // 2 headers + 1 empty line
+        }
+    }
+
+    fn is_mason_header_or_empty(&self, idx: usize) -> bool {
+        if self.vim.mason_tab == 5 {
+            let ts = self.editor.treesitter.lock().unwrap();
+            let languages = &crate::editor::treesitter::LANGUAGES;
+            let filtered_langs: Vec<_> = languages
+                .iter()
+                .filter(|l| {
+                    l.name
+                        .to_lowercase()
+                        .contains(&self.vim.mason_filter.to_lowercase())
+                })
+                .collect();
+            let (installed, _): (Vec<_>, Vec<_>) = filtered_langs
+                .into_iter()
+                .partition(|l| ts.is_installed(l.name));
+            let installed_len: usize = installed.len();
+            idx == 0 || idx == installed_len + 1 || idx == installed_len + 2
+        } else {
+            let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
+                .iter()
+                .filter(|p| {
+                    let matches_tab = match self.vim.mason_tab {
+                        0 => true,
+                        1 => p.kind == crate::lsp::PackageKind::Lsp,
+                        2 => p.kind == crate::lsp::PackageKind::Dap,
+                        3 => p.kind == crate::lsp::PackageKind::Linter,
+                        4 => p.kind == crate::lsp::PackageKind::Formatter,
+                        _ => true,
+                    };
+                    let filter = self.vim.mason_filter.to_lowercase();
+                    let matches_filter = p.name.to_lowercase().contains(&filter)
+                        || p.description.to_lowercase().contains(&filter);
+                    matches_tab && matches_filter
+                })
+                .collect();
+            let (installed, _): (Vec<_>, Vec<_>) = packages
+                .into_iter()
+                .partition(|p| self.lsp_manager.is_managed(p.cmd));
+            let installed_len: usize = installed.len();
+            idx == 0 || idx == installed_len + 1 || idx == installed_len + 2
+        }
     }
 
     pub(crate) fn dispatch_action(&mut self, action: Action, count: usize) {
@@ -1096,7 +1207,14 @@ impl App {
                 Mode::Telescope(_) => self.vim.telescope.move_down(),
                 Mode::Mason => {
                     let i = self.vim.mason_state.selected().unwrap_or(0);
-                    self.vim.mason_state.select(Some(i + 1));
+                    let num_items = self.get_mason_items_count();
+                    let mut next_i = (i + 1) % num_items;
+                    
+                    // Skip headers and empty lines
+                    while self.is_mason_header_or_empty(next_i) && next_i != i {
+                        next_i = (next_i + 1) % num_items;
+                    }
+                    self.vim.mason_state.select(Some(next_i));
                 }
                 Mode::Keymaps => {
                     let i = self.vim.keymap_state.selected().unwrap_or(0);
@@ -1119,9 +1237,14 @@ impl App {
                 Mode::Telescope(_) => self.vim.telescope.move_up(),
                 Mode::Mason => {
                     let i = self.vim.mason_state.selected().unwrap_or(0);
-                    if i > 0 {
-                        self.vim.mason_state.select(Some(i - 1));
+                    let num_items = self.get_mason_items_count();
+                    let mut next_i = if i > 0 { i - 1 } else { num_items - 1 };
+                    
+                    // Skip headers and empty lines
+                    while self.is_mason_header_or_empty(next_i) && next_i != i {
+                        next_i = if next_i > 0 { next_i - 1 } else { num_items - 1 };
                     }
+                    self.vim.mason_state.select(Some(next_i));
                 }
                 Mode::Keymaps => {
                     let i = self.vim.keymap_state.selected().unwrap_or(0);
