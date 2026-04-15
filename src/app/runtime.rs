@@ -602,7 +602,7 @@ impl App {
                                 KeyCode::Char('h') | KeyCode::Left => {
                                     self.dispatch_action(Action::MoveLeft, 1)
                                 }
-                                Key Code::Char('l') | KeyCode::Right => {
+                                KeyCode::Char('l') | KeyCode::Right => {
                                     self.dispatch_action(Action::MoveRight, 1)
                                 }
                                 KeyCode::PageUp => self.dispatch_action(Action::MoveLineStart, 1),
@@ -1031,8 +1031,7 @@ impl App {
                                 | KeyCode::Char('i')
                                 | KeyCode::Char('u')
                                 | KeyCode::Char('d')
-                                | KeyCode::Char('x') => self.install_selected_package(),
-                                _ => {}
+                                | KeyCode::Char('x') => self.install_selected_package(key),                                _ => {}
                             },
                             Mode::MasonFilter => match key.code {
                                 KeyCode::Esc | KeyCode::Enter => {

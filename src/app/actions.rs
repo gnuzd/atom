@@ -1,5 +1,6 @@
 use super::*;
 use arboard::Clipboard;
+use std::sync::Arc;
 
 impl App {
     pub fn format_buffer(&mut self, op: BackgroundFileOp) {
@@ -176,8 +177,14 @@ impl App {
         }
     }
 
-    pub fn install_selected_package(&mut self) {
+    pub fn install_selected_package(&mut self, key: crossterm::event::KeyEvent) {
         let selected_idx = self.vim.mason_state.selected().unwrap_or(0);
+        let action_type = match key.code {
+            crossterm::event::KeyCode::Char('u') => "update",
+            crossterm::event::KeyCode::Char('d') | crossterm::event::KeyCode::Char('x') => "uninstall",
+            _ => "install",
+        };
+
         if self.vim.mason_tab == 5 {
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
@@ -189,12 +196,41 @@ impl App {
                 })
                 .collect();
             if let Some(lang) = filtered_langs.get(selected_idx) {
-                if let Err(e) = self.editor.treesitter.install(lang) {
-                    self.vim
-                        .set_message(format!("Error installing parser: {}", e));
-                } else {
-                    self.vim
-                        .set_message(format!("Parser {} installed", lang.name));
+                let lang_name = lang.name.to_string();
+                let ts_manager = Arc::clone(&self.editor.treesitter);
+                let lsp_manager = self.lsp_manager.clone();
+                
+                lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
+                
+                match action_type {
+                    "uninstall" => {
+                        let ts = self.editor.treesitter.lock().unwrap();
+                        if let Err(e) = ts.uninstall(&lang_name) {
+                            self.vim.set_message(format!("Error uninstalling parser: {}", e));
+                        } else {
+                            self.vim.set_message(format!("Parser {} uninstalled", lang_name));
+                        }
+                        lsp_manager.installing.lock().unwrap().remove(&lang_name);
+                    }
+                    _ => {
+                        // For install and update, use a background thread
+                        self.vim.set_message(format!("{} parser {}...", if action_type == "update" { "Updating" } else { "Installing" }, lang_name));
+                        
+                        // We need to pass the static reference to the thread
+                        // Find the static lang in LANGUAGES
+                        let static_lang = crate::editor::treesitter::LANGUAGES.iter().find(|l| l.name == lang_name);
+                        
+                        if let Some(l) = static_lang {
+                            std::thread::spawn(move || {
+                                let ts = ts_manager.lock().unwrap();
+                                let _ = ts.install(l);
+                                let mut installing = lsp_manager.installing.lock().unwrap();
+                                installing.remove(&lang_name);
+                            });
+                        } else {
+                            lsp_manager.installing.lock().unwrap().remove(&lang_name);
+                        }
+                    }
                 }
             }
         } else {
@@ -216,9 +252,12 @@ impl App {
                 })
                 .collect();
 
-            let (installed, available): (Vec<_>, Vec<_>) = packages
+            let (mut installed, mut available): (Vec<_>, Vec<_>) = packages
                 .into_iter()
                 .partition(|p| self.lsp_manager.is_managed(p.cmd));
+            installed.sort_by_key(|p| p.name);
+            available.sort_by_key(|p| p.name);
+
             let target = if selected_idx < installed.len() {
                 Some(installed[selected_idx])
             } else if selected_idx < installed.len() + available.len() {
@@ -228,8 +267,32 @@ impl App {
             };
 
             if let Some(pkg) = target {
-                let _ = self.lsp_manager.install_server(pkg.cmd);
-                self.vim.set_message(format!("Installing {}...", pkg.name));
+                let pkg_cmd = pkg.cmd.to_string();
+                let pkg_name = pkg.name.to_string();
+                let lsp_manager = self.lsp_manager.clone();
+
+                match action_type {
+                    "uninstall" => {
+                        if let Err(e) = lsp_manager.uninstall_server(&pkg_cmd) {
+                            self.vim.set_message(format!("Error uninstalling {}: {}", pkg_name, e));
+                        } else {
+                            self.vim.set_message(format!("{} uninstalled", pkg_name));
+                        }
+                    }
+                    _ => {
+                        self.vim.set_message(format!("{} {}...", if action_type == "update" { "Updating" } else { "Installing" }, pkg_name));
+                        let pkg_cmd_thread = pkg_cmd.clone();
+                        let lsp_manager_thread = lsp_manager.clone();
+                        let is_update = action_type == "update";
+                        std::thread::spawn(move || {
+                            if is_update {
+                                let _ = lsp_manager_thread.update_server(&pkg_cmd_thread);
+                            } else {
+                                let _ = lsp_manager_thread.install_server(&pkg_cmd_thread);
+                            }
+                        });
+                    }
+                }
             }
         }
     }

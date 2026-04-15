@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, sync::{Arc, Mutex}};
 
 pub mod buffer;
 pub mod cursor;
@@ -11,7 +11,7 @@ pub struct Editor {
     pub cursors: Vec<cursor::Cursor>,
     pub active_idx: usize,
     pub highlighter: highlighter::Highlighter,
-    pub treesitter: treesitter::TreesitterManager,
+    pub treesitter: Arc<Mutex<treesitter::TreesitterManager>>,
     pub syntax_styles: Vec<Vec<ratatui::style::Style>>,
     pub last_syntax_text: String,
 }
@@ -24,7 +24,7 @@ impl Editor {
             cursors: vec![cursor::Cursor::new()],
             active_idx: 0,
             highlighter: highlighter::Highlighter::new(theme),
-            treesitter: treesitter::TreesitterManager::new(),
+            treesitter: Arc::new(Mutex::new(treesitter::TreesitterManager::new())),
             syntax_styles: Vec::new(),
             last_syntax_text: String::new(),
         }
@@ -66,7 +66,8 @@ impl Editor {
             _ => &ext,
         };
 
-        self.syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut self.treesitter);
+        let mut ts = self.treesitter.lock().unwrap();
+        self.syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut ts);
         self.last_syntax_text = text;
     }
 

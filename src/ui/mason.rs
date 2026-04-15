@@ -94,6 +94,7 @@ impl TerminalUi {
         let installing_set = lsp_manager.installing.lock().unwrap();
 
         if vim.mason_tab == 5 {
+            let ts = editor.treesitter.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
                 .iter()
@@ -106,7 +107,8 @@ impl TerminalUi {
 
             let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
                 .into_iter()
-                .partition(|l| editor.treesitter.is_installed(l.name));
+                .partition(|l| ts.is_installed(l.name));
+            drop(ts); // Release lock before drawing items which might call it again via get_spinner if nested, though it's not here.
 
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 format!("Installed ({})", installed.len()),
@@ -116,13 +118,14 @@ impl TerminalUi {
             )])));
 
             for l in &installed {
+                let is_installing = installing_set.contains(l.name);
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<30} ", l.name), theme.get("Keyword")),
                     Span::styled(l.repo, theme.get("Comment")),
                 ];
-                if installing_set.contains(l.name) {
-                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                if is_installing {
+                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -136,13 +139,14 @@ impl TerminalUi {
             )])));
 
             for l in &available {
+                let is_installing = installing_set.contains(l.name);
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
                     Span::styled(format!("{:<30} ", l.name), theme.get("Normal")),
                     Span::styled(l.repo, theme.get("Comment")),
                 ];
-                if installing_set.contains(l.name) {
-                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                if is_installing {
+                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -179,13 +183,14 @@ impl TerminalUi {
             )])));
 
             for p in &installed {
+                let is_installing = installing_set.contains(p.cmd);
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<30} ", p.name), theme.get("Keyword")),
                     Span::styled(p.cmd, theme.get("Comment")),
                 ];
-                if installing_set.contains(p.cmd) {
-                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                if is_installing {
+                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -199,13 +204,14 @@ impl TerminalUi {
             )])));
 
             for p in &available {
+                let is_installing = installing_set.contains(p.cmd);
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
                     Span::styled(format!("{:<30} ", p.name), theme.get("Normal")),
                     Span::styled(p.description, theme.get("Comment")),
                 ];
-                if installing_set.contains(p.cmd) {
-                    spans.push(Span::styled(" (installing...)", theme.get("Type")));
+                if is_installing {
+                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }

@@ -323,8 +323,39 @@ impl LspManager {
         None
     }
 
+    pub fn uninstall_server(&self, server_cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let local_dir = Self::get_local_bin_dir();
+        let bin_dir = local_dir.join("bin");
+        let target = bin_dir.join(server_cmd);
+        if target.exists() {
+            let _ = std::fs::remove_file(&target);
+        }
+
+        let npm_dir = local_dir.join("node_modules");
+        if npm_dir.exists() {
+            // For npm packages, we'd ideally run 'npm uninstall', but for now just removing the symlink is a start.
+            // A full uninstall would need to know the npm package name.
+        }
+
+        let marker = local_dir.join(format!("{}.managed", server_cmd));
+        if marker.exists() {
+            let _ = std::fs::remove_file(marker);
+        }
+
+        self.installed_cache.lock().unwrap().remove(server_cmd);
+        Ok(())
+    }
+
+    pub fn update_server(&self, server_cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // For now, update is just a re-install
+        self.install_server(server_cmd)
+    }
+
     pub fn install_server(&self, server_cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.installing.lock().unwrap().insert(server_cmd.to_string());
+        let server_cmd_clone = server_cmd.to_string();
+        let installing_clone = Arc::clone(&self.installing);
+
         let result = (|| {
             if let Some((cmd, args)) = Self::get_install_command(server_cmd) {
                 let local_dir = Self::get_local_bin_dir();
@@ -357,7 +388,7 @@ impl LspManager {
                         let marker = local_dir.join(format!("{}.managed", server_cmd));
                         let _ = std::fs::File::create(marker);
                     }
-                    self.installed_cache.lock().unwrap().insert(server_cmd.to_string(), true);
+                    self.installed_cache.lock().unwrap().insert(server_cmd_clone.clone(), true);
                     return Ok(());
                 } else {
                     return Err(format!("Installation failed with status: {}", status).into());
@@ -365,7 +396,7 @@ impl LspManager {
             }
             Err("No install command known for this server".into())
         })();
-        self.installing.lock().unwrap().remove(server_cmd);
+        installing_clone.lock().unwrap().remove(&server_cmd_clone);
         result
     }
 
