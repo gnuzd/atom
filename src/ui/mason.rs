@@ -122,15 +122,13 @@ impl TerminalUi {
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<25} ", l.name), theme.get("Keyword")),
-                    Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
+                    Span::styled(format!("{:<60} ", l.repo), theme.get("Comment")),
                 ];
                 if let Some(p) = phase {
                     spans.push(Span::styled(
                         format!(" {} {}...", vim.get_spinner(), p),
                         theme.get("Type"),
                     ));
-                } else {
-                    spans.push(Span::styled(" installed", theme.get("String")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -148,7 +146,7 @@ impl TerminalUi {
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
                     Span::styled(format!("{:<25} ", l.name), theme.get("Normal")),
-                    Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
+                    Span::styled(format!("{:<60} ", l.repo), theme.get("Comment")),
                 ];
                 if let Some(p) = phase {
                     spans.push(Span::styled(
@@ -197,6 +195,7 @@ impl TerminalUi {
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<25} ", p.name), theme.get("Keyword")),
                     Span::styled(format!("{:<35} ", p.description), theme.get("Comment")),
+                    Span::styled(format!("{:<9}", p.install_cmd), theme.get("Comment")),
                 ];
                 if let Some(ph) = phase {
                     spans.push(Span::styled(
@@ -205,11 +204,9 @@ impl TerminalUi {
                     ));
                 } else if is_pending_delete {
                     spans.push(Span::styled(
-                        " press d again to confirm uninstall",
+                        " press d again to confirm",
                         Style::default().fg(theme.palette.red).add_modifier(Modifier::BOLD),
                     ));
-                } else {
-                    spans.push(Span::styled(" installed", theme.get("String")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -224,16 +221,15 @@ impl TerminalUi {
 
             for p in &available {
                 let phase = op_status.get(p.cmd).map(|s| s.as_str());
-                let install_via = if p.install_cmd == "npm" { "npm" } else { p.install_cmd };
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
                     Span::styled(format!("{:<25} ", p.name), theme.get("Normal")),
                     Span::styled(format!("{:<35} ", p.description), theme.get("Comment")),
-                    Span::styled(format!("via {:<6}", install_via), theme.get("Comment")),
+                    Span::styled(format!("{:<9}", p.install_cmd), theme.get("Comment")),
                 ];
                 if let Some(ph) = phase {
                     spans.push(Span::styled(
-                        format!("  {} {}...", vim.get_spinner(), ph),
+                        format!(" {} {}...", vim.get_spinner(), ph),
                         theme.get("Type"),
                     ));
                 }
