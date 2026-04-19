@@ -59,6 +59,7 @@ pub struct VimState {
     pub split_buffer_idx: usize,
     pub split_focused: bool, // false = primary pane, true = split pane
     pub preview_lines: Option<Vec<String>>, // floating file preview
+    pub preview_scroll: usize,
     pub show_suggestions: bool,
     pub keymap_filter: String,
     pub command_suggestions: Vec<String>,
@@ -125,6 +126,7 @@ impl VimState {
             split_buffer_idx: 0,
             split_focused: false,
             preview_lines: None,
+            preview_scroll: 0,
             show_suggestions: false,
             keymap_filter: String::new(),
             command_suggestions: Vec::new(),

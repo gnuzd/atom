@@ -463,9 +463,27 @@ impl App {
                                         continue;
                                     }
                                 }
-                                // Esc closes preview popup
-                                if key.code == KeyCode::Esc && self.vim.preview_lines.is_some() {
-                                    self.vim.preview_lines = None;
+                                // Preview popup scroll / close
+                                if self.vim.preview_lines.is_some() {
+                                    match key.code {
+                                        KeyCode::Esc | KeyCode::Char('q') => {
+                                            self.vim.preview_lines = None;
+                                            self.vim.preview_scroll = 0;
+                                        }
+                                        KeyCode::Char('j') | KeyCode::Down => {
+                                            self.vim.preview_scroll = self.vim.preview_scroll.saturating_add(1);
+                                        }
+                                        KeyCode::Char('k') | KeyCode::Up => {
+                                            self.vim.preview_scroll = self.vim.preview_scroll.saturating_sub(1);
+                                        }
+                                        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                            self.vim.preview_scroll = self.vim.preview_scroll.saturating_add(20);
+                                        }
+                                        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                            self.vim.preview_scroll = self.vim.preview_scroll.saturating_sub(20);
+                                        }
+                                        _ => {}
+                                    }
                                     continue;
                                 }
 
@@ -642,12 +660,11 @@ impl App {
                                             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                                 if let Some(entry) = self.explorer.selected_entry() {
                                                     if entry.path.is_file() {
+                                                        let primary_idx = self.editor.active_idx;
                                                         let _ = self.editor.open_file(entry.path.clone());
-                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Horizontal);
                                                         self.vim.split_buffer_idx = self.editor.active_idx;
-                                                        // Primary pane stays on previous buffer
-                                                        let prev = self.editor.active_idx.saturating_sub(1);
-                                                        self.editor.active_idx = if self.editor.buffers.len() > 1 { prev } else { 0 };
+                                                        self.editor.active_idx = primary_idx;
+                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Horizontal);
                                                         self.vim.split_focused = false;
                                                         self.vim.focus = Focus::Editor;
                                                     }
@@ -657,11 +674,11 @@ impl App {
                                             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                                 if let Some(entry) = self.explorer.selected_entry() {
                                                     if entry.path.is_file() {
+                                                        let primary_idx = self.editor.active_idx;
                                                         let _ = self.editor.open_file(entry.path.clone());
-                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Vertical);
                                                         self.vim.split_buffer_idx = self.editor.active_idx;
-                                                        let prev = self.editor.active_idx.saturating_sub(1);
-                                                        self.editor.active_idx = if self.editor.buffers.len() > 1 { prev } else { 0 };
+                                                        self.editor.active_idx = primary_idx;
+                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Vertical);
                                                         self.vim.split_focused = false;
                                                         self.vim.focus = Focus::Editor;
                                                     }

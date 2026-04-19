@@ -1087,51 +1087,15 @@ impl TerminalUi {
             }
         }
 
-        // 2b. Split pane (secondary buffer, read-only simplified view)
+        // 2b. Split pane (secondary buffer, no border/title — plain buffer view)
         if let Some(split_rect) = split_area {
             if let Some(buf) = editor.buffers.get(vim.split_buffer_idx) {
-                let is_focused = vim.split_focused;
-                let border_style = if is_focused {
-                    theme.get("TreeExplorerRoot")
-                } else {
-                    theme.get("Comment")
-                };
-                // Divider
-                let divider = Block::default()
-                    .borders(Borders::LEFT)
-                    .border_style(border_style);
-                frame.render_widget(divider, split_rect);
-                let inner = Rect {
-                    x: split_rect.x + 1,
-                    y: split_rect.y,
-                    width: split_rect.width.saturating_sub(1),
-                    height: split_rect.height,
-                };
-                let file_name = buf.file_path.as_ref()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "[No Name]".to_string());
-                let title_block = Block::default()
-                    .title(Span::styled(format!(" {} ", file_name), border_style))
-                    .borders(Borders::BOTTOM)
-                    .border_style(theme.get("Comment"));
-                let title_height = 1u16;
-                frame.render_widget(title_block, Rect { x: inner.x, y: inner.y, width: inner.width, height: title_height + 1 });
-                let content_area = Rect {
-                    x: inner.x,
-                    y: inner.y + title_height + 1,
-                    width: inner.width,
-                    height: inner.height.saturating_sub(title_height + 1),
-                };
                 let text_str = buf.text.to_string();
                 let lines: Vec<&str> = text_str.lines().collect();
-                let visible_h = content_area.height as usize;
+                let visible_h = split_rect.height as usize;
                 let line_items: Vec<Line> = (0..visible_h).map(|i| {
                     if let Some(line_text) = lines.get(i) {
-                        let num = Span::styled(
-                            format!("{:>4} ", i + 1),
-                            theme.get("LineNr"),
-                        );
+                        let num = Span::styled(format!("{:>4} ", i + 1), theme.get("LineNr"));
                         let content = Span::styled(line_text.to_string(), theme.get("Normal"));
                         Line::from(vec![num, content])
                     } else {
@@ -1139,7 +1103,7 @@ impl TerminalUi {
                     }
                 }).collect();
                 let para = Paragraph::new(line_items).style(theme.get("Normal"));
-                frame.render_widget(para, content_area);
+                frame.render_widget(para, split_rect);
             }
         }
 
@@ -1153,19 +1117,22 @@ impl TerminalUi {
                 width: popup_width,
                 height: popup_height,
             };
+            let scroll = vim.preview_scroll.min(preview_lines.len().saturating_sub(1));
+            let total = preview_lines.len();
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(" Preview (Esc to close) ")
+                .title(format!(" Preview [{}/{}] j/k Ctrl+d/u q ", scroll + 1, total))
                 .border_style(theme.get("TreeExplorerConnector"))
                 .style(theme.get("Normal"));
             frame.render_widget(Clear, popup_area);
             frame.render_widget(block, popup_area);
             let inner = popup_area.inner(Margin { horizontal: 1, vertical: 1 });
-            let items: Vec<Line> = preview_lines.iter().take(inner.height as usize)
+            let visible_h = inner.height as usize;
+            let items: Vec<Line> = preview_lines.iter().skip(scroll).take(visible_h)
                 .enumerate()
                 .map(|(i, l)| {
-                    let num = Span::styled(format!("{:>4} ", i + 1), theme.get("LineNr"));
+                    let num = Span::styled(format!("{:>4} ", scroll + i + 1), theme.get("LineNr"));
                     let content = Span::styled(l.clone(), theme.get("Normal"));
                     Line::from(vec![num, content])
                 })
