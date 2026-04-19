@@ -159,7 +159,6 @@ impl Keymap {
         km.bind("p", Action::PasteAfter);
         km.bind("P", Action::PasteBefore);
         km.bind("<C-c>", Action::CopyToClipboard);
-        km.bind("<C-v>", Action::PasteFromClipboard);
         km.bind("s", Action::DeleteSelection); // 's' in normal mode usually deletes char and enters insert
 
         // Sequences (handled via input_buffer currently, but we can pre-bind first char)
