@@ -44,12 +44,12 @@ impl TerminalUi {
             .split(inner_area);
 
         let tabs = [
-            "All",
-            "LSP",
-            "DAP",
-            "Linter",
-            "Formatter",
-            "Treesitter",
+            "(1) All",
+            "(2) LSP",
+            "(3) DAP",
+            "(4) Linter",
+            "(5) Formatter",
+            "(6) Treesitter",
         ];
         let mut tab_spans = Vec::new();
         for (i, tab) in tabs.iter().enumerate() {
@@ -125,7 +125,10 @@ impl TerminalUi {
                     Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
                 ];
                 if is_installing {
-                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
+                    spans.push(Span::styled(
+                        format!(" {} installing...", vim.get_spinner()),
+                        theme.get("Type"),
+                    ));
                 } else {
                     spans.push(Span::styled(" installed", theme.get("String")));
                 }
@@ -148,7 +151,10 @@ impl TerminalUi {
                     Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
                 ];
                 if is_installing {
-                    spans.push(Span::styled(format!(" {} downloading...", vim.get_spinner()), theme.get("Type")));
+                    spans.push(Span::styled(
+                        format!(" {} downloading...", vim.get_spinner()),
+                        theme.get("Type"),
+                    ));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -192,9 +198,10 @@ impl TerminalUi {
                     Span::styled(format!("{:<40} ", p.cmd), theme.get("Comment")),
                 ];
                 if is_installing {
-                    spans.push(Span::styled(format!(" {} installing...", vim.get_spinner()), theme.get("Type")));
-                } else {
-                    spans.push(Span::styled(" installed", theme.get("String")));
+                    spans.push(Span::styled(
+                        format!(" {} installing...", vim.get_spinner()),
+                        theme.get("Type"),
+                    ));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -215,7 +222,10 @@ impl TerminalUi {
                     Span::styled(format!("{:<40} ", p.description), theme.get("Comment")),
                 ];
                 if is_installing {
-                    spans.push(Span::styled(format!(" {} downloading...", vim.get_spinner()), theme.get("Type")));
+                    spans.push(Span::styled(
+                        format!(" {} downloading...", vim.get_spinner()),
+                        theme.get("Type"),
+                    ));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }

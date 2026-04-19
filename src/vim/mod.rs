@@ -162,8 +162,8 @@ impl VimState {
 
     pub fn get_spinner(&mut self) -> &str {
         let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        let frame = frames[self.spinner_idx % frames.len()];
-        self.spinner_idx += 1;
+        let frame = frames[(self.spinner_idx / 10) % frames.len()];
+        self.spinner_idx = self.spinner_idx.wrapping_add(1);
         frame
     }
 
