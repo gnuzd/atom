@@ -469,7 +469,7 @@ impl App {
                                                             .all(|c| c.is_ascii_digit()))
                                                 {
                                                     self.vim.input_buffer.push(c);
-                                                    return Ok(());
+                                                    continue;
                                                 }
 
                                                 let count = if !self.vim.input_buffer.is_empty()

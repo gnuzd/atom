@@ -14,18 +14,18 @@ impl App {
                 let text = self.editor.buffer().text.to_string();
                 let lsp = self.lsp_manager.clone();
                 let git = self.vim.git_manager.clone();
-                let tx = self.format_tx.clone();
+                let tx = self.async_tx.clone();
 
                 tokio::task::spawn_blocking(move || {
                     let res = lsp.format_document(&ext, &path, text);
                     if let Some(r) = res {
-                        let signs = if let Ok(formatted) = &r {
+                        let git_signs = if let Ok(formatted) = &r {
                             let _ = lsp.did_change(&ext, &path, formatted.clone());
                             git.get_signs(&path, formatted)
                         } else {
                             Vec::new()
                         };
-                        let _ = tx.send((path, ext, AsyncResult::Format(r), signs, op));
+                        let _ = tx.send(AsyncFileResult { path, ext, result: AsyncResult::Format(r), git_signs, op });
                     }
                 });
             }
@@ -43,7 +43,7 @@ impl App {
         let text = self.editor.buffer().text.to_string();
         let lsp = self.lsp_manager.clone();
         let git = self.vim.git_manager.clone();
-        let tx = self.format_tx.clone();
+        let tx = self.async_tx.clone();
         let path_clone = path.clone();
         let autoformat = !self.vim.config.disable_autoformat;
 
@@ -81,31 +81,16 @@ impl App {
                 Ok(())
             })();
 
-            let signs = git.get_signs(&path_clone, &final_text);
+            let git_signs = git.get_signs(&path_clone, &final_text);
             if !ext.is_empty() {
                 let _ = lsp.did_save(&ext, &path_clone, final_text.clone());
             }
 
-            match save_res {
-                Ok(_) => {
-                    let _ = tx.send((
-                        path_clone,
-                        ext,
-                        AsyncResult::Save(Ok(final_text)),
-                        signs,
-                        BackgroundFileOp::Save,
-                    ));
-                }
-                Err(e) => {
-                    let _ = tx.send((
-                        path_clone,
-                        ext,
-                        AsyncResult::Save(Err(e.to_string())),
-                        signs,
-                        BackgroundFileOp::Save,
-                    ));
-                }
-            }
+            let result = match save_res {
+                Ok(_) => AsyncResult::Save(Ok(final_text)),
+                Err(e) => AsyncResult::Save(Err(e.to_string())),
+            };
+            let _ = tx.send(AsyncFileResult { path: path_clone, ext, result, git_signs, op: BackgroundFileOp::Save });
         });
     }
 
@@ -226,16 +211,19 @@ impl App {
             if let Some(lang) = target {
                 let lang_name = lang.name.to_string();
                 let lsp_manager = self.lsp_manager.clone();
+                let ts_manager = Arc::clone(&self.editor.treesitter);
                 
                 match action_type {
                     "uninstall" => {
-                        let ts = self.editor.treesitter.lock().unwrap();
-                        if let Err(e) = ts.uninstall(&lang_name) {
-                            self.vim.set_message(format!("Error uninstalling parser: {}", e));
-                        } else {
-                            self.vim.set_message(format!("Parser {} uninstalled", lang_name));
-                        }
-                        lsp_manager.installing.lock().unwrap().remove(&lang_name);
+                        self.vim.set_message(format!("Uninstalling parser {}...", lang_name));
+                        lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
+                        
+                        std::thread::spawn(move || {
+                            let ts = ts_manager.lock().unwrap();
+                            let _ = ts.uninstall(&lang_name);
+                            let mut installing = lsp_manager.installing.lock().unwrap();
+                            installing.remove(&lang_name);
+                        });
                     }
                     _ => {
                         self.vim.set_message(format!("{} parser {}...", if action_type == "update" { "Updating" } else { "Installing" }, lang_name));
@@ -300,11 +288,15 @@ impl App {
 
                 match action_type {
                     "uninstall" => {
-                        if let Err(e) = lsp_manager.uninstall_server(&pkg_cmd) {
-                            self.vim.set_message(format!("Error uninstalling {}: {}", pkg_name, e));
-                        } else {
-                            self.vim.set_message(format!("{} uninstalled", pkg_name));
-                        }
+                        self.vim.set_message(format!("Uninstalling {}...", pkg_name));
+                        lsp_manager.installing.lock().unwrap().insert(pkg_cmd.clone());
+                        let pkg_cmd_thread = pkg_cmd.clone();
+                        let lsp_manager_thread = lsp_manager.clone();
+                        
+                        std::thread::spawn(move || {
+                            let _ = lsp_manager_thread.uninstall_server(&pkg_cmd_thread);
+                            lsp_manager_thread.installing.lock().unwrap().remove(&pkg_cmd_thread);
+                        });
                     }
                     _ => {
                         self.vim.set_message(format!("{} {}...", if action_type == "update" { "Updating" } else { "Installing" }, pkg_name));
@@ -353,12 +345,15 @@ impl App {
 
         self.editor.buffer_mut().push_history();
         let (s_y, e_y) = if let Mode::Visual = self.vim.mode {
-            let start = self.vim.selection_start.unwrap();
-            let cur = self.editor.cursor();
-            if start.y < cur.y {
-                (start.y, cur.y)
+            if let Some(start) = self.vim.selection_start {
+                let cur = self.editor.cursor();
+                if start.y < cur.y {
+                    (start.y, cur.y)
+                } else {
+                    (cur.y, start.y)
+                }
             } else {
-                (cur.y, start.y)
+                (self.editor.cursor().y, self.editor.cursor().y)
             }
         } else {
             (self.editor.cursor().y, self.editor.cursor().y)
@@ -1003,11 +998,12 @@ impl App {
             }
             Action::DeleteSelection => {
                 if let Mode::Visual = self.vim.mode {
-                    let start = self.vim.selection_start.unwrap();
-                    let cur = self.editor.cursor();
-                    self.vim.register =
-                        self.editor.delete_selection(start.x, start.y, cur.x, cur.y);
-                    self.vim.yank_type = YankType::Char;
+                    if let Some(start) = self.vim.selection_start {
+                        let cur = self.editor.cursor();
+                        self.vim.register =
+                            self.editor.delete_selection(start.x, start.y, cur.x, cur.y);
+                        self.vim.yank_type = YankType::Char;
+                    }
                     self.vim.mode = Mode::Normal;
                     self.vim.selection_start = None;
                 } else {

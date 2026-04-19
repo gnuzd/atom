@@ -509,16 +509,34 @@ impl Editor {
     }
 
     pub fn yank(&self, start_x: usize, start_y: usize, end_x: usize, end_y: usize) -> String {
-        let (s_y, s_x, e_y, e_x) = if (start_y, start_x) < (end_y, end_x) {
-            (start_y, start_x, end_y, end_x)
+        let num_lines = self.buffer().len_lines();
+        let s_y = start_y.min(num_lines.saturating_sub(1));
+        let e_y = end_y.min(num_lines.saturating_sub(1));
+
+        let (s_y, s_x, e_y, e_x) = if (s_y, start_x) < (e_y, end_x) {
+            (s_y, start_x, e_y, end_x)
         } else {
-            (end_y, end_x, start_y, start_x)
+            (e_y, end_x, s_y, start_x)
         };
 
+        // Clamp x to the actual line length so we never bleed into adjacent lines.
+        let s_line_len = self.buffer().line(s_y).map(|l| {
+            l.chars().filter(|&c| c != '\n' && c != '\r').count()
+        }).unwrap_or(0);
+        let e_line_len = self.buffer().line(e_y).map(|l| {
+            l.chars().filter(|&c| c != '\n' && c != '\r').count()
+        }).unwrap_or(0);
+        let s_x = s_x.min(s_line_len);
+        let e_x = e_x.min(e_line_len.saturating_sub(1).max(s_x));
+
         let start_char = self.buffer().text.line_to_char(s_y) + s_x;
-        let end_char = self.buffer().text.line_to_char(e_y) + e_x + 1;
-        
-        let end_char = end_char.min(self.buffer().text.len_chars());
+        let end_char = (self.buffer().text.line_to_char(e_y) + e_x + 1)
+            .min(self.buffer().text.len_chars());
+
+        if start_char >= end_char {
+            return String::new();
+        }
+
         self.buffer().text.slice(start_char..end_char).to_string()
     }
 
@@ -594,11 +612,21 @@ impl Editor {
             (end_y, end_x, start_y, start_x)
         };
 
-        let start_char = self.buffer().text.line_to_char(s_y) + s_x;
-        let start_char = start_char.min(self.buffer().text.len_chars());
+        // Clamp x to actual line lengths to prevent bleeding into adjacent lines.
+        let s_line_len = self.buffer().line(s_y).map(|l| {
+            l.chars().filter(|&c| c != '\n' && c != '\r').count()
+        }).unwrap_or(0);
+        let e_line_len = self.buffer().line(e_y).map(|l| {
+            l.chars().filter(|&c| c != '\n' && c != '\r').count()
+        }).unwrap_or(0);
+        let s_x = s_x.min(s_line_len);
+        let e_x = e_x.min(e_line_len.saturating_sub(1).max(s_x));
+
+        let start_char = (self.buffer().text.line_to_char(s_y) + s_x)
+            .min(self.buffer().text.len_chars());
         // end_x is inclusive column index, so char index is start_of_line + end_x + 1
-        let end_char = self.buffer().text.line_to_char(e_y) + e_x + 1;
-        let end_char = end_char.min(self.buffer().text.len_chars());
+        let end_char = (self.buffer().text.line_to_char(e_y) + e_x + 1)
+            .min(self.buffer().text.len_chars());
         
         if start_char >= end_char {
             return String::new();
