@@ -642,6 +642,12 @@ impl App {
                 let c = self.editor.cursor();
                 self.vim.selection_start = Some(Position { x: c.x, y: c.y });
             }
+            Action::EnterVisualBlock => {
+                self.vim.mode = Mode::VisualBlock;
+                let c = self.editor.cursor();
+                self.vim.selection_start = Some(Position { x: c.x, y: c.y });
+                self.vim.block_insert_text.clear();
+            }
             Action::EnterCommand => {
                 self.vim.mode = Mode::Command;
                 self.vim.command_buffer.clear();

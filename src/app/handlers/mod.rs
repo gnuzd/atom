@@ -7,6 +7,7 @@ mod normal;
 mod search;
 mod telescope;
 mod visual;
+mod visual_block;
 
 use super::*;
 
@@ -24,6 +25,8 @@ impl App {
         match self.vim.mode {
             Mode::Normal => self.handle_normal_mode(key),
             Mode::Visual => self.handle_visual_mode(key),
+            Mode::VisualBlock => self.handle_visual_block_mode(key),
+            Mode::BlockInsert => self.handle_block_insert_mode(key),
             Mode::Insert => self.handle_insert_mode(key),
             Mode::Search => self.handle_search_mode(key),
             Mode::ExplorerInput(input_type) => self.handle_explorer_input_mode(key, input_type),

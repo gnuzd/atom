@@ -8,6 +8,7 @@ pub enum Action {
     EnterInsert,
     EnterInsertLineStart,
     EnterVisual,
+    EnterVisualBlock,
     EnterCommand,
     EnterSearch,
     ExitMode,
@@ -147,6 +148,7 @@ impl Keymap {
         km.bind("i", Action::EnterInsert);
         km.bind("I", Action::EnterInsertLineStart);
         km.bind("v", Action::EnterVisual);
+        km.bind("<C-v>", Action::EnterVisualBlock);
         km.bind(":", Action::EnterCommand);
         km.bind("/", Action::EnterSearch);
         km.bind("u", Action::Undo);

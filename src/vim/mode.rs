@@ -3,6 +3,8 @@ pub enum Mode {
     Normal,
     Insert,
     Visual,
+    VisualBlock,
+    BlockInsert,
     Command,
     Search,
     ExplorerInput(ExplorerInputType),

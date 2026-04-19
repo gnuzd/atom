@@ -602,22 +602,39 @@ impl TerminalUi {
                                     x: cursor.x,
                                     y: cursor.y,
                                 };
-                                let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x) {
-                                    (start.y, start.x, cur.y, cur.x)
-                                } else {
-                                    (cur.y, cur.x, start.y, start.x)
-                                };
-                                is_in_range = if actual_idx > s_y && actual_idx < e_y {
-                                    true
-                                } else if actual_idx == s_y && actual_idx == e_y {
-                                    x >= s_x && x <= e_x
-                                } else if actual_idx == s_y {
-                                    x >= s_x
-                                } else if actual_idx == e_y {
-                                    x <= e_x
-                                } else {
-                                    false
-                                };
+                                match vim.mode {
+                                    Mode::VisualBlock | Mode::BlockInsert => {
+                                        // Block selection: highlight rectangular region
+                                        let top_y = start.y.min(cur.y);
+                                        let bot_y = start.y.max(cur.y);
+                                        let left_x = start.x.min(cur.x);
+                                        let right_x = start.x.max(cur.x);
+                                        is_in_range = actual_idx >= top_y
+                                            && actual_idx <= bot_y
+                                            && x >= left_x
+                                            && x <= right_x;
+                                    }
+                                    _ => {
+                                        // Character-wise selection
+                                        let (s_y, s_x, e_y, e_x) =
+                                            if (start.y, start.x) < (cur.y, cur.x) {
+                                                (start.y, start.x, cur.y, cur.x)
+                                            } else {
+                                                (cur.y, cur.x, start.y, start.x)
+                                            };
+                                        is_in_range = if actual_idx > s_y && actual_idx < e_y {
+                                            true
+                                        } else if actual_idx == s_y && actual_idx == e_y {
+                                            x >= s_x && x <= e_x
+                                        } else if actual_idx == s_y {
+                                            x >= s_x
+                                        } else if actual_idx == e_y {
+                                            x <= e_x
+                                        } else {
+                                            false
+                                        };
+                                    }
+                                }
                                 if is_in_range {
                                     style = theme.get("Visual");
                                 }
@@ -1052,6 +1069,8 @@ impl TerminalUi {
             Mode::Normal => (theme.palette.blue, " NORMAL "),
             Mode::Insert => (theme.palette.green, " INSERT "),
             Mode::Visual => (theme.palette.purple, " VISUAL "),
+            Mode::VisualBlock => (theme.palette.purple, " V-BLOCK "),
+            Mode::BlockInsert => (theme.palette.orange, " BLOCK INSERT "),
             Mode::Command => (theme.palette.yellow, " COMMAND "),
             _ => (theme.palette.blue, " NORMAL "),
         };
@@ -1067,6 +1086,16 @@ impl TerminalUi {
                     .bg(mode_color)
                     .add_modifier(Modifier::BOLD),
             ));
+        }
+
+        // BlockInsert: show typed text so far
+        if let Mode::BlockInsert = vim.mode {
+            if !vim.block_insert_text.is_empty() {
+                status_spans.push(Span::styled(
+                    format!(" ▸ \"{}\"", vim.block_insert_text),
+                    theme.get("String"),
+                ));
+            }
         }
 
         // Section B: Git

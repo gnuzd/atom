@@ -1377,6 +1377,8 @@ impl App {
                                     _ => {}
                                 }
                             }
+                            Mode::VisualBlock => self.handle_visual_block_mode(key),
+                            Mode::BlockInsert => self.handle_block_insert_mode(key),
                         }
                     }
                 }
@@ -1412,7 +1414,7 @@ impl App {
             })?;
 
             let cursor_style = match self.vim.mode {
-                Mode::Insert => SetCursorStyle::SteadyBar,
+                Mode::Insert | Mode::BlockInsert => SetCursorStyle::SteadyBar,
                 _ => SetCursorStyle::SteadyBlock,
             };
             execute!(self.terminal.backend_mut(), cursor_style)?;
