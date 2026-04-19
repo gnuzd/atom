@@ -24,7 +24,7 @@ impl App {
             KeyCode::Char('w') => self.dispatch_action(Action::MoveWordForward, 1),
             KeyCode::Char('b') => self.dispatch_action(Action::MoveWordBackward, 1),
             KeyCode::Char('p') => self.dispatch_action(Action::PasteAfter, 1),
-            KeyCode::Char('s') => self.dispatch_action(Action::DeleteSelection, 1),
+            KeyCode::Char('s') => self.dispatch_action(Action::Substitute, 1),
             KeyCode::Char('y') => self.dispatch_action(Action::YankLine, 1),
             KeyCode::Char('d') | KeyCode::Char('x') => {
                 self.dispatch_action(Action::DeleteSelection, 1)

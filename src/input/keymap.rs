@@ -46,6 +46,7 @@ pub enum Action {
     // Editing
     DeleteChar,
     DeleteCharBefore,
+    Substitute,
     DeleteLine,
     YankLine,
     CopyToClipboard,
@@ -159,7 +160,7 @@ impl Keymap {
         km.bind("p", Action::PasteAfter);
         km.bind("P", Action::PasteBefore);
         km.bind("<C-c>", Action::CopyToClipboard);
-        km.bind("s", Action::DeleteSelection); // 's' in normal mode usually deletes char and enters insert
+        km.bind("s", Action::Substitute);
 
         // Sequences (handled via input_buffer currently, but we can pre-bind first char)
         // These will be resolved if we move sequence handling into Keymap later.

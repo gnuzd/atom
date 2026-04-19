@@ -846,6 +846,23 @@ impl App {
                 self.vim.register = self.editor.delete_selection(x, y, x, y);
                 self.vim.yank_type = YankType::Char;
             }
+            Action::Substitute => {
+                // s: delete char under cursor (or selection in Visual) and enter Insert
+                let y = self.editor.cursor().y;
+                let x = self.editor.cursor().x;
+                if let Mode::Visual = self.vim.mode {
+                    if let Some(start) = self.vim.selection_start {
+                        let cur = self.editor.cursor();
+                        self.vim.register = self.editor.delete_selection(start.x, start.y, cur.x, cur.y);
+                        self.vim.yank_type = YankType::Char;
+                        self.vim.selection_start = None;
+                    }
+                } else {
+                    self.vim.register = self.editor.delete_selection(x, y, x, y);
+                    self.vim.yank_type = YankType::Char;
+                }
+                self.vim.mode = Mode::Insert;
+            }
             Action::DeleteCharBefore => {
                 let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
                 if x > 0 {
