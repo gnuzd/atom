@@ -456,6 +456,19 @@ impl App {
                                 let mut action = Action::Unbound;
                                 let is_in_sequence = !self.vim.input_buffer.is_empty();
 
+                                // Ctrl+W: toggle split focus
+                                if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                                    if self.vim.split.is_some() {
+                                        self.vim.split_focused = !self.vim.split_focused;
+                                        continue;
+                                    }
+                                }
+                                // Esc closes preview popup
+                                if key.code == KeyCode::Esc && self.vim.preview_lines.is_some() {
+                                    self.vim.preview_lines = None;
+                                    continue;
+                                }
+
                                 if !is_in_sequence {
                                     action = match self.vim.focus {
                                         Focus::Editor => self.keymap_normal.resolve(&key),
@@ -620,13 +633,48 @@ impl App {
                                             KeyCode::Char('<') => self.explorer.decrease_width(),
                                             KeyCode::Char('>') => self.explorer.increase_width(),
                                             KeyCode::Char('y') => {
-                                                if let Some(entry) = self.explorer.selected_entry()
-                                                {
-                                                    self.vim.register =
-                                                        entry.path.to_string_lossy().to_string();
-                                                    self.vim.set_message(
-                                                        "Path copied to register".to_string(),
-                                                    );
+                                                if let Some(entry) = self.explorer.selected_entry() {
+                                                    self.vim.register = entry.path.to_string_lossy().to_string();
+                                                    self.vim.set_message("Path copied to register".to_string());
+                                                }
+                                            }
+                                            // Ctrl+S → open in horizontal split
+                                            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                                if let Some(entry) = self.explorer.selected_entry() {
+                                                    if entry.path.is_file() {
+                                                        let _ = self.editor.open_file(entry.path.clone());
+                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Horizontal);
+                                                        self.vim.split_buffer_idx = self.editor.active_idx;
+                                                        // Primary pane stays on previous buffer
+                                                        let prev = self.editor.active_idx.saturating_sub(1);
+                                                        self.editor.active_idx = if self.editor.buffers.len() > 1 { prev } else { 0 };
+                                                        self.vim.split_focused = false;
+                                                        self.vim.focus = Focus::Editor;
+                                                    }
+                                                }
+                                            }
+                                            // Ctrl+V → open in vertical split
+                                            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                                if let Some(entry) = self.explorer.selected_entry() {
+                                                    if entry.path.is_file() {
+                                                        let _ = self.editor.open_file(entry.path.clone());
+                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Vertical);
+                                                        self.vim.split_buffer_idx = self.editor.active_idx;
+                                                        let prev = self.editor.active_idx.saturating_sub(1);
+                                                        self.editor.active_idx = if self.editor.buffers.len() > 1 { prev } else { 0 };
+                                                        self.vim.split_focused = false;
+                                                        self.vim.focus = Focus::Editor;
+                                                    }
+                                                }
+                                            }
+                                            // Shift+P → floating preview (no focus change)
+                                            KeyCode::Char('P') => {
+                                                if let Some(entry) = self.explorer.selected_entry() {
+                                                    if entry.path.is_file() {
+                                                        if let Ok(content) = std::fs::read_to_string(&entry.path) {
+                                                            self.vim.preview_lines = Some(content.lines().map(|l| l.to_string()).collect());
+                                                        }
+                                                    }
                                                 }
                                             }
                                             _ => {}

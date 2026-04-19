@@ -50,3 +50,9 @@ pub enum Focus {
     Explorer,
     Trouble,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitKind {
+    Horizontal, // primary top, split below
+    Vertical,   // primary left, split right
+}

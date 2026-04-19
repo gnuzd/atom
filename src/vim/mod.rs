@@ -1,7 +1,7 @@
 pub mod mode;
 pub mod motion;
 
-use mode::{Focus, YankType};
+use mode::{Focus, SplitKind, YankType};
 use lsp_types::CompletionItem;
 use std::time::Instant;
 use crate::config::Config;
@@ -55,6 +55,10 @@ pub struct VimState {
     pub nucleus_pending_delete: Option<String>,
     pub block_insert_text: String,
     pub block_insert_col: usize,
+    pub split: Option<SplitKind>,
+    pub split_buffer_idx: usize,
+    pub split_focused: bool, // false = primary pane, true = split pane
+    pub preview_lines: Option<Vec<String>>, // floating file preview
     pub show_suggestions: bool,
     pub keymap_filter: String,
     pub command_suggestions: Vec<String>,
@@ -117,6 +121,10 @@ impl VimState {
             nucleus_pending_delete: None,
             block_insert_text: String::new(),
             block_insert_col: 0,
+            split: None,
+            split_buffer_idx: 0,
+            split_focused: false,
+            preview_lines: None,
             show_suggestions: false,
             keymap_filter: String::new(),
             command_suggestions: Vec::new(),
