@@ -14,6 +14,8 @@ pub struct Editor {
     pub treesitter: Arc<Mutex<treesitter::TreesitterManager>>,
     pub syntax_styles: Vec<Vec<ratatui::style::Style>>,
     pub last_syntax_text: String,
+    pub split_syntax_styles: Vec<Vec<ratatui::style::Style>>,
+    pub last_split_syntax_text: String,
 }
 
 impl Editor {
@@ -27,6 +29,8 @@ impl Editor {
             treesitter: Arc::new(Mutex::new(treesitter::TreesitterManager::new())),
             syntax_styles: Vec::new(),
             last_syntax_text: String::new(),
+            split_syntax_styles: Vec::new(),
+            last_split_syntax_text: String::new(),
         }
     }
 
@@ -69,6 +73,44 @@ impl Editor {
         let mut ts = self.treesitter.lock().unwrap();
         self.syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut ts);
         self.last_syntax_text = text;
+    }
+
+    pub fn refresh_split_syntax(&mut self, split_idx: usize) {
+        if split_idx >= self.buffers.len() {
+            return;
+        }
+        let (text, ext) = {
+            let buffer = &self.buffers[split_idx];
+            let text = buffer.text.to_string();
+            if text == self.last_split_syntax_text {
+                return;
+            }
+            let ext = buffer.file_path.as_ref()
+                .and_then(|p| p.extension())
+                .and_then(|s| s.to_str())
+                .unwrap_or("rs")
+                .to_string();
+            (text, ext)
+        };
+        let lang_name = match ext.as_str() {
+            "rs" => "rust",
+            "ts" => "typescript",
+            "tsx" => "tsx",
+            "js" | "jsx" => "javascript",
+            "py" => "python",
+            "go" => "go",
+            "c" | "h" => "c",
+            "cpp" | "hpp" | "cc" | "hh" => "cpp",
+            "lua" => "lua",
+            "json" => "json",
+            "toml" => "toml",
+            "html" => "html",
+            "css" => "css",
+            _ => &ext,
+        };
+        let mut ts = self.treesitter.lock().unwrap();
+        self.split_syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut ts);
+        self.last_split_syntax_text = text;
     }
 
     pub fn set_theme(&mut self, name: &str) {

@@ -355,13 +355,58 @@ impl App {
                                         })
                                         .split(main_chunks[1]);
 
+                                    // Compute split areas for click detection
+                                    let split_area: Option<Rect> = if let Some(kind) = self.vim.split {
+                                        match kind {
+                                            crate::vim::mode::SplitKind::Vertical => {
+                                                let halves = Layout::default()
+                                                    .direction(Direction::Horizontal)
+                                                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                                                    .split(editor_trouble_chunks[0]);
+                                                Some(halves[1])
+                                            }
+                                            crate::vim::mode::SplitKind::Horizontal => {
+                                                let halves = Layout::default()
+                                                    .direction(Direction::Vertical)
+                                                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                                                    .split(editor_trouble_chunks[0]);
+                                                Some(halves[1])
+                                            }
+                                        }
+                                    } else {
+                                        None
+                                    };
+
+                                    let clicked_split = split_area.map_or(false, |r| {
+                                        mouse.column >= r.x && mouse.column < r.x + r.width
+                                            && mouse.row >= r.y && mouse.row < r.y + r.height
+                                    });
+
                                     if self.trouble.visible
                                         && mouse.row >= editor_trouble_chunks[1].y
                                     {
                                         self.vim.focus = Focus::Trouble;
                                         let _click_row =
                                             (mouse.row - editor_trouble_chunks[1].y) as usize;
+                                    } else if clicked_split {
+                                        // Clicked in split pane — focus it, move split cursor
+                                        self.vim.split_focused = true;
+                                        self.vim.focus = Focus::Editor;
+                                        if let Some(r) = split_area {
+                                            let gutter: u16 = if self.vim.show_number || self.vim.relative_number { 5 } else { 0 };
+                                            let sidx = self.vim.split_buffer_idx;
+                                            if sidx < self.editor.cursors.len() {
+                                                let scroll = self.editor.cursors[sidx].scroll_y;
+                                                let row = (mouse.row.saturating_sub(r.y)) as usize + scroll;
+                                                let col = (mouse.column.saturating_sub(r.x + gutter)) as usize;
+                                                let buf_len = self.editor.buffers[sidx].len_lines();
+                                                let row = row.min(buf_len.saturating_sub(1));
+                                                self.editor.cursors[sidx].y = row;
+                                                self.editor.cursors[sidx].x = col;
+                                            }
+                                        }
                                     } else {
+                                        self.vim.split_focused = false;
                                         self.vim.focus = Focus::Editor;
                                         if let Some((buf_line, buf_col)) =
                                             self.mouse_to_editor_pos(mouse.column, mouse.row)
@@ -667,6 +712,8 @@ impl App {
                                                         self.vim.split = Some(crate::vim::mode::SplitKind::Horizontal);
                                                         self.vim.split_focused = false;
                                                         self.vim.focus = Focus::Editor;
+                                                        let sidx = self.vim.split_buffer_idx;
+                                                        self.editor.refresh_split_syntax(sidx);
                                                     }
                                                 }
                                             }
@@ -681,6 +728,8 @@ impl App {
                                                         self.vim.split = Some(crate::vim::mode::SplitKind::Vertical);
                                                         self.vim.split_focused = false;
                                                         self.vim.focus = Focus::Editor;
+                                                        let sidx = self.vim.split_buffer_idx;
+                                                        self.editor.refresh_split_syntax(sidx);
                                                     }
                                                 }
                                             }
@@ -1473,6 +1522,10 @@ impl App {
             self.editor
                 .scroll_into_view(visible_height, editor_width, self.vim.config.wrap);
             self.editor.refresh_syntax();
+            if self.vim.split.is_some() {
+                let sidx = self.vim.split_buffer_idx;
+                self.editor.refresh_split_syntax(sidx);
+            }
             self.terminal.draw(|f| {
                 self.ui.draw(
                     f,

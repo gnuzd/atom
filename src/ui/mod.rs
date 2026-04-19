@@ -1087,23 +1087,70 @@ impl TerminalUi {
             }
         }
 
-        // 2b. Split pane (secondary buffer, no border/title — plain buffer view)
+        // 2b. Split pane — full syntax highlight, uses split buffer's own cursor/scroll
         if let Some(split_rect) = split_area {
-            if let Some(buf) = editor.buffers.get(vim.split_buffer_idx) {
+            let sidx = vim.split_buffer_idx;
+            if let (Some(buf), Some(cursor)) = (editor.buffers.get(sidx), editor.cursors.get(sidx)) {
+                let scroll_y = cursor.scroll_y;
+                let visible_h = split_rect.height as usize;
                 let text_str = buf.text.to_string();
                 let lines: Vec<&str> = text_str.lines().collect();
-                let visible_h = split_rect.height as usize;
-                let line_items: Vec<Line> = (0..visible_h).map(|i| {
-                    if let Some(line_text) = lines.get(i) {
-                        let num = Span::styled(format!("{:>4} ", i + 1), theme.get("LineNr"));
-                        let content = Span::styled(line_text.to_string(), theme.get("Normal"));
-                        Line::from(vec![num, content])
+                let syntax = &editor.split_syntax_styles;
+
+                // Gutter width (line numbers)
+                let gutter_w: u16 = if vim.show_number || vim.relative_number { 5 } else { 0 };
+                let gutter_rect = Rect { x: split_rect.x, y: split_rect.y, width: gutter_w, height: split_rect.height };
+                let content_rect = Rect {
+                    x: split_rect.x + gutter_w,
+                    y: split_rect.y,
+                    width: split_rect.width.saturating_sub(gutter_w),
+                    height: split_rect.height,
+                };
+
+                // Line numbers
+                if gutter_w > 0 {
+                    let num_lines: Vec<Line> = (0..visible_h).map(|i| {
+                        let line_idx = i + scroll_y;
+                        if line_idx < lines.len() {
+                            let is_active = line_idx == cursor.y;
+                            let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
+                            Line::from(vec![Span::styled(format!("{:>3} ", line_idx + 1), style)])
+                        } else {
+                            Line::from(vec![Span::styled("~   ", theme.get("Comment"))])
+                        }
+                    }).collect();
+                    frame.render_widget(Paragraph::new(num_lines), gutter_rect);
+                }
+
+                // Cursor line highlight
+                if vim.config.cursorline && vim.split_focused {
+                    if let Some(screen_y) = cursor.y.checked_sub(scroll_y) {
+                        if screen_y < visible_h {
+                            frame.render_widget(
+                                Block::default().style(theme.get("CursorLine")),
+                                Rect { x: split_rect.x, y: split_rect.y + screen_y as u16, width: split_rect.width, height: 1 },
+                            );
+                        }
+                    }
+                }
+
+                // Code content with syntax highlighting
+                let code_lines: Vec<Line> = (0..visible_h).map(|i| {
+                    let line_idx = i + scroll_y;
+                    if let Some(line_text) = lines.get(line_idx) {
+                        let spans: Vec<Span> = line_text.chars().enumerate().map(|(x, c)| {
+                            let style = syntax.get(line_idx)
+                                .and_then(|s| s.get(x))
+                                .copied()
+                                .unwrap_or(theme.get("Normal"));
+                            Span::styled(c.to_string(), style)
+                        }).collect();
+                        Line::from(spans)
                     } else {
-                        Line::from(vec![Span::styled("~    ", theme.get("Comment"))])
+                        Line::from(vec![Span::styled("~", theme.get("Comment"))])
                     }
                 }).collect();
-                let para = Paragraph::new(line_items).style(theme.get("Normal"));
-                frame.render_widget(para, split_rect);
+                frame.render_widget(Paragraph::new(code_lines).style(theme.get("Normal")), content_rect);
             }
         }
 
