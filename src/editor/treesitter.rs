@@ -108,99 +108,85 @@ impl TreesitterManager {
     }
 
     pub fn install(&self, lang: &TreesitterLanguage) -> Result<(), String> {
-        let repo_dir = self.parser_dir.join(format!("{}-repo", lang.name));
-        
-        // 1. Clone or Pull
+        Self::install_to(lang, &self.parser_dir)
+    }
+
+    /// Blocking install that does NOT require holding the TreesitterManager lock.
+    /// Call this from a background thread after extracting `parser_dir`.
+    pub fn install_to(lang: &TreesitterLanguage, parser_dir: &Path) -> Result<(), String> {
+        let repo_dir = parser_dir.join(format!("{}-repo", lang.name));
+
         if repo_dir.exists() {
             Command::new("git")
-                .arg("-C")
-                .arg(&repo_dir)
-                .arg("pull")
-                .output()
+                .args(["-C", &repo_dir.to_string_lossy(), "pull"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
                 .map_err(|e| e.to_string())?;
         } else {
             Command::new("git")
-                .arg("clone")
-                .arg("--depth=1")
-                .arg(lang.repo)
-                .arg(&repo_dir)
-                .output()
+                .args(["clone", "--depth=1", lang.repo, &repo_dir.to_string_lossy()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
                 .map_err(|e| e.to_string())?;
         }
 
-        // 2. Compile
-        self.compile(lang.name, &repo_dir)?;
+        Self::compile_to(lang.name, &repo_dir, parser_dir)
+    }
 
-        // 3. Ensure queries are available
-        // In many repos, highlights.scm is in queries/
-        // We'll just leave the repo there for now so we can read queries from it.
-        
+    pub fn uninstall_at(lang_name: &str, parser_dir: &Path) -> Result<(), String> {
+        let ext = if cfg!(target_os = "macos") { "dylib" } else if cfg!(target_os = "windows") { "dll" } else { "so" };
+        let so_path = parser_dir.join(format!("{}.{}", lang_name, ext));
+        if so_path.exists() {
+            std::fs::remove_file(&so_path).map_err(|e| e.to_string())?;
+        }
+        let repo_dir = parser_dir.join(format!("{}-repo", lang_name));
+        if repo_dir.exists() {
+            std::fs::remove_dir_all(&repo_dir).map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
-    fn compile(&self, name: &str, repo_dir: &Path) -> Result<(), String> {
+    fn compile_to(name: &str, repo_dir: &Path, parser_dir: &Path) -> Result<(), String> {
         let src_dir = repo_dir.join("src");
-        // For some languages (like typescript), the parser is in a subdirectory
-        let (actual_src_dir, _) = if name == "typescript" {
-            (repo_dir.join("typescript").join("src"), "typescript")
+        let actual_src_dir = if name == "typescript" {
+            repo_dir.join("typescript").join("src")
         } else if name == "tsx" {
-            (repo_dir.join("tsx").join("src"), "tsx")
+            repo_dir.join("tsx").join("src")
         } else {
-            (src_dir, name)
+            src_dir
         };
 
         let parser_c = actual_src_dir.join("parser.c");
         let scanner_c = actual_src_dir.join("scanner.c");
         let scanner_cc = actual_src_dir.join("scanner.cc");
 
-        let mut output_path = self.parser_dir.join(format!("{}.so", name));
-        if cfg!(target_os = "macos") {
-            output_path.set_extension("dylib");
-        } else if cfg!(target_os = "windows") {
-            output_path.set_extension("dll");
-        }
+        let ext = if cfg!(target_os = "macos") { "dylib" } else if cfg!(target_os = "windows") { "dll" } else { "so" };
+        let output_path = parser_dir.join(format!("{}.{}", name, ext));
 
         let mut cmd = Command::new("cc");
         cmd.arg("-shared")
             .arg("-fPIC")
             .arg("-O3")
-            .arg("-I")
-            .arg(&actual_src_dir)
-            .arg("-o")
-            .arg(&output_path)
+            .arg("-I").arg(&actual_src_dir)
+            .arg("-o").arg(&output_path)
             .arg(&parser_c);
 
-        if scanner_c.exists() {
-            cmd.arg(&scanner_c);
-        }
+        if scanner_c.exists() { cmd.arg(&scanner_c); }
         if scanner_cc.exists() {
-            cmd.arg(&scanner_cc);
-            cmd.arg("-lstdc++");
+            cmd.arg(&scanner_cc).arg("-lstdc++");
         }
 
         let output = cmd.output().map_err(|e| e.to_string())?;
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).to_string());
         }
-
         Ok(())
     }
 
     pub fn uninstall(&self, lang_name: &str) -> Result<(), String> {
-        let mut so_path = self.parser_dir.join(format!("{}.so", lang_name));
-        if cfg!(target_os = "macos") {
-            so_path.set_extension("dylib");
-        } else if cfg!(target_os = "windows") {
-            so_path.set_extension("dll");
-        }
-        if so_path.exists() {
-            std::fs::remove_file(so_path).map_err(|e| e.to_string())?;
-        }
-        let repo_dir = self.parser_dir.join(format!("{}-repo", lang_name));
-        if repo_dir.exists() {
-            std::fs::remove_dir_all(repo_dir).map_err(|e| e.to_string())?;
-        }
-        Ok(())
+        Self::uninstall_at(lang_name, &self.parser_dir)
     }
 
     pub fn get_language(&mut self, lang_name: &str) -> Option<Language> {

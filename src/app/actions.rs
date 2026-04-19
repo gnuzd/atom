@@ -198,16 +198,16 @@ impl App {
             if let Some(lang) = target {
                 let lang_name = lang.name.to_string();
                 let lsp_manager = self.lsp_manager.clone();
-                let ts_clone = Arc::clone(&self.editor.treesitter);
+                // Extract parser_dir while holding the lock briefly, then release it
+                // before spawning so the background thread never holds the mutex during I/O.
+                let parser_dir = self.editor.treesitter.lock().unwrap().parser_dir.clone();
 
                 match action_type {
                     "uninstall" => {
-                        // Treesitter parsers don't need confirmation
                         lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
                         lsp_manager.op_status.lock().unwrap().insert(lang_name.clone(), "uninstalling".to_string());
                         std::thread::spawn(move || {
-                            let ts = ts_clone.lock().unwrap();
-                            let ok = ts.uninstall(&lang_name).is_ok();
+                            let ok = crate::editor::treesitter::TreesitterManager::uninstall_at(&lang_name, &parser_dir).is_ok();
                             lsp_manager.installing.lock().unwrap().remove(&lang_name);
                             lsp_manager.op_status.lock().unwrap().remove(&lang_name);
                             let msg = if ok {
@@ -219,21 +219,18 @@ impl App {
                         });
                     }
                     _ => {
-                        lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
-                        lsp_manager.op_status.lock().unwrap().insert(
-                            lang_name.clone(),
-                            if action_type == "update" { "downloading".to_string() } else { "downloading".to_string() },
-                        );
                         let is_update = action_type == "update";
                         let static_lang = crate::editor::treesitter::LANGUAGES.iter().find(|l| l.name == lang_name);
                         if let Some(l) = static_lang {
+                            lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
+                            lsp_manager.op_status.lock().unwrap().insert(lang_name.clone(), "downloading".to_string());
                             std::thread::spawn(move || {
                                 lsp_manager.op_status.lock().unwrap().insert(
                                     lang_name.clone(),
                                     if is_update { "updating".to_string() } else { "installing".to_string() },
                                 );
-                                let ts = ts_clone.lock().unwrap();
-                                let ok = ts.install(l).is_ok();
+                                // All blocking work (git clone + cc compile) done WITHOUT holding the mutex
+                                let ok = crate::editor::treesitter::TreesitterManager::install_to(l, &parser_dir).is_ok();
                                 lsp_manager.installing.lock().unwrap().remove(&lang_name);
                                 lsp_manager.op_status.lock().unwrap().remove(&lang_name);
                                 let action_label = if is_update { "updated" } else { "installed" };
@@ -244,9 +241,6 @@ impl App {
                                 };
                                 lsp_manager.op_messages.lock().unwrap().push((msg, ok));
                             });
-                        } else {
-                            lsp_manager.installing.lock().unwrap().remove(&lang_name);
-                            lsp_manager.op_status.lock().unwrap().remove(&lang_name);
                         }
                     }
                 }
