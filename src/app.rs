@@ -1,4 +1,5 @@
 mod actions;
+pub mod handlers;
 mod runtime;
 
 use anyhow::Result;
@@ -45,7 +46,16 @@ pub enum BackgroundFileOp {
 
 pub enum AsyncResult {
     Format(Result<String, String>),
-    Save(Result<String, String>), // Success contains final text
+    Save(Result<String, String>),
+}
+
+/// Carries the result of an async file operation (format or save) back to the main loop.
+pub struct AsyncFileResult {
+    pub path: PathBuf,
+    pub ext: String,
+    pub result: AsyncResult,
+    pub git_signs: Vec<(usize, crate::git::GitSign)>,
+    pub op: BackgroundFileOp,
 }
 
 pub struct App {
@@ -57,20 +67,8 @@ pub struct App {
     pub lsp_manager: LspManager,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub rx: mpsc::Receiver<notify::Result<notify::Event>>,
-    pub format_tx: mpsc::Sender<(
-        PathBuf,
-        String,
-        AsyncResult,
-        Vec<(usize, crate::git::GitSign)>,
-        BackgroundFileOp,
-    )>,
-    pub format_rx: mpsc::Receiver<(
-        PathBuf,
-        String,
-        AsyncResult,
-        Vec<(usize, crate::git::GitSign)>,
-        BackgroundFileOp,
-    )>,
+    pub async_tx: mpsc::Sender<AsyncFileResult>,
+    pub async_rx: mpsc::Receiver<AsyncFileResult>,
     pub watcher: RecommendedWatcher,
     pub keymap_normal: Keymap,
     pub keymap_insert: Keymap,
@@ -79,6 +77,8 @@ pub struct App {
     pub last_click: Option<(Instant, u16, u16)>,
     pub last_lsp_update: Option<Instant>,
     pub should_quit: bool,
+    pub is_dragging: bool,
+    pub drag_anchor: Option<Position>,
 }
 
 impl App {
@@ -104,7 +104,7 @@ impl App {
         let lsp_manager = LspManager::new();
 
         let (tx, rx) = mpsc::channel();
-        let (format_tx, format_rx) = mpsc::channel();
+        let (async_tx, async_rx) = mpsc::channel();
         let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
         watcher.watch(&vim.project_root, RecursiveMode::Recursive)?;
 
@@ -133,8 +133,8 @@ impl App {
             lsp_manager,
             terminal,
             rx,
-            format_tx,
-            format_rx,
+            async_tx,
+            async_rx,
             watcher,
             keymap_normal,
             keymap_insert,
@@ -143,6 +143,8 @@ impl App {
             last_click: None,
             last_lsp_update: None,
             should_quit: false,
+            is_dragging: false,
+            drag_anchor: None,
         })
     }
 }

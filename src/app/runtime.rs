@@ -52,7 +52,7 @@ impl App {
                 self.explorer.refresh();
             }
 
-            while let Ok((path, _ext, async_res, signs, _op)) = self.format_rx.try_recv() {
+            while let Ok(AsyncFileResult { path, ext: _ext, result: async_res, git_signs: signs, op: _op }) = self.async_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
 
                 match async_res {
@@ -354,6 +354,50 @@ impl App {
                                             (mouse.row - editor_trouble_chunks[1].y) as usize;
                                     } else {
                                         self.vim.focus = Focus::Editor;
+                                        if let Some((buf_line, buf_col)) =
+                                            self.mouse_to_editor_pos(mouse.column, mouse.row)
+                                        {
+                                            let now = Instant::now();
+                                            let is_double =
+                                                if let Some((last_time, last_col, last_row)) =
+                                                    self.last_click
+                                                {
+                                                    now.duration_since(last_time).as_millis() < 500
+                                                        && last_col == mouse.column
+                                                        && last_row == mouse.row
+                                                } else {
+                                                    false
+                                                };
+
+                                            self.editor.cursor_mut().y = buf_line;
+                                            self.editor.cursor_mut().x = buf_col;
+                                            self.editor.clamp_cursor();
+
+                                            if is_double {
+                                                if let Some((word_start, word_end)) =
+                                                    self.word_at_editor_pos(buf_line, buf_col)
+                                                {
+                                                    self.editor.cursor_mut().x = word_end;
+                                                    self.vim.selection_start =
+                                                        Some(Position { x: word_start, y: buf_line });
+                                                    self.vim.mode = Mode::Visual;
+                                                    self.vim.yank_type = YankType::Char;
+                                                }
+                                                self.last_click = None;
+                                                self.is_dragging = false;
+                                                self.drag_anchor = None;
+                                            } else {
+                                                self.last_click =
+                                                    Some((now, mouse.column, mouse.row));
+                                                self.drag_anchor =
+                                                    Some(Position { x: buf_col, y: buf_line });
+                                                self.is_dragging = false;
+                                                if self.vim.mode == Mode::Visual {
+                                                    self.vim.mode = Mode::Normal;
+                                                    self.vim.selection_start = None;
+                                                }
+                                            }
+                                        }
                                     }
                                 } else if root_chunks[1].height > 0 && mouse.row == root_chunks[1].y
                                 {
@@ -363,6 +407,29 @@ impl App {
                                     }
                                     self.vim.focus = Focus::Editor;
                                 }
+                            }
+                            MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
+                                if self.vim.focus == Focus::Editor {
+                                    if let Some((buf_line, buf_col)) =
+                                        self.mouse_to_editor_pos(mouse.column, mouse.row)
+                                    {
+                                        if !self.is_dragging {
+                                            self.is_dragging = true;
+                                            if let Some(anchor) = self.drag_anchor {
+                                                self.vim.selection_start = Some(anchor);
+                                                self.vim.mode = Mode::Visual;
+                                                self.vim.yank_type = YankType::Char;
+                                            }
+                                        }
+                                        self.editor.cursor_mut().y = buf_line;
+                                        self.editor.cursor_mut().x = buf_col;
+                                        self.editor.clamp_cursor();
+                                    }
+                                }
+                            }
+                            MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
+                                self.is_dragging = false;
+                                self.drag_anchor = None;
                             }
                             _ => {}
                         }
@@ -1351,5 +1418,67 @@ impl App {
         )?;
         self.terminal.show_cursor()?;
         Ok(())
+    }
+
+    /// Converts terminal mouse coordinates to (buffer_line, buffer_col).
+    fn mouse_to_editor_pos(&self, col: u16, row: u16) -> Option<(usize, usize)> {
+        let gutter_width: u16 = match (
+            self.vim.show_number || self.vim.relative_number,
+            self.vim.config.signcolumn,
+        ) {
+            (true, true) => 8,
+            (true, false) => 5,
+            (false, true) => 3,
+            (false, false) => 0,
+        };
+        let explorer_width = if self.explorer.visible { self.explorer.width } else { 0 };
+        let text_start_col = explorer_width + gutter_width;
+
+        if col < text_start_col {
+            return None;
+        }
+
+        let col_in_text = (col - text_start_col) as usize;
+        let scroll_y = self.editor.cursor().scroll_y;
+        let buf_line = scroll_y + row as usize;
+
+        let num_lines = self.editor.buffer().len_lines();
+        if buf_line >= num_lines {
+            return None;
+        }
+
+        let line = self.editor.buffer().line(buf_line)?;
+        let line_len: usize = line.chars().filter(|&c| c != '\n' && c != '\r').count();
+        let buf_col = col_in_text.min(line_len);
+
+        Some((buf_line, buf_col))
+    }
+
+    /// Returns (word_start, word_end) char indices (inclusive) for the word at the given position.
+    fn word_at_editor_pos(&self, line_idx: usize, col: usize) -> Option<(usize, usize)> {
+        let line = self.editor.buffer().line(line_idx)?;
+        let chars: Vec<char> = line.chars().take_while(|&c| c != '\n' && c != '\r').collect();
+
+        if col >= chars.len() {
+            return None;
+        }
+
+        let is_word_char = |c: char| c.is_alphanumeric() || c == '_';
+
+        if !is_word_char(chars[col]) {
+            return None;
+        }
+
+        let start = (0..=col)
+            .rev()
+            .find(|&i| !is_word_char(chars[i]))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let end = (col..chars.len())
+            .find(|&i| !is_word_char(chars[i]))
+            .unwrap_or(chars.len())
+            .saturating_sub(1);
+
+        Some((start, end))
     }
 }
