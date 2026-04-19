@@ -4,9 +4,23 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 impl App {
     pub fn handle_mason_mode(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.dispatch_action(Action::ExitMode, 1),
-            KeyCode::Char('j') | KeyCode::Down => self.dispatch_action(Action::SelectNext, 1),
-            KeyCode::Char('k') | KeyCode::Up => self.dispatch_action(Action::SelectPrev, 1),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                if self.vim.mason_pending_delete.is_some() {
+                    // Cancel pending delete instead of closing Mason
+                    self.vim.mason_pending_delete = None;
+                } else {
+                    self.dispatch_action(Action::ExitMode, 1);
+                }
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                // Moving to a different item cancels any pending delete
+                self.vim.mason_pending_delete = None;
+                self.dispatch_action(Action::SelectNext, 1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.vim.mason_pending_delete = None;
+                self.dispatch_action(Action::SelectPrev, 1);
+            }
             KeyCode::Char('1') => self.set_mason_tab(0),
             KeyCode::Char('2') => self.set_mason_tab(1),
             KeyCode::Char('3') => self.set_mason_tab(2),
@@ -14,6 +28,7 @@ impl App {
             KeyCode::Char('5') => self.set_mason_tab(4),
             KeyCode::Char('6') => self.set_mason_tab(5),
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.vim.mason_pending_delete = None;
                 self.vim.mode = Mode::MasonFilter;
                 self.vim.mason_filter.clear();
             }

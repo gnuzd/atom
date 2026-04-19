@@ -44,6 +44,12 @@ pub struct Package {
     pub install_args: &'static [&'static str],
 }
 
+impl Package {
+    pub fn needs_npm(&self) -> bool {
+        self.install_cmd == "npm"
+    }
+}
+
 pub const PACKAGES: &[Package] = &[
     Package {
         name: "rust-analyzer",
@@ -90,8 +96,8 @@ pub const PACKAGES: &[Package] = &[
         cmd: "stylua",
         kind: PackageKind::Formatter,
         description: "Opinionated Lua code formatter",
-        install_cmd: "npm",
-        install_args: &["install", "stylua-bin"],
+        install_cmd: "cargo",
+        install_args: &["install", "stylua"],
     },
     Package {
         name: "eslint_d",
@@ -154,7 +160,7 @@ pub const PACKAGES: &[Package] = &[
         cmd: "tree-sitter",
         kind: PackageKind::Linter,
         description: "Tree-sitter CLI",
-        install_cmd: "npm",
+        install_cmd: "cargo",
         install_args: &["install", "tree-sitter-cli"],
     },
     Package {
@@ -162,8 +168,8 @@ pub const PACKAGES: &[Package] = &[
         cmd: "actionlint",
         kind: PackageKind::Linter,
         description: "GitHub Actions workflow linter",
-        install_cmd: "npm",
-        install_args: &["install", "actionlint"],
+        install_cmd: "go",
+        install_args: &["install", "github.com/rhysd/actionlint/cmd/actionlint@latest"],
     },
     Package {
         name: "ansible-language-server",
@@ -196,6 +202,10 @@ pub struct LspManager {
     pub failed_exts: Arc<Mutex<HashSet<String>>>,
     pub installed_cache: Arc<Mutex<HashMap<String, bool>>>,
     pub installing: Arc<Mutex<HashSet<String>>>,
+    /// Maps package cmd → current phase label ("downloading", "installing", "updating", "uninstalling")
+    pub op_status: Arc<Mutex<HashMap<String, String>>>,
+    /// Completed operation messages: (display text, is_success)
+    pub op_messages: Arc<Mutex<Vec<(String, bool)>>>,
     pub formatter_cache: Arc<Mutex<HashMap<String, String>>>,
     pub not_found_cache: Arc<Mutex<HashSet<String>>>,
     pub root_cache: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
@@ -214,6 +224,8 @@ impl LspManager {
             failed_exts: Arc::new(Mutex::new(HashSet::new())),
             installed_cache: Arc::new(Mutex::new(HashMap::new())),
             installing: Arc::new(Mutex::new(HashSet::new())),
+            op_status: Arc::new(Mutex::new(HashMap::new())),
+            op_messages: Arc::new(Mutex::new(Vec::new())),
             formatter_cache: Arc::new(Mutex::new(HashMap::new())),
             not_found_cache: Arc::new(Mutex::new(HashSet::new())),
             root_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -228,7 +240,8 @@ impl LspManager {
     pub fn get_local_bin_dir() -> std::path::PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         let mut path = std::path::PathBuf::from(home);
-        path.push(".config");
+        path.push(".local");
+        path.push("share");
         path.push("atom");
         path.push("mason");
         path
@@ -324,80 +337,119 @@ impl LspManager {
     }
 
     pub fn uninstall_server(&self, server_cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.installing.lock().unwrap().insert(server_cmd.to_string());
+        self.op_status.lock().unwrap().insert(server_cmd.to_string(), "uninstalling".to_string());
+
         let local_dir = Self::get_local_bin_dir();
+
+        // Remove bin symlink
         let bin_dir = local_dir.join("bin");
         let target = bin_dir.join(server_cmd);
         if target.exists() {
             let _ = std::fs::remove_file(&target);
         }
 
-        let npm_dir = local_dir.join("node_modules");
-        if npm_dir.exists() {
-            // For npm packages, we'd ideally run 'npm uninstall', but for now just removing the symlink is a start.
-            // A full uninstall would need to know the npm package name.
+        // Proper npm uninstall
+        if let Some(pkg) = PACKAGES.iter().find(|p| p.cmd == server_cmd || p.name == server_cmd) {
+            if pkg.install_cmd == "npm" {
+                // Find the npm package name from install_args (skip "install")
+                let npm_pkg_name = pkg.install_args.iter().find(|&&a| a != "install").copied().unwrap_or(server_cmd);
+                let _ = Command::new("npm")
+                    .args(&["uninstall", "--prefix", &local_dir.to_string_lossy(), npm_pkg_name])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
         }
 
+        // Remove marker file
         let marker = local_dir.join(format!("{}.managed", server_cmd));
         if marker.exists() {
             let _ = std::fs::remove_file(marker);
         }
 
         self.installed_cache.lock().unwrap().remove(server_cmd);
+        self.installing.lock().unwrap().remove(server_cmd);
+        self.op_status.lock().unwrap().remove(server_cmd);
+        self.op_messages.lock().unwrap().push((format!("{} uninstalled", server_cmd), true));
         Ok(())
     }
 
     pub fn update_server(&self, server_cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // For now, update is just a re-install
-        self.install_server(server_cmd)
+        self.installing.lock().unwrap().insert(server_cmd.to_string());
+        self.op_status.lock().unwrap().insert(server_cmd.to_string(), "downloading".to_string());
+
+        let result = self.run_install_command(server_cmd, "updating");
+
+        self.installing.lock().unwrap().remove(server_cmd);
+        self.op_status.lock().unwrap().remove(server_cmd);
+
+        match &result {
+            Ok(()) => self.op_messages.lock().unwrap().push((format!("{} updated successfully", server_cmd), true)),
+            Err(e) => self.op_messages.lock().unwrap().push((format!("{} update failed: {}", server_cmd, e), false)),
+        }
+        result
     }
 
     pub fn install_server(&self, server_cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.installing.lock().unwrap().insert(server_cmd.to_string());
-        let server_cmd_clone = server_cmd.to_string();
-        let installing_clone = Arc::clone(&self.installing);
+        self.op_status.lock().unwrap().insert(server_cmd.to_string(), "downloading".to_string());
 
-        let result = (|| {
-            if let Some((cmd, args)) = Self::get_install_command(server_cmd) {
-                let local_dir = Self::get_local_bin_dir();
-                if !local_dir.exists() {
-                    std::fs::create_dir_all(&local_dir)?;
-                }
+        let result = self.run_install_command(server_cmd, "installing");
 
-                let status = Command::new(cmd)
-                    .args(args)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status()?;
-                if status.success() {
-                    // Create bin/ directory and symlink
-                    let bin_dir = local_dir.join("bin");
-                    if !bin_dir.exists() {
-                        let _ = std::fs::create_dir_all(&bin_dir);
-                    }
+        self.installing.lock().unwrap().remove(server_cmd);
+        self.op_status.lock().unwrap().remove(server_cmd);
 
-                    if cmd == "npm" {
-                        // Try to find the binary in node_modules/.bin and symlink it to bin/
-                        let npm_bin = local_dir.join("node_modules").join(".bin").join(server_cmd);
-                        if npm_bin.exists() {
-                            let target = bin_dir.join(server_cmd);
-                            if target.exists() { let _ = std::fs::remove_file(&target); }
-                            #[cfg(unix)]
-                            let _ = std::os::unix::fs::symlink(&npm_bin, &target);
-                        }
-                    } else {
-                        let marker = local_dir.join(format!("{}.managed", server_cmd));
-                        let _ = std::fs::File::create(marker);
-                    }
-                    self.installed_cache.lock().unwrap().insert(server_cmd_clone.clone(), true);
-                    return Ok(());
-                } else {
-                    return Err(format!("Installation failed with status: {}", status).into());
-                }
-            }
-            Err("No install command known for this server".into())
-        })();
-        installing_clone.lock().unwrap().remove(&server_cmd_clone);
+        match &result {
+            Ok(()) => self.op_messages.lock().unwrap().push((format!("{} installed successfully", server_cmd), true)),
+            Err(e) => self.op_messages.lock().unwrap().push((format!("{} install failed: {}", server_cmd, e), false)),
+        }
         result
+    }
+
+    fn run_install_command(&self, server_cmd: &str, post_phase: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some((cmd, args)) = Self::get_install_command(server_cmd) {
+            let local_dir = Self::get_local_bin_dir();
+            if !local_dir.exists() {
+                std::fs::create_dir_all(&local_dir)?;
+            }
+
+            let status = Command::new(cmd)
+                .args(&args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()?;
+
+            if status.success() {
+                // Transition to post-processing phase
+                self.op_status.lock().unwrap().insert(server_cmd.to_string(), post_phase.to_string());
+
+                let bin_dir = local_dir.join("bin");
+                if !bin_dir.exists() {
+                    let _ = std::fs::create_dir_all(&bin_dir);
+                }
+
+                if cmd == "npm" {
+                    // Symlink the npm .bin entry into our bin/ dir
+                    let npm_bin = local_dir.join("node_modules").join(".bin").join(server_cmd);
+                    if npm_bin.exists() {
+                        let target = bin_dir.join(server_cmd);
+                        if target.exists() { let _ = std::fs::remove_file(&target); }
+                        #[cfg(unix)]
+                        let _ = std::os::unix::fs::symlink(&npm_bin, &target);
+                    }
+                } else {
+                    // For rustup/cargo/go installs, leave a marker so is_managed() returns true
+                    let marker = local_dir.join(format!("{}.managed", server_cmd));
+                    let _ = std::fs::File::create(marker);
+                }
+                self.installed_cache.lock().unwrap().insert(server_cmd.to_string(), true);
+                return Ok(());
+            } else {
+                return Err(format!("command exited with status: {}", status).into());
+            }
+        }
+        Err("no install command known for this server".into())
     }
 
     pub fn start_client(&mut self, ext: &str, root_path: std::path::PathBuf) -> Result<(), Box<dyn std::error::Error>> {

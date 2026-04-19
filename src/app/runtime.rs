@@ -52,6 +52,15 @@ impl App {
                 self.explorer.refresh();
             }
 
+            // Drain completed Mason operation messages
+            let mason_msgs: Vec<(String, bool)> = {
+                let mut msgs = self.lsp_manager.op_messages.lock().unwrap();
+                msgs.drain(..).collect()
+            };
+            for (msg, _ok) in mason_msgs {
+                self.vim.set_message(msg);
+            }
+
             while let Ok(AsyncFileResult { path, ext: _ext, result: async_res, git_signs: signs, op: _op }) = self.async_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
 

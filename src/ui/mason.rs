@@ -91,7 +91,7 @@ impl TerminalUi {
         }
 
         let mut items = Vec::new();
-        let installing_set = lsp_manager.installing.lock().unwrap();
+        let op_status = lsp_manager.op_status.lock().unwrap();
 
         if vim.mason_tab == 5 {
             let ts = editor.treesitter.lock().unwrap();
@@ -108,7 +108,7 @@ impl TerminalUi {
             let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
                 .into_iter()
                 .partition(|l| ts.is_installed(l.name));
-            drop(ts); // Release lock before drawing items which might call it again via get_spinner if nested, though it's not here.
+            drop(ts);
 
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 format!("Installed ({})", installed.len()),
@@ -118,15 +118,15 @@ impl TerminalUi {
             )])));
 
             for l in &installed {
-                let is_installing = installing_set.contains(l.name);
+                let phase = op_status.get(l.name).map(|s| s.as_str());
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<25} ", l.name), theme.get("Keyword")),
                     Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
                 ];
-                if is_installing {
+                if let Some(p) = phase {
                     spans.push(Span::styled(
-                        format!(" {} installing...", vim.get_spinner()),
+                        format!(" {} {}...", vim.get_spinner(), p),
                         theme.get("Type"),
                     ));
                 } else {
@@ -144,15 +144,15 @@ impl TerminalUi {
             )])));
 
             for l in &available {
-                let is_installing = installing_set.contains(l.name);
+                let phase = op_status.get(l.name).map(|s| s.as_str());
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
                     Span::styled(format!("{:<25} ", l.name), theme.get("Normal")),
                     Span::styled(format!("{:<40} ", l.repo), theme.get("Comment")),
                 ];
-                if is_installing {
+                if let Some(p) = phase {
                     spans.push(Span::styled(
-                        format!(" {} downloading...", vim.get_spinner()),
+                        format!(" {} {}...", vim.get_spinner(), p),
                         theme.get("Type"),
                     ));
                 }
@@ -191,17 +191,25 @@ impl TerminalUi {
             )])));
 
             for p in &installed {
-                let is_installing = installing_set.contains(p.cmd);
+                let phase = op_status.get(p.cmd).map(|s| s.as_str());
+                let is_pending_delete = vim.mason_pending_delete.as_deref() == Some(p.cmd);
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<25} ", p.name), theme.get("Keyword")),
-                    Span::styled(format!("{:<40} ", p.cmd), theme.get("Comment")),
+                    Span::styled(format!("{:<35} ", p.description), theme.get("Comment")),
                 ];
-                if is_installing {
+                if let Some(ph) = phase {
                     spans.push(Span::styled(
-                        format!(" {} installing...", vim.get_spinner()),
+                        format!(" {} {}...", vim.get_spinner(), ph),
                         theme.get("Type"),
                     ));
+                } else if is_pending_delete {
+                    spans.push(Span::styled(
+                        " press d again to confirm uninstall",
+                        Style::default().fg(theme.palette.red).add_modifier(Modifier::BOLD),
+                    ));
+                } else {
+                    spans.push(Span::styled(" installed", theme.get("String")));
                 }
                 items.push(ListItem::new(Line::from(spans)));
             }
@@ -215,15 +223,17 @@ impl TerminalUi {
             )])));
 
             for p in &available {
-                let is_installing = installing_set.contains(p.cmd);
+                let phase = op_status.get(p.cmd).map(|s| s.as_str());
+                let install_via = if p.install_cmd == "npm" { "npm" } else { p.install_cmd };
                 let mut spans = vec![
                     Span::styled(" ○ ", theme.get("Comment")),
                     Span::styled(format!("{:<25} ", p.name), theme.get("Normal")),
-                    Span::styled(format!("{:<40} ", p.description), theme.get("Comment")),
+                    Span::styled(format!("{:<35} ", p.description), theme.get("Comment")),
+                    Span::styled(format!("via {:<6}", install_via), theme.get("Comment")),
                 ];
-                if is_installing {
+                if let Some(ph) = phase {
                     spans.push(Span::styled(
-                        format!(" {} downloading...", vim.get_spinner()),
+                        format!("  {} {}...", vim.get_spinner(), ph),
                         theme.get("Type"),
                     ));
                 }
@@ -237,21 +247,30 @@ impl TerminalUi {
 
         frame.render_stateful_widget(list, chunks[2], &mut vim.mason_state);
 
-        let mut help_spans = vec![Span::styled(
-            " space/i: install  u: update  d/x: uninstall  q: close ",
-            theme.get("Comment"),
-        )];
+        // Bottom help bar
+        let is_any_active = !op_status.is_empty();
+        drop(op_status);
 
-        if !installing_set.is_empty() {
-            let pkg = installing_set.iter().next().unwrap();
-            help_spans.push(Span::styled(
-                format!("  {} Installing {}... ", vim.get_spinner(), pkg),
-                theme.get("Keyword"),
-            ));
-        }
+        let help_line = if let Some(pkg) = &vim.mason_pending_delete {
+            Line::from(vec![
+                Span::styled(" Uninstall ", Style::default().fg(theme.palette.red).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{}? ", pkg), theme.get("Keyword")),
+                Span::styled("Press d/x to confirm  Esc to cancel", theme.get("Comment")),
+            ])
+        } else if is_any_active {
+            Line::from(vec![Span::styled(
+                " space/i: install  u: update  d/x: uninstall  q: close ",
+                theme.get("Comment"),
+            )])
+        } else {
+            Line::from(vec![Span::styled(
+                " space/i: install  u: update  d/x: uninstall  q: close ",
+                theme.get("Comment"),
+            )])
+        };
 
         frame.render_widget(
-            Paragraph::new(Line::from(help_spans)).alignment(Alignment::Center),
+            Paragraph::new(help_line).alignment(Alignment::Center),
             chunks[3],
         );
     }

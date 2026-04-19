@@ -171,16 +171,13 @@ impl App {
         };
 
         if self.vim.mason_tab == 5 {
+            // Treesitter parsers
             let ts_manager = Arc::clone(&self.editor.treesitter);
             let ts = ts_manager.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
                 .iter()
-                .filter(|l| {
-                    l.name
-                        .to_lowercase()
-                        .contains(&self.vim.mason_filter.to_lowercase())
-                })
+                .filter(|l| l.name.to_lowercase().contains(&self.vim.mason_filter.to_lowercase()))
                 .collect();
 
             let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
@@ -188,22 +185,12 @@ impl App {
                 .partition(|l| ts.is_installed(l.name));
             drop(ts);
 
-            // Mapping:
-            // 0: "Installed" Header
-            // 1..installed.len(): items
-            // installed.len() + 1: ""
-            // installed.len() + 2: "Available" Header
-            // installed.len() + 3..: available items
-            
+            // Layout: 0=Installed header, 1..=installed.len()=items, +1=blank, +2=Available header, +3..=items
             let target = if selected_idx >= 1 && selected_idx <= installed.len() {
                 Some(installed[selected_idx - 1])
             } else if selected_idx >= installed.len() + 3 {
                 let avail_idx = selected_idx - installed.len() - 3;
-                if avail_idx < available.len() {
-                    Some(available[avail_idx])
-                } else {
-                    None
-                }
+                available.get(avail_idx).copied()
             } else {
                 None
             };
@@ -211,39 +198,61 @@ impl App {
             if let Some(lang) = target {
                 let lang_name = lang.name.to_string();
                 let lsp_manager = self.lsp_manager.clone();
-                let ts_manager = Arc::clone(&self.editor.treesitter);
-                
+                let ts_clone = Arc::clone(&self.editor.treesitter);
+
                 match action_type {
                     "uninstall" => {
-                        self.vim.set_message(format!("Uninstalling parser {}...", lang_name));
+                        // Treesitter parsers don't need confirmation
                         lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
-                        
+                        lsp_manager.op_status.lock().unwrap().insert(lang_name.clone(), "uninstalling".to_string());
                         std::thread::spawn(move || {
-                            let ts = ts_manager.lock().unwrap();
-                            let _ = ts.uninstall(&lang_name);
-                            let mut installing = lsp_manager.installing.lock().unwrap();
-                            installing.remove(&lang_name);
+                            let ts = ts_clone.lock().unwrap();
+                            let ok = ts.uninstall(&lang_name).is_ok();
+                            lsp_manager.installing.lock().unwrap().remove(&lang_name);
+                            lsp_manager.op_status.lock().unwrap().remove(&lang_name);
+                            let msg = if ok {
+                                format!("parser {} uninstalled", lang_name)
+                            } else {
+                                format!("parser {} uninstall failed", lang_name)
+                            };
+                            lsp_manager.op_messages.lock().unwrap().push((msg, ok));
                         });
                     }
                     _ => {
-                        self.vim.set_message(format!("{} parser {}...", if action_type == "update" { "Updating" } else { "Installing" }, lang_name));
                         lsp_manager.installing.lock().unwrap().insert(lang_name.clone());
-                        
+                        lsp_manager.op_status.lock().unwrap().insert(
+                            lang_name.clone(),
+                            if action_type == "update" { "downloading".to_string() } else { "downloading".to_string() },
+                        );
+                        let is_update = action_type == "update";
                         let static_lang = crate::editor::treesitter::LANGUAGES.iter().find(|l| l.name == lang_name);
                         if let Some(l) = static_lang {
                             std::thread::spawn(move || {
-                                let ts = ts_manager.lock().unwrap();
-                                let _ = ts.install(l);
-                                let mut installing = lsp_manager.installing.lock().unwrap();
-                                installing.remove(&lang_name);
+                                lsp_manager.op_status.lock().unwrap().insert(
+                                    lang_name.clone(),
+                                    if is_update { "updating".to_string() } else { "installing".to_string() },
+                                );
+                                let ts = ts_clone.lock().unwrap();
+                                let ok = ts.install(l).is_ok();
+                                lsp_manager.installing.lock().unwrap().remove(&lang_name);
+                                lsp_manager.op_status.lock().unwrap().remove(&lang_name);
+                                let action_label = if is_update { "updated" } else { "installed" };
+                                let msg = if ok {
+                                    format!("parser {} {} successfully", lang_name, action_label)
+                                } else {
+                                    format!("parser {} {} failed", lang_name, action_label)
+                                };
+                                lsp_manager.op_messages.lock().unwrap().push((msg, ok));
                             });
                         } else {
                             lsp_manager.installing.lock().unwrap().remove(&lang_name);
+                            lsp_manager.op_status.lock().unwrap().remove(&lang_name);
                         }
                     }
                 }
             }
         } else {
+            // LSP / Formatter / Linter packages
             let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
                 .iter()
                 .filter(|p| {
@@ -256,9 +265,7 @@ impl App {
                         _ => true,
                     };
                     let filter = self.vim.mason_filter.to_lowercase();
-                    let matches_filter = p.name.to_lowercase().contains(&filter)
-                        || p.description.to_lowercase().contains(&filter);
-                    matches_tab && matches_filter
+                    matches_tab && (p.name.to_lowercase().contains(&filter) || p.description.to_lowercase().contains(&filter))
                 })
                 .collect();
 
@@ -272,34 +279,34 @@ impl App {
                 Some(installed[selected_idx - 1])
             } else if selected_idx >= installed.len() + 3 {
                 let avail_idx = selected_idx - installed.len() - 3;
-                if avail_idx < available.len() {
-                    Some(available[avail_idx])
-                } else {
-                    None
-                }
+                available.get(avail_idx).copied()
             } else {
                 None
             };
 
             if let Some(pkg) = target {
                 let pkg_cmd = pkg.cmd.to_string();
-                let pkg_name = pkg.name.to_string();
                 let lsp_manager = self.lsp_manager.clone();
 
                 match action_type {
                     "uninstall" => {
-                        self.vim.set_message(format!("Uninstalling {}...", pkg_name));
-                        lsp_manager.installing.lock().unwrap().insert(pkg_cmd.clone());
-                        let pkg_cmd_thread = pkg_cmd.clone();
-                        let lsp_manager_thread = lsp_manager.clone();
-                        
-                        std::thread::spawn(move || {
-                            let _ = lsp_manager_thread.uninstall_server(&pkg_cmd_thread);
-                            lsp_manager_thread.installing.lock().unwrap().remove(&pkg_cmd_thread);
-                        });
+                        // Require confirmation: first press sets pending, second press executes
+                        if self.vim.mason_pending_delete.as_deref() == Some(&pkg_cmd) {
+                            // Confirmed — execute uninstall
+                            self.vim.mason_pending_delete = None;
+                            let pkg_cmd_thread = pkg_cmd.clone();
+                            let lsp_manager_thread = lsp_manager.clone();
+                            std::thread::spawn(move || {
+                                let _ = lsp_manager_thread.uninstall_server(&pkg_cmd_thread);
+                            });
+                        } else {
+                            // First press — set pending and show confirmation on item line
+                            self.vim.mason_pending_delete = Some(pkg_cmd);
+                        }
                     }
                     _ => {
-                        self.vim.set_message(format!("{} {}...", if action_type == "update" { "Updating" } else { "Installing" }, pkg_name));
+                        // Clear any pending delete when starting install/update
+                        self.vim.mason_pending_delete = None;
                         let pkg_cmd_thread = pkg_cmd.clone();
                         let lsp_manager_thread = lsp_manager.clone();
                         let is_update = action_type == "update";
