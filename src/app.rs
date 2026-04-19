@@ -14,7 +14,7 @@ use crossterm::{
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     Terminal,
 };
 use std::{
@@ -123,6 +123,21 @@ impl App {
         keymap_explorer.bind("Esc", Action::ExitMode);
         keymap_explorer.bind("\\", Action::ToggleExplorer);
         keymap_explorer.bind(":", Action::EnterCommand);
+
+        // Navigation
+        keymap_explorer.bind("j", Action::MoveDown);
+        keymap_explorer.bind("k", Action::MoveUp);
+        keymap_explorer.bind("Down", Action::MoveDown);
+        keymap_explorer.bind("Up", Action::MoveUp);
+        keymap_explorer.bind("PageUp", Action::MovePageUp);
+        keymap_explorer.bind("PageDown", Action::MovePageDown);
+
+        // Open / expand / collapse
+        keymap_explorer.bind("l", Action::ExplorerExpand);
+        keymap_explorer.bind("Right", Action::ExplorerExpand);
+        keymap_explorer.bind("CR", Action::Confirm);
+        keymap_explorer.bind("h", Action::ExplorerCollapse);
+        keymap_explorer.bind("Left", Action::ExplorerCollapse);
 
         Ok(Self {
             vim,
