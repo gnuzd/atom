@@ -27,7 +27,7 @@ pub const COMMANDS: &[&str] = &[
     "e!",
     "Reload",
     "colorscheme",
-    "Manage",
+    "Nucleus",
     "TreesitterManager",
     "TressitterManager",
     "Trouble",
@@ -169,7 +169,7 @@ impl App {
                     self.dispatch_action(Action::TelescopeThemes, 1);
                 }
             }
-            "Manage" => self.dispatch_action(Action::EnterMason, 1),
+            "Nucleus" => self.dispatch_action(Action::EnterNucleus, 1),
             "TreesitterManager" | "TressitterManager" => self.enter_treesitter_manager(),
             "Trouble" => self.dispatch_action(Action::ToggleTrouble, 1),
             "format" | "Format" => self.dispatch_action(Action::Format, 1),

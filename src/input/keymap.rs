@@ -11,7 +11,7 @@ pub enum Action {
     EnterCommand,
     EnterSearch,
     ExitMode,
-    EnterMason,
+    EnterNucleus,
     EnterTrouble,
     EnterKeymaps,
 

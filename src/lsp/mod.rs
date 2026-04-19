@@ -243,7 +243,7 @@ impl LspManager {
         path.push(".local");
         path.push("share");
         path.push("atom");
-        path.push("mason");
+        path.push("nucleus");
         path
     }
 
@@ -252,7 +252,7 @@ impl LspManager {
     }
 
     pub fn is_managed(&self, server_cmd: &str) -> bool {
-        // Check local bin directory for Mason-managed packages (npm)
+        // Check local bin directory for Nucleus-managed packages (npm)
         let npm_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join(server_cmd);
         if npm_bin.exists() {
             return true;

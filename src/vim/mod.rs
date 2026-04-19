@@ -48,11 +48,11 @@ pub struct VimState {
     pub selected_suggestion: usize,
     pub suggestion_state: ListState,
     pub keymap_state: TableState,
-    pub mason_state: ListState,
+    pub nucleus_state: ListState,
     pub theme_state: ListState,
-    pub mason_tab: usize,
-    pub mason_filter: String,
-    pub mason_pending_delete: Option<String>,
+    pub nucleus_tab: usize,
+    pub nucleus_filter: String,
+    pub nucleus_pending_delete: Option<String>,
     pub show_suggestions: bool,
     pub keymap_filter: String,
     pub command_suggestions: Vec<String>,
@@ -87,8 +87,8 @@ impl VimState {
         suggestion_state.select(Some(0));
         let mut keymap_state = TableState::default();
         keymap_state.select(Some(0));
-        let mut mason_state = ListState::default();
-        mason_state.select(Some(0));
+        let mut nucleus_state = ListState::default();
+        nucleus_state.select(Some(0));
         let mut theme_state = ListState::default();
         theme_state.select(Some(0));
 
@@ -108,11 +108,11 @@ impl VimState {
             selected_suggestion: 0,
             suggestion_state,
             keymap_state,
-            mason_state,
+            nucleus_state,
             theme_state,
-            mason_tab: 0,
-            mason_filter: String::new(),
-            mason_pending_delete: None,
+            nucleus_tab: 0,
+            nucleus_filter: String::new(),
+            nucleus_pending_delete: None,
             show_suggestions: false,
             keymap_filter: String::new(),
             command_suggestions: Vec::new(),

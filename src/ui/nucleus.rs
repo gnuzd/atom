@@ -1,7 +1,7 @@
 use super::*;
 
 impl TerminalUi {
-    pub(crate) fn draw_mason(
+    pub(crate) fn draw_nucleus(
         &self,
         frame: &mut Frame,
         editor: &crate::editor::Editor,
@@ -10,26 +10,26 @@ impl TerminalUi {
         vim: &mut crate::vim::VimState,
     ) {
         let area = frame.area();
-        let mason_width = (area.width as f32 * 0.8) as u16;
-        let mason_height = (area.height as f32 * 0.8) as u16;
-        let mason_area = Rect {
-            x: (area.width - mason_width) / 2,
-            y: (area.height - mason_height) / 2,
-            width: mason_width,
-            height: mason_height,
+        let nucleus_width = (area.width as f32 * 0.8) as u16;
+        let nucleus_height = (area.height as f32 * 0.8) as u16;
+        let nucleus_area = Rect {
+            x: (area.width - nucleus_width) / 2,
+            y: (area.height - nucleus_height) / 2,
+            width: nucleus_width,
+            height: nucleus_height,
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Manage.atom ")
+            .title(" Nucleus ")
             .border_style(theme.get("TreeExplorerConnector"))
             .style(theme.get("Normal"));
 
-        frame.render_widget(Clear, mason_area);
-        frame.render_widget(block, mason_area);
+        frame.render_widget(Clear, nucleus_area);
+        frame.render_widget(block, nucleus_area);
 
-        let inner_area = mason_area.inner(Margin {
+        let inner_area = nucleus_area.inner(Margin {
             horizontal: 2,
             vertical: 1,
         });
@@ -53,7 +53,7 @@ impl TerminalUi {
         ];
         let mut tab_spans = Vec::new();
         for (i, tab) in tabs.iter().enumerate() {
-            let style = if i == vim.mason_tab {
+            let style = if i == vim.nucleus_tab {
                 Style::default()
                     .fg(theme.palette.black)
                     .bg(theme.palette.orange)
@@ -67,12 +67,12 @@ impl TerminalUi {
         frame.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
 
         let filter_prompt = "Language Filter: ";
-        let filter_text = if let Mode::MasonFilter = vim.mode {
-            format!("{}{}", filter_prompt, vim.mason_filter)
-        } else if vim.mason_filter.is_empty() {
+        let filter_text = if let Mode::NucleusFilter = vim.mode {
+            format!("{}{}", filter_prompt, vim.nucleus_filter)
+        } else if vim.nucleus_filter.is_empty() {
             "Language Filter: press <C-f> to apply filter".to_string()
         } else {
-            format!("{}{}", filter_prompt, vim.mason_filter)
+            format!("{}{}", filter_prompt, vim.nucleus_filter)
         };
 
         frame.render_widget(
@@ -83,9 +83,9 @@ impl TerminalUi {
             chunks[1],
         );
 
-        if let Mode::MasonFilter = vim.mode {
+        if let Mode::NucleusFilter = vim.mode {
             frame.set_cursor_position((
-                chunks[1].x + filter_prompt.len() as u16 + vim.mason_filter.len() as u16,
+                chunks[1].x + filter_prompt.len() as u16 + vim.nucleus_filter.len() as u16,
                 chunks[1].y + 1,
             ));
         }
@@ -93,7 +93,7 @@ impl TerminalUi {
         let mut items = Vec::new();
         let op_status = lsp_manager.op_status.lock().unwrap();
 
-        if vim.mason_tab == 5 {
+        if vim.nucleus_tab == 5 {
             let ts = editor.treesitter.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
@@ -101,7 +101,7 @@ impl TerminalUi {
                 .filter(|l| {
                     l.name
                         .to_lowercase()
-                        .contains(&vim.mason_filter.to_lowercase())
+                        .contains(&vim.nucleus_filter.to_lowercase())
                 })
                 .collect();
 
@@ -160,7 +160,7 @@ impl TerminalUi {
             let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
                 .iter()
                 .filter(|p| {
-                    let matches_tab = match vim.mason_tab {
+                    let matches_tab = match vim.nucleus_tab {
                         0 => true,
                         1 => p.kind == crate::lsp::PackageKind::Lsp,
                         2 => p.kind == crate::lsp::PackageKind::Dap,
@@ -168,7 +168,7 @@ impl TerminalUi {
                         4 => p.kind == crate::lsp::PackageKind::Formatter,
                         _ => true,
                     };
-                    let filter = vim.mason_filter.to_lowercase();
+                    let filter = vim.nucleus_filter.to_lowercase();
                     let matches_filter = p.name.to_lowercase().contains(&filter)
                         || p.description.to_lowercase().contains(&filter);
                     matches_tab && matches_filter
@@ -190,7 +190,7 @@ impl TerminalUi {
 
             for p in &installed {
                 let phase = op_status.get(p.cmd).map(|s| s.as_str());
-                let is_pending_delete = vim.mason_pending_delete.as_deref() == Some(p.cmd);
+                let is_pending_delete = vim.nucleus_pending_delete.as_deref() == Some(p.cmd);
                 let mut spans = vec![
                     Span::styled(" ● ", theme.get("String")),
                     Span::styled(format!("{:<25} ", p.name), theme.get("Keyword")),
@@ -241,13 +241,13 @@ impl TerminalUi {
             .highlight_style(theme.get("CursorLine"))
             .highlight_symbol(">> ");
 
-        frame.render_stateful_widget(list, chunks[2], &mut vim.mason_state);
+        frame.render_stateful_widget(list, chunks[2], &mut vim.nucleus_state);
 
         // Bottom help bar
         let is_any_active = !op_status.is_empty();
         drop(op_status);
 
-        let help_line = if let Some(pkg) = &vim.mason_pending_delete {
+        let help_line = if let Some(pkg) = &vim.nucleus_pending_delete {
             Line::from(vec![
                 Span::styled(" Uninstall ", Style::default().fg(theme.palette.red).add_modifier(Modifier::BOLD)),
                 Span::styled(format!("{}? ", pkg), theme.get("Keyword")),

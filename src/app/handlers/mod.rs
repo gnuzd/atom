@@ -2,7 +2,7 @@ mod command;
 mod confirm;
 mod explorer;
 mod insert;
-mod mason;
+mod nucleus;
 mod normal;
 mod search;
 mod telescope;
@@ -29,8 +29,8 @@ impl App {
             Mode::ExplorerInput(input_type) => self.handle_explorer_input_mode(key, input_type),
             Mode::Confirm(action) => self.handle_confirm_mode(key, action),
             Mode::Telescope(_) => self.handle_telescope_mode(key),
-            Mode::Mason => self.handle_mason_mode(key),
-            Mode::MasonFilter => self.handle_mason_filter_mode(key),
+            Mode::Nucleus => self.handle_nucleus_mode(key),
+            Mode::NucleusFilter => self.handle_nucleus_filter_mode(key),
             Mode::Keymaps => self.handle_keymaps_mode(key),
             Mode::Command => self.handle_command_mode(key),
         }

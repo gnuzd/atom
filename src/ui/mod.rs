@@ -3,7 +3,7 @@ pub mod explorer;
 pub mod icons;
 pub mod intro;
 mod keymaps;
-mod mason;
+mod nucleus;
 pub mod telescope;
 pub mod trouble;
 
@@ -1372,8 +1372,8 @@ impl TerminalUi {
             }
         }
 
-        if let Mode::Mason = vim.mode {
-            self.draw_mason(frame, editor, lsp_manager, theme, vim);
+        if let Mode::Nucleus = vim.mode {
+            self.draw_nucleus(frame, editor, lsp_manager, theme, vim);
         }
 
         if let Mode::Keymaps = vim.mode {

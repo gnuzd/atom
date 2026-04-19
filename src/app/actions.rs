@@ -163,21 +163,21 @@ impl App {
     }
 
     pub fn install_selected_package(&mut self, key: crossterm::event::KeyEvent) {
-        let selected_idx = self.vim.mason_state.selected().unwrap_or(0);
+        let selected_idx = self.vim.nucleus_state.selected().unwrap_or(0);
         let action_type = match key.code {
             crossterm::event::KeyCode::Char('u') => "update",
             crossterm::event::KeyCode::Char('d') | crossterm::event::KeyCode::Char('x') => "uninstall",
             _ => "install",
         };
 
-        if self.vim.mason_tab == 5 {
+        if self.vim.nucleus_tab == 5 {
             // Treesitter parsers
             let ts_manager = Arc::clone(&self.editor.treesitter);
             let ts = ts_manager.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
                 .iter()
-                .filter(|l| l.name.to_lowercase().contains(&self.vim.mason_filter.to_lowercase()))
+                .filter(|l| l.name.to_lowercase().contains(&self.vim.nucleus_filter.to_lowercase()))
                 .collect();
 
             let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
@@ -250,7 +250,7 @@ impl App {
             let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
                 .iter()
                 .filter(|p| {
-                    let matches_tab = match self.vim.mason_tab {
+                    let matches_tab = match self.vim.nucleus_tab {
                         0 => true,
                         1 => p.kind == crate::lsp::PackageKind::Lsp,
                         2 => p.kind == crate::lsp::PackageKind::Dap,
@@ -258,7 +258,7 @@ impl App {
                         4 => p.kind == crate::lsp::PackageKind::Formatter,
                         _ => true,
                     };
-                    let filter = self.vim.mason_filter.to_lowercase();
+                    let filter = self.vim.nucleus_filter.to_lowercase();
                     matches_tab && (p.name.to_lowercase().contains(&filter) || p.description.to_lowercase().contains(&filter))
                 })
                 .collect();
@@ -285,9 +285,9 @@ impl App {
                 match action_type {
                     "uninstall" => {
                         // Require confirmation: first press sets pending, second press executes
-                        if self.vim.mason_pending_delete.as_deref() == Some(&pkg_cmd) {
+                        if self.vim.nucleus_pending_delete.as_deref() == Some(&pkg_cmd) {
                             // Confirmed — execute uninstall
-                            self.vim.mason_pending_delete = None;
+                            self.vim.nucleus_pending_delete = None;
                             let pkg_cmd_thread = pkg_cmd.clone();
                             let lsp_manager_thread = lsp_manager.clone();
                             std::thread::spawn(move || {
@@ -295,12 +295,12 @@ impl App {
                             });
                         } else {
                             // First press — set pending and show confirmation on item line
-                            self.vim.mason_pending_delete = Some(pkg_cmd);
+                            self.vim.nucleus_pending_delete = Some(pkg_cmd);
                         }
                     }
                     _ => {
                         // Clear any pending delete when starting install/update
-                        self.vim.mason_pending_delete = None;
+                        self.vim.nucleus_pending_delete = None;
                         let pkg_cmd_thread = pkg_cmd.clone();
                         let lsp_manager_thread = lsp_manager.clone();
                         let is_update = action_type == "update";
@@ -318,10 +318,10 @@ impl App {
     }
 
     pub fn enter_treesitter_manager(&mut self) {
-        self.vim.mode = Mode::Mason;
-        self.vim.mason_tab = 5;
-        self.vim.mason_filter.clear();
-        self.vim.mason_state.select(Some(0));
+        self.vim.mode = Mode::Nucleus;
+        self.vim.nucleus_tab = 5;
+        self.vim.nucleus_filter.clear();
+        self.vim.nucleus_state.select(Some(0));
     }
 
     pub fn toggle_comment(&mut self) {
@@ -536,8 +536,8 @@ impl App {
         self.refresh_filtered_suggestions();
     }
 
-    fn get_mason_items_count(&self) -> usize {
-        if self.vim.mason_tab == 5 {
+    fn get_nucleus_items_count(&self) -> usize {
+        if self.vim.nucleus_tab == 5 {
             let ts = self.editor.treesitter.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
@@ -545,7 +545,7 @@ impl App {
                 .filter(|l| {
                     l.name
                         .to_lowercase()
-                        .contains(&self.vim.mason_filter.to_lowercase())
+                        .contains(&self.vim.nucleus_filter.to_lowercase())
                 })
                 .collect();
             let (installed, available): (Vec<_>, Vec<_>) = filtered_langs
@@ -556,7 +556,7 @@ impl App {
             let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
                 .iter()
                 .filter(|p| {
-                    let matches_tab = match self.vim.mason_tab {
+                    let matches_tab = match self.vim.nucleus_tab {
                         0 => true,
                         1 => p.kind == crate::lsp::PackageKind::Lsp,
                         2 => p.kind == crate::lsp::PackageKind::Dap,
@@ -564,7 +564,7 @@ impl App {
                         4 => p.kind == crate::lsp::PackageKind::Formatter,
                         _ => true,
                     };
-                    let filter = self.vim.mason_filter.to_lowercase();
+                    let filter = self.vim.nucleus_filter.to_lowercase();
                     let matches_filter = p.name.to_lowercase().contains(&filter)
                         || p.description.to_lowercase().contains(&filter);
                     matches_tab && matches_filter
@@ -577,8 +577,8 @@ impl App {
         }
     }
 
-    fn is_mason_header_or_empty(&self, idx: usize) -> bool {
-        if self.vim.mason_tab == 5 {
+    fn is_nucleus_header_or_empty(&self, idx: usize) -> bool {
+        if self.vim.nucleus_tab == 5 {
             let ts = self.editor.treesitter.lock().unwrap();
             let languages = &crate::editor::treesitter::LANGUAGES;
             let filtered_langs: Vec<_> = languages
@@ -586,7 +586,7 @@ impl App {
                 .filter(|l| {
                     l.name
                         .to_lowercase()
-                        .contains(&self.vim.mason_filter.to_lowercase())
+                        .contains(&self.vim.nucleus_filter.to_lowercase())
                 })
                 .collect();
             let (installed, _): (Vec<_>, Vec<_>) = filtered_langs
@@ -598,7 +598,7 @@ impl App {
             let packages: Vec<&crate::lsp::Package> = crate::lsp::PACKAGES
                 .iter()
                 .filter(|p| {
-                    let matches_tab = match self.vim.mason_tab {
+                    let matches_tab = match self.vim.nucleus_tab {
                         0 => true,
                         1 => p.kind == crate::lsp::PackageKind::Lsp,
                         2 => p.kind == crate::lsp::PackageKind::Dap,
@@ -606,7 +606,7 @@ impl App {
                         4 => p.kind == crate::lsp::PackageKind::Formatter,
                         _ => true,
                     };
-                    let filter = self.vim.mason_filter.to_lowercase();
+                    let filter = self.vim.nucleus_filter.to_lowercase();
                     let matches_filter = p.name.to_lowercase().contains(&filter)
                         || p.description.to_lowercase().contains(&filter);
                     matches_tab && matches_filter
@@ -661,8 +661,8 @@ impl App {
                     self.vim.telescope.close();
                 }
             }
-            Action::EnterMason => {
-                self.vim.mode = Mode::Mason;
+            Action::EnterNucleus => {
+                self.vim.mode = Mode::Nucleus;
             }
             Action::EnterTrouble => {
                 self.trouble.toggle();
@@ -1202,16 +1202,16 @@ impl App {
             }
             Action::SelectNext => match self.vim.mode {
                 Mode::Telescope(_) => self.vim.telescope.move_down(),
-                Mode::Mason => {
-                    let i = self.vim.mason_state.selected().unwrap_or(0);
-                    let num_items = self.get_mason_items_count();
+                Mode::Nucleus => {
+                    let i = self.vim.nucleus_state.selected().unwrap_or(0);
+                    let num_items = self.get_nucleus_items_count();
                     let mut next_i = (i + 1) % num_items;
                     
                     // Skip headers and empty lines
-                    while self.is_mason_header_or_empty(next_i) && next_i != i {
+                    while self.is_nucleus_header_or_empty(next_i) && next_i != i {
                         next_i = (next_i + 1) % num_items;
                     }
-                    self.vim.mason_state.select(Some(next_i));
+                    self.vim.nucleus_state.select(Some(next_i));
                 }
                 Mode::Keymaps => {
                     let i = self.vim.keymap_state.selected().unwrap_or(0);
@@ -1232,16 +1232,16 @@ impl App {
             },
             Action::SelectPrev => match self.vim.mode {
                 Mode::Telescope(_) => self.vim.telescope.move_up(),
-                Mode::Mason => {
-                    let i = self.vim.mason_state.selected().unwrap_or(0);
-                    let num_items = self.get_mason_items_count();
+                Mode::Nucleus => {
+                    let i = self.vim.nucleus_state.selected().unwrap_or(0);
+                    let num_items = self.get_nucleus_items_count();
                     let mut next_i = if i > 0 { i - 1 } else { num_items - 1 };
                     
                     // Skip headers and empty lines
-                    while self.is_mason_header_or_empty(next_i) && next_i != i {
+                    while self.is_nucleus_header_or_empty(next_i) && next_i != i {
                         next_i = if next_i > 0 { next_i - 1 } else { num_items - 1 };
                     }
-                    self.vim.mason_state.select(Some(next_i));
+                    self.vim.nucleus_state.select(Some(next_i));
                 }
                 Mode::Keymaps => {
                     let i = self.vim.keymap_state.selected().unwrap_or(0);

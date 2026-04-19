@@ -52,12 +52,12 @@ impl App {
                 self.explorer.refresh();
             }
 
-            // Drain completed Mason operation messages
-            let mason_msgs: Vec<(String, bool)> = {
+            // Drain completed Nucleus operation messages
+            let nucleus_msgs: Vec<(String, bool)> = {
                 let mut msgs = self.lsp_manager.op_messages.lock().unwrap();
                 msgs.drain(..).collect()
             };
-            for (msg, _ok) in mason_msgs {
+            for (msg, _ok) in nucleus_msgs {
                 self.vim.set_message(msg);
             }
 
@@ -1063,7 +1063,7 @@ impl App {
                                 KeyCode::Enter => self.dispatch_action(Action::Confirm, 1),
                                 _ => {}
                             },
-                            Mode::Mason => match key.code {
+                            Mode::Nucleus => match key.code {
                                 KeyCode::Esc | KeyCode::Char('q') => {
                                     self.dispatch_action(Action::ExitMode, 1)
                                 }
@@ -1074,34 +1074,34 @@ impl App {
                                     self.dispatch_action(Action::SelectPrev, 1)
                                 }
                                 KeyCode::Char('1') => {
-                                    self.vim.mason_tab = 0;
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_tab = 0;
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Char('2') => {
-                                    self.vim.mason_tab = 1;
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_tab = 1;
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Char('3') => {
-                                    self.vim.mason_tab = 2;
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_tab = 2;
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Char('4') => {
-                                    self.vim.mason_tab = 3;
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_tab = 3;
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Char('5') => {
-                                    self.vim.mason_tab = 4;
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_tab = 4;
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Char('6') => {
-                                    self.vim.mason_tab = 5;
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_tab = 5;
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Char('f')
                                     if key.modifiers.contains(KeyModifiers::CONTROL) =>
                                 {
-                                    self.vim.mode = Mode::MasonFilter;
-                                    self.vim.mason_filter.clear();
+                                    self.vim.mode = Mode::NucleusFilter;
+                                    self.vim.nucleus_filter.clear();
                                 }
                                 KeyCode::Char(' ')
                                 | KeyCode::Char('i')
@@ -1109,17 +1109,17 @@ impl App {
                                 | KeyCode::Char('d')
                                 | KeyCode::Char('x') => self.install_selected_package(key),                                _ => {}
                             },
-                            Mode::MasonFilter => match key.code {
+                            Mode::NucleusFilter => match key.code {
                                 KeyCode::Esc | KeyCode::Enter => {
-                                    self.vim.mode = Mode::Mason;
+                                    self.vim.mode = Mode::Nucleus;
                                 }
                                 KeyCode::Char(c) => {
-                                    self.vim.mason_filter.push(c);
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_filter.push(c);
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 KeyCode::Backspace => {
-                                    self.vim.mason_filter.pop();
-                                    self.vim.mason_state.select(Some(0));
+                                    self.vim.nucleus_filter.pop();
+                                    self.vim.nucleus_state.select(Some(0));
                                 }
                                 _ => {}
                             },
@@ -1168,7 +1168,7 @@ impl App {
                                     "e!",
                                     "Reload",
                                     "colorscheme",
-                                    "Manage",
+                                    "Nucleus",
                                     "TreesitterManager",
                                     "TressitterManager",
                                     "Trouble",
@@ -1314,8 +1314,8 @@ impl App {
                                                             );
                                                         }
                                                     }
-                                                    "Manage" => {
-                                                        self.dispatch_action(Action::EnterMason, 1)
+                                                    "Nucleus" => {
+                                                        self.dispatch_action(Action::EnterNucleus, 1)
                                                     }
                                                     "TreesitterManager" | "TressitterManager" => {
                                                         self.enter_treesitter_manager();
