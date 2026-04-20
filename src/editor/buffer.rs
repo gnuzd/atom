@@ -12,6 +12,7 @@ pub struct Buffer {
     pub folded_ranges: Vec<(usize, usize)>,
     pub git_signs: Vec<(usize, GitSign)>,
     pub last_modified: Option<SystemTime>,
+    pub version: usize,
 }
 
 impl Buffer {
@@ -25,6 +26,7 @@ impl Buffer {
             folded_ranges: Vec::new(),
             git_signs: Vec::new(),
             last_modified: None,
+            version: 0,
         }
     }
 
@@ -41,6 +43,7 @@ impl Buffer {
             folded_ranges: Vec::new(),
             git_signs: Vec::new(),
             last_modified,
+            version: 0,
         })
     }
 
@@ -52,6 +55,7 @@ impl Buffer {
             self.modified = false;
             self.history.clear();
             self.redo_stack.clear();
+            self.version += 1;
         }
         Ok(())
     }
@@ -79,6 +83,7 @@ impl Buffer {
         self.history.push(self.text.clone());
         self.redo_stack.clear();
         self.modified = true;
+        self.version += 1;
     }
 
     pub fn apply_edit<F>(&mut self, edit_func: F) 
@@ -91,6 +96,7 @@ impl Buffer {
         if let Some(prev_state) = self.history.pop() {
             self.redo_stack.push(self.text.clone());
             self.text = prev_state;
+            self.version += 1;
             true
         } else {
             false
@@ -101,6 +107,7 @@ impl Buffer {
         if let Some(next_state) = self.redo_stack.pop() {
             self.history.push(self.text.clone());
             self.text = next_state;
+            self.version += 1;
             true
         } else {
             false

@@ -32,6 +32,156 @@ pub struct GitInfo {
     pub removed: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pane {
+    pub id: usize,
+    pub buffer_idx: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaneLayout {
+    Window(Pane),
+    Split(SplitKind, Vec<PaneLayout>),
+}
+
+impl PaneLayout {
+    pub fn split(&mut self, target_id: usize, new_pane: Pane, kind: SplitKind) -> bool {
+        match self {
+            PaneLayout::Window(pane) => {
+                if pane.id == target_id {
+                    let old_pane = pane.clone();
+                    *self = PaneLayout::Split(kind, vec![PaneLayout::Window(old_pane), PaneLayout::Window(new_pane)]);
+                    return true;
+                }
+                false
+            }
+            PaneLayout::Split(split_kind, children) => {
+                let mut found = false;
+                let mut insert_idx = 0;
+                for (i, child) in children.iter_mut().enumerate() {
+                    if child.split(target_id, new_pane.clone(), kind) {
+                        return true;
+                    }
+                    if let PaneLayout::Window(p) = child {
+                        if p.id == target_id {
+                            found = true;
+                            insert_idx = i;
+                            break;
+                        }
+                    }
+                }
+                if found {
+                    if *split_kind == kind {
+                        children.insert(insert_idx + 1, PaneLayout::Window(new_pane));
+                        return true;
+                    } else {
+                        let old_pane = match children.remove(insert_idx) {
+                            PaneLayout::Window(p) => p,
+                            _ => unreachable!(),
+                        };
+                        children.insert(insert_idx, PaneLayout::Split(kind, vec![PaneLayout::Window(old_pane), PaneLayout::Window(new_pane)]));
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    pub fn remove_pane(&mut self, target_id: usize) -> bool {
+        match self {
+            PaneLayout::Window(_) => false,
+            PaneLayout::Split(_, children) => {
+                for i in 0..children.len() {
+                    if let PaneLayout::Window(p) = &children[i] {
+                        if p.id == target_id {
+                            children.remove(i);
+                            return true;
+                        }
+                    } else {
+                        if children[i].remove_pane(target_id) {
+                            if let PaneLayout::Split(_, sub_children) = &children[i] {
+                                if sub_children.len() == 1 {
+                                    children[i] = sub_children[0].clone();
+                                }
+                            }
+                            return true;
+                        }
+                    }
+                }
+                if children.len() == 1 {
+                    let mut temp = vec![];
+                    std::mem::swap(children, &mut temp);
+                    *self = temp.into_iter().next().unwrap();
+                }
+                false
+            }
+        }
+    }
+
+    pub fn get_all_panes(&self) -> Vec<Pane> {
+        match self {
+            PaneLayout::Window(pane) => vec![pane.clone()],
+            PaneLayout::Split(_, children) => {
+                let mut res = Vec::new();
+                for child in children {
+                    res.extend(child.get_all_panes());
+                }
+                res
+            }
+        }
+    }
+
+    pub fn get_pane_mut(&mut self, target_id: usize) -> Option<&mut Pane> {
+        match self {
+            PaneLayout::Window(pane) => {
+                if pane.id == target_id { Some(pane) } else { None }
+            }
+            PaneLayout::Split(_, children) => {
+                for child in children {
+                    if let Some(p) = child.get_pane_mut(target_id) {
+                        return Some(p);
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    pub fn get_pane(&self, target_id: usize) -> Option<&Pane> {
+        match self {
+            PaneLayout::Window(pane) => {
+                if pane.id == target_id { Some(pane) } else { None }
+            }
+            PaneLayout::Split(_, children) => {
+                for child in children {
+                    if let Some(p) = child.get_pane(target_id) {
+                        return Some(p);
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    pub fn update_buffer_indices(&mut self, removed_idx: usize) {
+        match self {
+            PaneLayout::Window(pane) => {
+                if pane.buffer_idx > removed_idx {
+                    pane.buffer_idx -= 1;
+                } else if pane.buffer_idx == removed_idx {
+                    pane.buffer_idx = pane.buffer_idx.saturating_sub(1);
+                }
+            }
+            PaneLayout::Split(_, children) => {
+                for child in children {
+                    child.update_buffer_indices(removed_idx);
+                }
+            }
+        }
+    }
+}
+
 pub struct VimState {
     pub mode: mode::Mode,
     pub focus: mode::Focus,
@@ -55,9 +205,11 @@ pub struct VimState {
     pub nucleus_pending_delete: Option<String>,
     pub block_insert_text: String,
     pub block_insert_col: usize,
-    pub split: Option<SplitKind>,
-    pub split_buffer_idx: usize,
-    pub split_focused: bool, // false = primary pane, true = split pane
+    pub pane_layout: PaneLayout,
+    pub focused_pane_id: usize,
+    pub next_pane_id: usize,
+    
+    
     pub preview_lines: Option<Vec<String>>, // floating file preview
     pub preview_scroll: usize,
     pub show_suggestions: bool,
@@ -122,9 +274,11 @@ impl VimState {
             nucleus_pending_delete: None,
             block_insert_text: String::new(),
             block_insert_col: 0,
-            split: None,
-            split_buffer_idx: 0,
-            split_focused: false,
+            pane_layout: PaneLayout::Window(Pane { id: 0, buffer_idx: 0 }),
+            focused_pane_id: 0,
+            next_pane_id: 1,
+            
+            
             preview_lines: None,
             preview_scroll: 0,
             show_suggestions: false,

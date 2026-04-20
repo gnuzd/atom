@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use ignore::WalkBuilder;
 use std::collections::HashSet;
+use ratatui::layout::Rect;
+use ratatui::widgets::{List, ListItem};
+use ratatui::text::{Line, Span};
 
 #[derive(Clone)]
 pub struct TreeEntry {
@@ -353,6 +356,14 @@ impl FileExplorer {
         Ok(())
     }
 
+    pub fn total_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn filtered_count(&self) -> usize {
+        self.entries.len()
+    }
+
     pub fn open_in_system_explorer(&self) {
         if let Some(entry) = self.selected_entry() {
             let path = if entry.is_dir { 
@@ -370,5 +381,67 @@ impl FileExplorer {
             #[cfg(target_os = "windows")]
             let _ = std::process::Command::new("explorer").arg(path).spawn();
         }
+    }
+
+    pub fn draw(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: Rect,
+        vim: &crate::vim::VimState,
+        theme: &crate::ui::colorscheme::ColorScheme,
+    ) {
+        let height = area.height as usize;
+        self.scroll_into_view(height);
+
+        let mut list_items = Vec::new();
+        for i in self.scroll_y..std::cmp::min(self.scroll_y + height, self.entries.len()) {
+            let entry = &self.entries[i];
+            let mut name = entry.path.file_name().and_then(|s| s.to_str()).unwrap_or("/").to_string();
+            if entry.is_dir && !name.ends_with('/') {
+                name.push('/');
+            }
+
+            let mut guide = String::new();
+            for _ in 0..entry.depth {
+                guide.push_str("│ ");
+            }
+
+            let (icon, icon_style): (&str, ratatui::style::Style) = if entry.is_dir {
+                (if entry.is_expanded { "󰉖" } else { "󰉋" }, theme.get("TreeExplorerFolderIcon"))
+            } else {
+                let ext = entry.path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                let (icon, style_name) = match ext {
+                    "rs" => ("", "TreeExplorerFileIcon"),
+                    "ts" | "tsx" => (" ", "Type"),
+                    "js" | "jsx" => (" ", "Constant"),
+                    "py" => ("", "Function"),
+                    "go" => ("", "Type"),
+                    "lua" => ("", "Constant"),
+                    "json" => ("", "String"),
+                    "toml" => ("", "Keyword"),
+                    "md" => ("", "Comment"),
+                    "html" => ("", "Tag"),
+                    "css" => ("", "Attribute"),
+                    _ => (crate::ui::icons::FILE, "TreeExplorerFileIcon"),
+                };
+                (icon, theme.get(style_name))
+            };
+
+            let name_style = if i == self.selected_idx && vim.focus == crate::vim::mode::Focus::Explorer {
+                theme.get("Visual")
+            } else if entry.is_dir {
+                theme.get("TreeExplorerFolderName")
+            } else {
+                theme.get("TreeExplorerFileName")
+            };
+
+            list_items.push(ListItem::new(Line::from(vec![
+                Span::styled(guide, theme.get("TreeExplorerConnector")),
+                Span::styled(format!("{} ", icon), icon_style),
+                Span::styled(name, name_style),
+            ])));
+        }
+
+        frame.render_widget(List::new(list_items), area);
     }
 }

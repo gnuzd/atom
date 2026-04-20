@@ -1,57 +1,107 @@
+use ratatui::{
+    layout::{Alignment, Constraint, Direction, Layout, Rect, Margin},
+    style::{Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Table, Row, Cell},
+    Frame,
+};
+
 pub mod colorscheme;
 pub mod explorer;
 pub mod icons;
 pub mod intro;
-mod keymaps;
-mod nucleus;
+pub mod keymaps;
+pub mod nucleus;
 pub mod telescope;
 pub mod trouble;
 
-use crate::vim::mode::{ExplorerInputType, Focus, Mode};
-use crate::vim::LspStatus;
-use lsp_types::DiagnosticSeverity;
-use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
-    style::{Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{
-        Block, BorderType, Borders, Cell, Clear, List, ListItem, Padding, Paragraph, Row, Table,
-    },
-    Frame,
-};
+use crate::vim::mode::{Focus, Mode};
 
-pub struct TerminalUi;
+pub struct TerminalUi {
+}
 
 impl TerminalUi {
     pub fn new() -> Self {
-        Self
+        Self {
+        }
     }
 
-    pub fn get_file_icon(path: &std::path::Path) -> (&'static str, String) {
-        if path.is_dir() {
-            return (icons::FOLDER, "TreeExplorerFolderIcon".into());
-        }
+    pub fn get_file_icon(path: &std::path::Path) -> (String, String) {
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
         match ext {
-            "rs" => (icons::STRUCT, "Identifier".into()),
-            "toml" => (icons::PACKAGE, "Type".into()),
-            "md" => (icons::TEXT, "Function".into()),
-            "lock" => (icons::FILE, "Comment".into()),
-            _ => (icons::FILE, "TreeExplorerFileIcon".into()),
+            "rs" => (" ".to_string(), "TreeExplorerFileIcon".into()),
+            "ts" | "tsx" => (" ".to_string(), "Type".into()),
+            "js" | "jsx" => (" ".to_string(), "Constant".into()),
+            "py" => (" ".to_string(), "Function".into()),
+            "go" => (" ".to_string(), "Type".into()),
+            "lua" => (" ".to_string(), "Constant".into()),
+            "json" => (" ".to_string(), "String".into()),
+            "toml" => (" ".to_string(), "Keyword".into()),
+            "md" => (" ".to_string(), "Comment".into()),
+            "html" => (" ".to_string(), "Tag".into()),
+            "css" => (" ".to_string(), "Attribute".into()),
+            "lock" => (icons::FILE.to_string(), "Comment".into()),
+            _ => (icons::FILE.to_string(), "TreeExplorerFileIcon".into()),
+        }
+    }
+
+    pub fn get_panes_and_borders(
+        layout: &crate::vim::PaneLayout,
+        area: Rect,
+        focused_id: usize,
+    ) -> (
+        Vec<(Rect, usize, bool)>,
+        Vec<(Rect, crate::vim::mode::SplitKind)>,
+    ) {
+        match layout {
+            crate::vim::PaneLayout::Window(pane) => {
+                (vec![(area, pane.buffer_idx, pane.id == focused_id)], vec![])
+            }
+            crate::vim::PaneLayout::Split(kind, children) => {
+                let direction = match kind {
+                    crate::vim::mode::SplitKind::Vertical => Direction::Horizontal,
+                    crate::vim::mode::SplitKind::Horizontal => Direction::Vertical,
+                };
+
+                let mut constraints = Vec::new();
+                for i in 0..children.len() {
+                    constraints.push(Constraint::Ratio(1, children.len() as u32));
+                    if i < children.len() - 1 {
+                        constraints.push(Constraint::Length(1)); // border
+                    }
+                }
+
+                let chunks = Layout::default()
+                    .direction(direction)
+                    .constraints(constraints)
+                    .split(area);
+
+                let mut panes = Vec::new();
+                let mut borders = Vec::new();
+                for (i, child) in children.iter().enumerate() {
+                    let (p, b) = Self::get_panes_and_borders(child, chunks[i * 2], focused_id);
+                    panes.extend(p);
+                    borders.extend(b);
+                    if i < children.len() - 1 {
+                        borders.push((chunks[i * 2 + 1], *kind));
+                    }
+                }
+                (panes, borders)
+            }
         }
     }
 
     pub fn draw(
         &self,
         frame: &mut Frame,
-        editor: &crate::editor::Editor,
+        editor: &mut crate::editor::Editor,
         vim: &mut crate::vim::VimState,
         explorer: &mut explorer::FileExplorer,
         trouble: &trouble::TroubleList,
         lsp_manager: &crate::lsp::LspManager,
     ) {
         let area = frame.area();
-        let theme = &editor.highlighter.theme;
+        let theme = editor.highlighter.theme.clone();
 
         // Ensure full screen background
         frame.render_widget(Block::default().style(theme.get("Normal")), area);
@@ -85,30 +135,116 @@ impl TerminalUi {
             .split(main_chunks[1]);
 
         let trouble_area = editor_trouble_chunks[1];
+        let editor_container_area = editor_trouble_chunks[0];
 
-        // Split editor area if a split pane is active
-        let (primary_area, split_area) = if let Some(kind) = vim.split {
-            match kind {
-                crate::vim::mode::SplitKind::Vertical => {
-                    let halves = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                        .split(editor_trouble_chunks[0]);
-                    (halves[0], Some(halves[1]))
-                }
-                crate::vim::mode::SplitKind::Horizontal => {
-                    let halves = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                        .split(editor_trouble_chunks[0]);
-                    (halves[0], Some(halves[1]))
+        let (mut panes, borders) = Self::get_panes_and_borders(
+            &vim.pane_layout,
+            editor_container_area,
+            vim.focused_pane_id,
+        );
+
+        // Adjust focus based on whether the Editor itself is focused
+        for pane in &mut panes {
+            pane.2 = pane.2 && vim.focus == Focus::Editor;
+        }
+
+        for (border_area, kind) in borders {
+            let borders = match kind {
+                crate::vim::mode::SplitKind::Vertical => Borders::LEFT,
+                crate::vim::mode::SplitKind::Horizontal => Borders::TOP,
+            };
+            let block = Block::default()
+                .borders(borders)
+                .border_style(theme.get("TreeExplorerConnector"));
+            frame.render_widget(block, border_area);
+        }
+
+        for (pane_area, buf_idx, is_focused) in panes.clone() {
+            self.draw_editor_pane(
+                frame,
+                editor,
+                vim,
+                lsp_manager,
+                pane_area,
+                buf_idx,
+                is_focused,
+            );
+        }
+
+        // Common variables for status line and completion
+        let buf_idx = editor.active_idx;
+        let (buffer, cursor_y, cursor_x, cursor_scroll_y, buf_added, buf_modified, buf_removed, file_name, modified_flag) = {
+            let buffer = match editor.buffers.get(buf_idx) {
+                Some(b) => b,
+                None => return,
+            };
+            let cursor = match editor.cursors.get(buf_idx) {
+                Some(c) => c,
+                None => return,
+            };
+            
+            let mut added = 0;
+            let mut modified = 0;
+            let mut removed = 0;
+            for (_, sign) in &buffer.git_signs {
+                match sign {
+                    crate::git::GitSign::Add => added += 1,
+                    crate::git::GitSign::Change | crate::git::GitSign::ChangeDelete => modified += 1,
+                    crate::git::GitSign::Delete | crate::git::GitSign::TopDelete => removed += 1,
                 }
             }
-        } else {
-            (editor_trouble_chunks[0], None)
+            let name = buffer.file_path.as_ref().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap_or("[No Name]");
+            let modified_flag = if buffer.modified { " [+]" } else { "" };
+            
+            (buffer.clone(), cursor.y, cursor.x, cursor.scroll_y, added, modified, removed, name.to_string(), modified_flag.to_string())
         };
 
-        let editor_area = if vim.split_focused { split_area.unwrap_or(primary_area) } else { primary_area };
+        let gutter_width = match (vim.show_number || vim.relative_number, vim.config.signcolumn) {
+            (true, true) => 8,
+            (true, false) => 5,
+            (false, true) => 3,
+            (false, false) => 0,
+        };
+        let editor_area = panes
+            .iter()
+            .find(|p| p.2)
+            .map(|p| p.0)
+            .unwrap_or(editor_container_area);
+        let editor_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
+            .split(editor_area);
+        let editor_width = editor_layout[1].width as usize;
+
+        // Calculate cursor screen position
+        let line = buffer.line(cursor_y).unwrap();
+        let mut cursor_pos_in_line = 0;
+        for (i, c) in line.chars().enumerate() {
+            if i >= cursor_x {
+                break;
+            }
+            cursor_pos_in_line += if c == '\t' {
+                2
+            } else {
+                unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+            };
+        }
+        let cursor_screen_x = cursor_pos_in_line % editor_width;
+
+        let screen_to_buffer_lines =
+            editor.get_screen_to_buffer_lines_for_idx(buf_idx, editor_width, vim.config.wrap);
+        let cursor_screen_y_opt = screen_to_buffer_lines
+            .iter()
+            .position(|&(idx, row)| {
+                if idx != cursor_y {
+                    return false;
+                }
+                if !vim.config.wrap {
+                    return true;
+                }
+                row == cursor_pos_in_line / editor_width
+            })
+            .map(|pos| pos.saturating_sub(cursor_scroll_y));
 
         // 1. File Explorer
         if explorer.visible {
@@ -144,1013 +280,159 @@ impl TerminalUi {
                 .constraints([Constraint::Min(1), Constraint::Length(8)])
                 .split(header_inner);
 
-            let filter_display = if let Mode::ExplorerInput(ExplorerInputType::Filter) = vim.mode {
+            let filter_display = if let Mode::ExplorerInput(crate::vim::mode::ExplorerInputType::Filter) = vim.mode {
                 format!("> {}", vim.input_buffer)
             } else {
                 format!("> {}", explorer.filter)
             };
             frame.render_widget(
-                Paragraph::new(filter_display).style(theme.get("Keyword")),
+                Paragraph::new(filter_display).style(theme.get("TreeExplorerFilter")),
                 header_chunks[0],
             );
 
-            let count_text = format!("{}/{}", explorer.entries.len(), explorer.entries.len());
+            let count_text = format!(" {}/{} ", explorer.filtered_count(), explorer.total_count());
             frame.render_widget(
                 Paragraph::new(count_text)
-                    .alignment(Alignment::Right)
-                    .style(theme.get("Comment")),
+                    .style(theme.get("TreeExplorerCount"))
+                    .alignment(Alignment::Right),
                 header_chunks[1],
             );
 
-            if let Mode::ExplorerInput(ExplorerInputType::Filter) = vim.mode {
-                frame.set_cursor_position((
-                    header_chunks[0].x + vim.input_buffer.len() as u16 + 2,
-                    header_chunks[0].y,
-                ));
-            }
-
-            let diagnostics = lsp_manager.diagnostics.lock().unwrap();
-            let view_height = explorer_layout[1].height as usize;
-            explorer.scroll_into_view(view_height);
-
-            let start = explorer.scroll_y;
-            let end = (start + view_height).min(explorer.entries.len());
-
-            let items: Vec<ListItem> = explorer.entries[start..end]
-                .iter()
-                .enumerate()
-                .map(|(rel_i, entry)| {
-                    let i = start + rel_i;
-                    let name = if entry.path == explorer.root {
-                        explorer
-                            .root
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or_else(|| explorer.root.to_str().unwrap_or("/"))
-                    } else {
-                        entry
-                            .path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("?")
-                    };
-                    let mut guide = String::new();
-                    for _ in 0..entry.depth {
-                        guide.push_str("│ ");
-                    }
-                    if entry.depth > 0 {
-                        guide.pop();
-                        guide.pop();
-                        if entry.is_last {
-                            guide.push_str("└─");
-                        } else {
-                            guide.push_str("├─");
-                        }
-                    }
-                    let guide_len = guide.chars().count();
-
-                    let (icon, icon_group) = Self::get_file_icon(&entry.path);
-                    let mut name_style = if entry.is_dir {
-                        theme.get("TreeExplorerFolderName")
-                    } else {
-                        theme.get("TreeExplorerFileName")
-                    };
-                    let icon_style = if name.starts_with('.') || entry.is_ignored {
-                        theme.get("Comment")
-                    } else {
-                        theme.get(&icon_group)
-                    };
-
-                    if name.starts_with('.') || entry.is_ignored {
-                        name_style = theme.get("Comment");
-                    }
-
-                    let mut spans = vec![
-                        Span::raw(" "),
-                        Span::styled(guide, theme.get("TreeExplorerConnector")),
-                        Span::styled(format!("{} ", icon), icon_style),
-                        Span::styled(name, name_style),
-                    ];
-
-                    // Diagnostic indicators in explorer
-                    let mut error_count = 0;
-                    let mut warning_count = 0;
-
-                    if vim.show_diagnostics {
-                        // Only show diagnostic on folders if they are collapsed
-                        // If it's a file, always show it.
-                        if !entry.is_dir || !entry.is_expanded {
-                            for (url, server_diags) in diagnostics.iter() {
-                                if let Ok(path) = url.to_file_path() {
-                                    if path.starts_with(&entry.path) {
-                                        for diags in server_diags.values() {
-                                            for diag in diags {
-                                                match diag.severity {
-                                                    Some(DiagnosticSeverity::ERROR) => {
-                                                        error_count += 1
-                                                    }
-                                                    Some(DiagnosticSeverity::WARNING) => {
-                                                        warning_count += 1
-                                                    }
-                                                    _ => {}
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if error_count > 0 || warning_count > 0 {
-                        // Calculate padding to push to end of line
-                        let line_len: usize = guide_len + 1 + 2 + name.chars().count(); // space + icon+space + name
-                                                                                        // list area width is explorer_layout[1].width, but we have some horizontal padding
-                        let available_width = (explorer_layout[1].width as usize).saturating_sub(1);
-                        let padding_count =
-                            available_width.saturating_sub(line_len).saturating_sub(2);
-
-                        if padding_count > 0 {
-                            spans.push(Span::raw(" ".repeat(padding_count)));
-                        }
-
-                        if error_count > 0 {
-                            spans.push(Span::styled(
-                                format!(" {}", icons::ERROR),
-                                Style::default().fg(theme.palette.red),
-                            ));
-                        } else if warning_count > 0 {
-                            spans.push(Span::styled(
-                                format!(" {}", icons::WARNING),
-                                Style::default().fg(theme.palette.yellow),
-                            ));
-                        }
-                    }
-
-                    // Modified indicator (if open in buffer)
-                    for buffer in &editor.buffers {
-                        if buffer.file_path.as_ref() == Some(&entry.path) && buffer.modified {
-                            spans.push(Span::styled(
-                                " ○",
-                                Style::default().fg(theme.palette.yellow),
-                            ));
-                            break;
-                        }
-                    }
-
-                    let mut line_style = Style::default();
-                    if i == explorer.selected_idx {
-                        line_style = theme.get("CursorLine");
-                        spans[3] = spans[3].clone().add_modifier(Modifier::BOLD);
-                    }
-
-                    ListItem::new(Line::from(spans)).style(line_style)
-                })
-                .collect();
-
-            frame.render_widget(List::new(items), explorer_layout[1]);
+            explorer.draw(frame, explorer_layout[1], vim, &theme);
         }
 
         // 1.5 Trouble List
         if trouble.visible {
-            trouble.draw(frame, trouble_area, vim, theme);
+            trouble.draw(frame, trouble_area, vim, &theme);
         }
 
-        // 2. Editor Area
-        let buffer = editor.buffer();
-        let cursor = editor.cursor();
-        let scroll_y = cursor.scroll_y;
-        let visible_height = editor_area.height as usize;
+        // 2.5 Completion Menu (Floating)
+        if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
+            let menu_width = 45;
+            let menu_height = std::cmp::min(10, vim.filtered_suggestions.len()) as u16 + 2;
 
-        let gutter_width = match (
-            vim.show_number || vim.relative_number,
-            vim.config.signcolumn,
-        ) {
-            (true, true) => 8,
-            (true, false) => 5,
-            (false, true) => 3,
-            (false, false) => 0,
-        };
+            let menu_x = editor_layout[1].x + (cursor_screen_x % editor_width) as u16;
+            let menu_y = editor_layout[1].y + cursor_screen_y_opt.unwrap_or(0) as u16 + 1;
 
-        let editor_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
-            .split(editor_area);
+            let menu_area = Rect {
+                x: menu_x.min(area.right().saturating_sub(menu_width)),
+                y: menu_y.min(
+                    editor_trouble_chunks[0]
+                        .bottom()
+                        .saturating_sub(menu_height),
+                ),
+                width: menu_width,
+                height: menu_height,
+            };
 
-        let editor_width = editor_layout[1].width as usize;
-        let screen_to_buffer_lines =
-            editor.get_screen_to_buffer_lines(editor_width, vim.config.wrap);
-
-        // Find cursor screen y
-        let cursor_screen_y = screen_to_buffer_lines
-            .iter()
-            .position(|&(idx, row)| {
-                if idx != cursor.y {
-                    return false;
-                }
-                if !vim.config.wrap {
-                    return true;
-                }
-                let line = buffer.line(idx).unwrap();
-                let mut cursor_pos_in_line = 0;
-                for (i, c) in line.chars().enumerate() {
-                    if i >= cursor.x {
-                        break;
-                    }
-                    cursor_pos_in_line += if c == '\t' {
-                        2
-                    } else {
-                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                    };
-                }
-                let cursor_row = cursor_pos_in_line / editor_width;
-                row == cursor_row
-            })
-            .map(|pos| pos.saturating_sub(scroll_y));
-
-        if vim.show_intro {
-            intro::draw_intro(frame, main_chunks[1], theme);
-        } else {
-            // Full width highlight for active line
-            if vim.config.cursorline {
-                if let Some(y) = cursor_screen_y {
-                    if y < visible_height {
-                        let highlight_rect = Rect {
-                            x: editor_area.x,
-                            y: editor_area.y + y as u16,
-                            width: editor_area.width,
-                            height: 1,
-                        };
-                        frame.render_widget(
-                            Block::default().style(theme.get("CursorLine")),
-                            highlight_rect,
-                        );
-                    }
-                }
-            }
-
-            // Line Numbers & Gutter
-            if gutter_width > 0 {
-                let mut line_numbers = Text::default();
-                for i in
-                    scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len())
-                {
-                    let (actual_idx, row) = screen_to_buffer_lines[i];
-                    let is_first_row = row == 0;
-                    let is_active = actual_idx == cursor.y;
-                    let style = if is_active {
-                        theme.get("CursorLineNr")
-                    } else {
-                        theme.get("LineNr")
+            let items: Vec<ListItem> = vim
+                .filtered_suggestions
+                .iter()
+                .enumerate()
+                .map(|(display_idx, item)| {
+                    let (icon, kind_name, color_group) = match item.kind {
+                        Some(lsp_types::CompletionItemKind::FUNCTION) => {
+                            (icons::FUNCTION.to_string(), "Function", "Function")
+                        }
+                        Some(lsp_types::CompletionItemKind::METHOD) => {
+                            (icons::METHOD.to_string(), "Method", "Function")
+                        }
+                        Some(lsp_types::CompletionItemKind::VARIABLE) => {
+                            (icons::VARIABLE.to_string(), "Variable", "Variable")
+                        }
+                        Some(lsp_types::CompletionItemKind::CLASS) => {
+                            (icons::CLASS.to_string(), "Class", "Type")
+                        }
+                        Some(lsp_types::CompletionItemKind::INTERFACE) => {
+                            (icons::INTERFACE.to_string(), "Interface", "Type")
+                        }
+                        Some(lsp_types::CompletionItemKind::KEYWORD) => {
+                            (icons::KEYWORD.to_string(), "Keyword", "Keyword")
+                        }
+                        Some(lsp_types::CompletionItemKind::SNIPPET) => {
+                            (icons::SNIPPET.to_string(), "Snippet", "Keyword")
+                        }
+                        Some(lsp_types::CompletionItemKind::FIELD) => {
+                            (icons::FIELD.to_string(), "Field", "Identifier")
+                        }
+                        Some(lsp_types::CompletionItemKind::PROPERTY) => {
+                            (icons::PROPERTY.to_string(), "Property", "Identifier")
+                        }
+                        Some(lsp_types::CompletionItemKind::TEXT) => {
+                            (icons::TEXT.to_string(), "Text", "Comment")
+                        }
+                        _ => (icons::OBJECT.to_string(), "Object", "Constant"),
                     };
 
-                    let mut spans = Vec::new();
+                    let mut label_style = theme.get("Normal");
+                    let mut icon_style = theme.get(color_group);
+                    let mut kind_style = theme.get("Comment");
 
-                    // 1. Sign Column (Git Signs & Diagnostics)
-                    if vim.config.signcolumn {
-                        if is_first_row {
-                            // Git Sign
-                            let git_sign = buffer
-                                .git_signs
-                                .iter()
-                                .find(|(line, _)| *line == actual_idx)
-                                .map(|(_, s)| s);
-                            if let Some(sign) = git_sign {
-                                let (symbol, style_name) = match sign {
-                                    crate::git::GitSign::Add => (icons::GIT_ADD, "GitSignsAdd"),
-                                    crate::git::GitSign::Change => {
-                                        (icons::GIT_MOD, "GitSignsChange")
-                                    }
-                                    crate::git::GitSign::Delete => {
-                                        (icons::GIT_DEL, "GitSignsDelete")
-                                    }
-                                    crate::git::GitSign::TopDelete => {
-                                        (icons::GIT_DEL, "GitSignsDelete")
-                                    }
-                                    crate::git::GitSign::ChangeDelete => {
-                                        (icons::GIT_MOD, "GitSignsChange")
-                                    }
-                                };
-                                spans.push(Span::styled(symbol, theme.get(style_name)));
-                            } else {
-                                spans.push(Span::raw(" "));
-                            }
-
-                            // Diagnostic Icon
-                            if vim.show_diagnostics {
-                                if let Some(path) = &buffer.file_path {
-                                    if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                                        let diagnostics = lsp_manager.diagnostics.lock().unwrap();
-                                        if let Some(server_diags) = diagnostics.get(&url) {
-                                            let mut line_diag = None;
-                                            for diags in server_diags.values() {
-                                                for diag in diags {
-                                                    if diag.range.start.line as usize == actual_idx
-                                                    {
-                                                        if line_diag.is_none()
-                                                            || diag.severity
-                                                                < line_diag.as_ref().and_then(
-                                                                    |d: &&lsp_types::Diagnostic| {
-                                                                        d.severity
-                                                                    },
-                                                                )
-                                                        {
-                                                            line_diag = Some(diag);
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            if let Some(diag) = line_diag {
-                                                let (icon, color) = match diag.severity {
-                                                    Some(DiagnosticSeverity::ERROR) => {
-                                                        (icons::ERROR, theme.palette.red)
-                                                    }
-                                                    Some(DiagnosticSeverity::WARNING) => {
-                                                        (icons::WARNING, theme.palette.yellow)
-                                                    }
-                                                    _ => ("●", theme.palette.blue),
-                                                };
-                                                spans.push(Span::styled(
-                                                    format!("{} ", icon),
-                                                    Style::default().fg(color),
-                                                ));
-                                            } else {
-                                                spans.push(Span::raw("  "));
-                                            }
-                                        } else {
-                                            spans.push(Span::raw("  "));
-                                        }
-                                    } else {
-                                        spans.push(Span::raw("  "));
-                                    }
-                                } else {
-                                    spans.push(Span::raw("  "));
-                                }
-                            } else {
-                                spans.push(Span::raw("  "));
-                            }
-                        } else {
-                            spans.push(Span::raw("    "));
-                        }
+                    if display_idx == (vim.selected_suggestion % vim.filtered_suggestions.len())
+                    {
+                        label_style = Style::default()
+                            .fg(theme.palette.black)
+                            .bg(theme.palette.blue)
+                            .add_modifier(Modifier::BOLD);
+                        icon_style = Style::default()
+                            .fg(theme.palette.black)
+                            .bg(theme.palette.blue);
+                        kind_style = Style::default()
+                            .fg(theme.palette.black)
+                            .bg(theme.palette.blue);
                     }
 
-                    // 2. Line Numbers
-                    if vim.show_number || vim.relative_number {
-                        let display_num = if is_first_row {
-                            if vim.relative_number {
-                                if is_active && vim.show_number {
-                                    format!("{:>3} ", actual_idx + 1)
-                                } else if is_active {
-                                    "  0 ".to_string()
-                                } else {
-                                    let cursor_actual_screen_y = screen_to_buffer_lines
-                                        .iter()
-                                        .position(|&(idx, _)| idx == cursor.y)
-                                        .unwrap_or(0);
-                                    let diff = (i as i32 - cursor_actual_screen_y as i32).abs();
-                                    format!("{:>3} ", diff)
-                                }
-                            } else {
-                                format!("{:>3} ", actual_idx + 1)
-                            }
-                        } else {
-                            "    ".to_string()
-                        };
-                        spans.push(Span::styled(display_num, style));
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!(" {} ", icon), icon_style),
+                        Span::styled(format!("{:<30}", item.label), label_style),
+                        Span::styled(format!(" {:>8} ", kind_name), kind_style),
+                    ]))
+                })
+                .collect();
 
-                        // Fold Indicator
-                        if is_first_row
-                            && buffer.folded_ranges.iter().any(|(s, _)| *s == actual_idx)
-                        {
-                            spans.push(Span::styled(" >", theme.get("Keyword")));
-                        } else {
-                            spans.push(Span::raw("  "));
-                        }
-                    }
+            let menu = List::new(items).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(theme.get("TreeExplorerConnector"))
+                    .style(theme.get("Normal")),
+            );
 
-                    line_numbers.lines.push(Line::from(spans));
-                }
-                frame.render_widget(
-                    Paragraph::new(line_numbers).alignment(Alignment::Left),
-                    editor_layout[0],
-                );
-            }
+            frame.render_widget(Clear, menu_area);
+            frame.render_stateful_widget(menu, menu_area, &mut vim.suggestion_state);
 
-            // Code Content
-            let mut text = Text::default();
-            let search_query = &vim.search_query;
-
-            for i in
-                scroll_y..std::cmp::min(scroll_y + visible_height, screen_to_buffer_lines.len())
-            {
-                let (actual_idx, row) = screen_to_buffer_lines[i];
-                let is_first_row = row == 0;
-                let line = buffer.line(actual_idx).unwrap();
-                let mut spans = Vec::new();
-                let syntax_styles = editor.syntax_styles.get(actual_idx);
-                let is_current_line = actual_idx == cursor.y;
-
-                if let Some((_, end)) = buffer.folded_ranges.iter().find(|(s, _)| *s == actual_idx)
-                {
-                    // Folds don't wrap for now
-                    if row == 0 {
-                        // Render a nice fold summary line: StartLine ... count lines ... EndLine
-                        let first_line_full = line.to_string();
-                        let first_line_trimmed = first_line_full.trim_start();
-                        let first_line_indent = first_line_full.len() - first_line_trimmed.len();
-
-                        let last_line_full = buffer
-                            .line(*end)
-                            .map(|l| l.to_string())
-                            .unwrap_or_else(|| "}".to_string());
-                        let last_line_trimmed = last_line_full.trim();
-                        let count = end - actual_idx;
-
-                        // Add indentation spans
-                        for _ in 0..first_line_indent {
-                            spans.push(Span::raw(" "));
-                        }
-
-                        // First line content
-                        let first_line_styles = editor.syntax_styles.get(actual_idx);
-                        for (x, c) in first_line_trimmed.chars().enumerate() {
-                            let style = first_line_styles
-                                .and_then(|s: &Vec<Style>| s.get(x + first_line_indent))
-                                .copied()
-                                .unwrap_or_default();
-                            spans.push(Span::styled(c.to_string(), style));
-                        }
-
-                        spans.push(Span::styled(
-                            format!(" ... {} lines ... ", count),
-                            theme.get("Comment").add_modifier(Modifier::BOLD),
-                        ));
-
-                        // Last line content
-                        let last_line_styles = editor.syntax_styles.get(*end);
-                        let last_line_indent =
-                            last_line_full.len() - last_line_full.trim_start().len();
-                        for (x, c) in last_line_trimmed.chars().enumerate() {
-                            let style = last_line_styles
-                                .and_then(|s: &Vec<Style>| s.get(x + last_line_indent))
-                                .copied()
-                                .unwrap_or_default();
-                            spans.push(Span::styled(c.to_string(), style));
-                        }
-                    }
-                } else {
-                    let mut current_pos_in_line = 0;
-                    for (x, c) in line.chars().enumerate() {
-                        if c == '\n' || c == '\r' {
-                            continue;
-                        }
-                        let char_width = if c == '\t' {
-                            2
-                        } else {
-                            unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                        };
-                        let char_row = current_pos_in_line / editor_width;
-
-                        if char_row == row {
-                            let mut style = syntax_styles
-                                .and_then(|s: &Vec<Style>| s.get(x))
-                                .copied()
-                                .unwrap_or(theme.get("Normal"));
-
-                            // Overlay Highlights
-                            let mut is_in_range = false;
-                            if let Some(start) = vim.selection_start {
-                                let cur = crate::vim::Position {
-                                    x: cursor.x,
-                                    y: cursor.y,
-                                };
-                                match vim.mode {
-                                    Mode::VisualBlock | Mode::BlockInsert => {
-                                        // Block selection: highlight rectangular region
-                                        let top_y = start.y.min(cur.y);
-                                        let bot_y = start.y.max(cur.y);
-                                        let left_x = start.x.min(cur.x);
-                                        let right_x = start.x.max(cur.x);
-                                        is_in_range = actual_idx >= top_y
-                                            && actual_idx <= bot_y
-                                            && x >= left_x
-                                            && x <= right_x;
-                                    }
-                                    _ => {
-                                        // Character-wise selection
-                                        let (s_y, s_x, e_y, e_x) =
-                                            if (start.y, start.x) < (cur.y, cur.x) {
-                                                (start.y, start.x, cur.y, cur.x)
-                                            } else {
-                                                (cur.y, cur.x, start.y, start.x)
-                                            };
-                                        is_in_range = if actual_idx > s_y && actual_idx < e_y {
-                                            true
-                                        } else if actual_idx == s_y && actual_idx == e_y {
-                                            x >= s_x && x <= e_x
-                                        } else if actual_idx == s_y {
-                                            x >= s_x
-                                        } else if actual_idx == e_y {
-                                            x <= e_x
-                                        } else {
-                                            false
-                                        };
-                                    }
-                                }
-                                if is_in_range {
-                                    style = theme.get("Visual");
-                                }
-                            }
-                            if !search_query.is_empty() {
-                                let line_str = line.to_string();
-                                if let Some(pos) =
-                                    line_str.to_lowercase().find(&search_query.to_lowercase())
-                                {
-                                    if x >= pos && x < pos + search_query.len() {
-                                        style = theme.get("Search");
-                                    }
-                                }
-                            }
-                            if vim.yank_highlight_line == Some(actual_idx) {
-                                style = Style::default()
-                                    .bg(theme.palette.blue)
-                                    .fg(theme.palette.black);
-                            }
-
-                            // Diagnostics undercurl/underline
-                            if let Some(path) = &buffer.file_path {
-                                if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                                    let diagnostics_lock = lsp_manager.diagnostics.lock().unwrap();
-                                    if let Some(server_diags) = diagnostics_lock.get(&url) {
-                                        for diags in server_diags.values() {
-                                            for diag in diags {
-                                                if (actual_idx as u32) >= diag.range.start.line
-                                                    && (actual_idx as u32) <= diag.range.end.line
-                                                {
-                                                    let s_x = if (actual_idx as u32)
-                                                        == diag.range.start.line
-                                                    {
-                                                        diag.range.start.character as usize
-                                                    } else {
-                                                        0
-                                                    };
-                                                    let e_x = if (actual_idx as u32)
-                                                        == diag.range.end.line
-                                                    {
-                                                        diag.range.end.character as usize
-                                                    } else {
-                                                        line.len_chars()
-                                                    };
-                                                    if x >= s_x && x < e_x {
-                                                        let diag_color = match diag.severity {
-                                                        Some(lsp_types::DiagnosticSeverity::ERROR) => theme.palette.red,
-                                                        Some(lsp_types::DiagnosticSeverity::WARNING) => theme.palette.yellow,
-                                                        _ => theme.palette.blue,
-                                                    };
-                                                        style = style
-                                                            .underline_color(diag_color)
-                                                            .add_modifier(Modifier::UNDERLINED);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Apply CursorLine background: clear individual bg to avoid "patchy" look
-                            // ONLY if not in visual selection range
-                            if is_current_line
-                                && cursor_screen_y == Some(i.saturating_sub(scroll_y))
-                                && !is_in_range
-                            {
-                                style.bg = None;
-                            }
-
-                            if c == '\t' {
-                                for _ in 0..2 {
-                                    spans.push(Span::styled(" ", style));
-                                }
-                            } else {
-                                // Indent guide logic for non-tab characters
-                                let line_str = line.to_string();
-                                // Only show guides for level 1+ (skip col 0)
-                                let is_indent_pos = x > 0
-                                    && x % 2 == 0
-                                    && x < line_str.chars().take_while(|&c| c == ' ').count();
-                                if is_indent_pos {
-                                    let mut indent_style =
-                                        theme.get("Comment").add_modifier(Modifier::DIM);
-                                    if is_current_line
-                                        && cursor_screen_y == Some(i.saturating_sub(scroll_y))
-                                    {
-                                        indent_style.bg = None;
-                                    }
-                                    spans.push(Span::styled("┆", indent_style));
-                                } else {
-                                    spans.push(Span::styled(c.to_string(), style));
-                                }
-                            }
-                        }
-                        current_pos_in_line += char_width;
-                    }
-                }
-
-                // Fill the rest of the line with CursorLine if active
-                if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
-                    let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
-                    if current_width < editor_width {
-                        spans.push(Span::styled(
-                            " ".repeat(editor_width - current_width),
-                            theme.get("CursorLine"),
-                        ));
-                    }
-                }
-
-                let line_len = if line.as_str().unwrap_or("").ends_with('\n') {
-                    line.len_chars().saturating_sub(1)
-                } else {
-                    line.len_chars()
-                };
-                // Empty lines don't need a space span; they will show the Block background
-
-                // Indent Blankline Visualization for totally empty lines
-                let line_str = line.to_string();
-                if row == 0 && line_str.trim().is_empty() && line_len == 0 {
-                    // Find previous line indentation
-                    let mut prev_indent = 0;
-                    for j in (0..actual_idx).rev() {
-                        let prev_line = buffer.line(j).unwrap().to_string();
-                        if !prev_line.trim().is_empty() {
-                            prev_indent = prev_line
-                                .chars()
-                                .take_while(|&c| c == ' ' || c == '\t')
-                                .count();
-                            break;
-                        }
-                    }
-
-                    if prev_indent > 0 {
-                        let mut new_spans = Vec::new();
-                        let indent_char = "┆";
-                        let mut base_style = theme.get("Normal");
-                        let mut indent_style = theme.get("Comment").add_modifier(Modifier::DIM);
-
-                        if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
-                            base_style.bg = None;
-                            indent_style.bg = None;
-                        }
-
-                        for j in 0..prev_indent {
-                            // Skip col 0 (root level), show guides for level 1+ (j=2, 4, ...)
-                            if j >= 2 && j % 2 == 0 {
-                                new_spans.push(Span::styled(indent_char, indent_style));
-                            } else {
-                                new_spans.push(Span::styled(" ", base_style));
-                            }
-                        }
-                        if !new_spans.is_empty() {
-                            spans = new_spans;
-                            // Still fill the rest
-                            if is_current_line
-                                && cursor_screen_y == Some(i.saturating_sub(scroll_y))
-                            {
-                                let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
-                                if current_width < editor_width {
-                                    spans.push(Span::styled(
-                                        " ".repeat(editor_width - current_width),
-                                        theme.get("CursorLine"),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-
-                let mut line_obj = Line::from(spans);
-                if is_current_line && cursor_screen_y == Some(i.saturating_sub(scroll_y)) {
-                    line_obj = line_obj.style(theme.get("CursorLine"));
-                }
-
-                // Diagnostic Virtual Text on the first row of the line
-                if is_first_row && vim.show_diagnostics {
-                    if let Some(path) = &buffer.file_path {
-                        if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                            let diags_lock = lsp_manager.diagnostics.lock().unwrap();
-                            if let Some(server_diags) = diags_lock.get(&url) {
-                                // Collect diagnostics for this line
-                                let mut line_diags = Vec::new();
-                                for diags in server_diags.values() {
-                                    for diag in diags {
-                                        if diag.range.start.line as usize == actual_idx {
-                                            line_diags.push(diag);
-                                        }
-                                    }
-                                }
-
-                                line_diags.sort_by_key(|d| d.severity);
-
-                                for (idx, diag) in line_diags.iter().enumerate() {
-                                    let (diag_icon, diag_color) = match diag.severity {
-                                        Some(DiagnosticSeverity::ERROR) => ("■", theme.palette.red),
-                                        Some(DiagnosticSeverity::WARNING) => {
-                                            ("▲", theme.palette.yellow)
-                                        }
-                                        _ => ("●", theme.palette.blue),
-                                    };
-
-                                    let mut msg = diag.message.clone();
-                                    // Include diagnostic code if available
-                                    if let Some(code) = &diag.code {
-                                        let code_str = match code {
-                                            lsp_types::NumberOrString::Number(n) => n.to_string(),
-                                            lsp_types::NumberOrString::String(s) => s.clone(),
-                                        };
-                                        msg = format!("{} [{}]", msg, code_str);
-                                    }
-
-                                    if idx == 0 {
-                                        line_obj.spans.push(Span::raw("    "));
-                                    } else {
-                                        line_obj.spans.push(Span::raw(", "));
-                                    }
-
-                                    line_obj.spans.push(Span::styled(
-                                        format!("{} ", diag_icon),
-                                        Style::default().fg(diag_color),
-                                    ));
-                                    line_obj.spans.push(Span::styled(
-                                        msg,
-                                        Style::default()
-                                            .fg(theme.palette.grey_fg)
-                                            .add_modifier(Modifier::ITALIC),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-
-                text.lines.push(line_obj);
-            }
-            frame.render_widget(Paragraph::new(text), editor_layout[1]);
-
-            // Blame Popup
-            if let Some(blame) = &vim.blame_popup {
-                let popup_width = (blame.len() as u16) + 4;
-                let popup_height = 3;
-
-                if let Some(y) = cursor_screen_y {
-                    let line = buffer.line(cursor.y).unwrap();
-                    let mut cursor_pos_in_line = 0;
-                    for (i, c) in line.chars().enumerate() {
-                        if i >= cursor.x {
-                            break;
-                        }
-                        cursor_pos_in_line += if c == '\t' {
-                            2
-                        } else {
-                            unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                        };
-                    }
-                    let screen_x = (cursor_pos_in_line % editor_width) as u16;
-
-                    let x = (editor_layout[1].x + screen_x)
-                        .min(area.right().saturating_sub(popup_width));
-                    let screen_y = (editor_layout[1].y + y as u16).saturating_sub(popup_height);
-
-                    let popup_area = Rect {
-                        x,
-                        y: screen_y,
-                        width: popup_width,
-                        height: popup_height,
+            // Floating Doc Window
+            let selected_idx = vim.selected_suggestion % vim.filtered_suggestions.len();
+            if let Some(item) = vim.filtered_suggestions.get(selected_idx) {
+                if let Some(detail) = &item.detail {
+                    let doc_width = 40;
+                    let doc_height = menu_height;
+                    let doc_x = if menu_area.right() + doc_width <= area.right() {
+                        menu_area.right()
+                    } else {
+                        menu_area.left().saturating_sub(doc_width)
+                    };
+                    let doc_area = Rect {
+                        x: doc_x,
+                        y: menu_area.y,
+                        width: doc_width,
+                        height: doc_height,
                     };
 
-                    let block = Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(theme.get("TreeExplorerConnector"))
-                        .style(theme.get("Normal"));
+                    let doc_text = detail.clone();
+                    let doc_paragraph = Paragraph::new(doc_text)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .border_type(BorderType::Rounded)
+                                .border_style(theme.get("TreeExplorerConnector"))
+                                .style(theme.get("Normal")),
+                        )
+                        .wrap(ratatui::widgets::Wrap { trim: true });
 
-                    frame.render_widget(Clear, popup_area);
-                    frame.render_widget(
-                        Paragraph::new(blame.clone())
-                            .block(block)
-                            .alignment(Alignment::Center),
-                        popup_area,
-                    );
+                    frame.render_widget(Clear, doc_area);
+                    frame.render_widget(doc_paragraph, doc_area);
                 }
-            }
-
-            // 2.5 Completion Menu (Floating)
-            if vim.show_suggestions && !vim.filtered_suggestions.is_empty() {
-                let menu_width = 45;
-                let menu_height = std::cmp::min(10, vim.filtered_suggestions.len()) as u16 + 2;
-
-                let line = buffer.line(cursor.y).unwrap();
-                let mut cursor_pos_in_line = 0;
-                for (i, c) in line.chars().enumerate() {
-                    if i >= cursor.x {
-                        break;
-                    }
-                    cursor_pos_in_line += if c == '\t' {
-                        2
-                    } else {
-                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                    };
-                }
-
-                let menu_x = editor_layout[1].x + (cursor_pos_in_line % editor_width) as u16;
-                let menu_y = editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16 + 1;
-
-                let menu_area = Rect {
-                    x: menu_x.min(area.right().saturating_sub(menu_width)),
-                    y: menu_y.min(
-                        editor_trouble_chunks[0]
-                            .bottom()
-                            .saturating_sub(menu_height),
-                    ),
-                    width: menu_width,
-                    height: menu_height,
-                };
-
-                let items: Vec<ListItem> = vim
-                    .filtered_suggestions
-                    .iter()
-                    .enumerate()
-                    .map(|(display_idx, item)| {
-                        let (icon, kind_name, color_group) = match item.kind {
-                            Some(lsp_types::CompletionItemKind::FUNCTION) => {
-                                (icons::FUNCTION, "Function", "Function")
-                            }
-                            Some(lsp_types::CompletionItemKind::METHOD) => {
-                                (icons::METHOD, "Method", "Function")
-                            }
-                            Some(lsp_types::CompletionItemKind::VARIABLE) => {
-                                (icons::VARIABLE, "Variable", "Variable")
-                            }
-                            Some(lsp_types::CompletionItemKind::CLASS) => {
-                                (icons::CLASS, "Class", "Type")
-                            }
-                            Some(lsp_types::CompletionItemKind::INTERFACE) => {
-                                (icons::INTERFACE, "Interface", "Type")
-                            }
-                            Some(lsp_types::CompletionItemKind::KEYWORD) => {
-                                (icons::KEYWORD, "Keyword", "Keyword")
-                            }
-                            Some(lsp_types::CompletionItemKind::SNIPPET) => {
-                                (icons::SNIPPET, "Snippet", "Keyword")
-                            }
-                            Some(lsp_types::CompletionItemKind::FIELD) => {
-                                (icons::FIELD, "Field", "Identifier")
-                            }
-                            Some(lsp_types::CompletionItemKind::PROPERTY) => {
-                                (icons::PROPERTY, "Property", "Identifier")
-                            }
-                            Some(lsp_types::CompletionItemKind::TEXT) => {
-                                (icons::TEXT, "Text", "Comment")
-                            }
-                            _ => (icons::OBJECT, "Object", "Constant"),
-                        };
-
-                        let mut label_style = theme.get("Normal");
-                        let mut icon_style = theme.get(color_group);
-                        let mut kind_style = theme.get("Comment");
-
-                        if display_idx == (vim.selected_suggestion % vim.filtered_suggestions.len())
-                        {
-                            label_style = Style::default()
-                                .fg(theme.palette.black)
-                                .bg(theme.palette.blue)
-                                .add_modifier(Modifier::BOLD);
-                            icon_style = Style::default()
-                                .fg(theme.palette.black)
-                                .bg(theme.palette.blue);
-                            kind_style = Style::default()
-                                .fg(theme.palette.black)
-                                .bg(theme.palette.blue);
-                        }
-
-                        ListItem::new(Line::from(vec![
-                            Span::styled(format!(" {} ", icon), icon_style),
-                            Span::styled(format!("{:<30}", item.label), label_style),
-                            Span::styled(format!(" {:>8} ", kind_name), kind_style),
-                        ]))
-                    })
-                    .collect();
-
-                let menu = List::new(items).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(theme.get("TreeExplorerConnector"))
-                        .style(theme.get("Normal")),
-                );
-
-                frame.render_widget(Clear, menu_area);
-                frame.render_stateful_widget(menu, menu_area, &mut vim.suggestion_state);
-
-                // Floating Doc Window
-                let selected_idx = vim.selected_suggestion % vim.filtered_suggestions.len();
-                if let Some(item) = vim.filtered_suggestions.get(selected_idx) {
-                    if let Some(detail) = &item.detail {
-                        let doc_width = 40;
-                        let doc_height = menu_height;
-                        let doc_x = if menu_area.right() + doc_width <= area.right() {
-                            menu_area.right()
-                        } else {
-                            menu_area.left().saturating_sub(doc_width)
-                        };
-                        let doc_area = Rect {
-                            x: doc_x,
-                            y: menu_area.y,
-                            width: doc_width,
-                            height: doc_height,
-                        };
-
-                        let doc_text = detail.clone();
-                        let doc_paragraph = Paragraph::new(doc_text)
-                            .block(
-                                Block::default()
-                                    .borders(Borders::ALL)
-                                    .border_type(BorderType::Rounded)
-                                    .border_style(theme.get("TreeExplorerConnector"))
-                                    .style(theme.get("Normal")),
-                            )
-                            .wrap(ratatui::widgets::Wrap { trim: true });
-
-                        frame.render_widget(Clear, doc_area);
-                        frame.render_widget(doc_paragraph, doc_area);
-                    }
-                }
-            }
-        }
-
-        // 2b. Split pane — full syntax highlight, uses split buffer's own cursor/scroll
-        if let Some(split_rect) = split_area {
-            let sidx = vim.split_buffer_idx;
-            if let (Some(buf), Some(cursor)) = (editor.buffers.get(sidx), editor.cursors.get(sidx)) {
-                let scroll_y = cursor.scroll_y;
-                let visible_h = split_rect.height as usize;
-                let text_str = buf.text.to_string();
-                let lines: Vec<&str> = text_str.lines().collect();
-                let syntax = &editor.split_syntax_styles;
-
-                // Gutter width (line numbers)
-                let gutter_w: u16 = if vim.show_number || vim.relative_number { 5 } else { 0 };
-                let gutter_rect = Rect { x: split_rect.x, y: split_rect.y, width: gutter_w, height: split_rect.height };
-                let content_rect = Rect {
-                    x: split_rect.x + gutter_w,
-                    y: split_rect.y,
-                    width: split_rect.width.saturating_sub(gutter_w),
-                    height: split_rect.height,
-                };
-
-                // Line numbers
-                if gutter_w > 0 {
-                    let num_lines: Vec<Line> = (0..visible_h).map(|i| {
-                        let line_idx = i + scroll_y;
-                        if line_idx < lines.len() {
-                            let is_active = line_idx == cursor.y;
-                            let style = if is_active { theme.get("CursorLineNr") } else { theme.get("LineNr") };
-                            Line::from(vec![Span::styled(format!("{:>3} ", line_idx + 1), style)])
-                        } else {
-                            Line::from(vec![Span::styled("~   ", theme.get("Comment"))])
-                        }
-                    }).collect();
-                    frame.render_widget(Paragraph::new(num_lines), gutter_rect);
-                }
-
-                // Cursor line highlight
-                if vim.config.cursorline && vim.split_focused {
-                    if let Some(screen_y) = cursor.y.checked_sub(scroll_y) {
-                        if screen_y < visible_h {
-                            frame.render_widget(
-                                Block::default().style(theme.get("CursorLine")),
-                                Rect { x: split_rect.x, y: split_rect.y + screen_y as u16, width: split_rect.width, height: 1 },
-                            );
-                        }
-                    }
-                }
-
-                // Code content with syntax highlighting
-                let code_lines: Vec<Line> = (0..visible_h).map(|i| {
-                    let line_idx = i + scroll_y;
-                    if let Some(line_text) = lines.get(line_idx) {
-                        let spans: Vec<Span> = line_text.chars().enumerate().map(|(x, c)| {
-                            let style = syntax.get(line_idx)
-                                .and_then(|s| s.get(x))
-                                .copied()
-                                .unwrap_or(theme.get("Normal"));
-                            Span::styled(c.to_string(), style)
-                        }).collect();
-                        Line::from(spans)
-                    } else {
-                        Line::from(vec![Span::styled("~", theme.get("Comment"))])
-                    }
-                }).collect();
-                frame.render_widget(Paragraph::new(code_lines).style(theme.get("Normal")), content_rect);
             }
         }
 
@@ -1164,19 +446,23 @@ impl TerminalUi {
                 width: popup_width,
                 height: popup_height,
             };
-            let scroll = vim.preview_scroll.min(preview_lines.len().saturating_sub(1));
-            let total = preview_lines.len();
+
             let block = Block::default()
+                .title(" File Preview ")
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(format!(" Preview [{}/{}] j/k Ctrl+d/u q ", scroll + 1, total))
                 .border_style(theme.get("TreeExplorerConnector"))
                 .style(theme.get("Normal"));
+
             frame.render_widget(Clear, popup_area);
+            let inner = block.inner(popup_area);
             frame.render_widget(block, popup_area);
-            let inner = popup_area.inner(Margin { horizontal: 1, vertical: 1 });
-            let visible_h = inner.height as usize;
-            let items: Vec<Line> = preview_lines.iter().skip(scroll).take(visible_h)
+
+            let scroll = vim.preview_scroll;
+            let items: Vec<Line> = preview_lines
+                .iter()
+                .skip(scroll)
+                .take(inner.height as usize)
                 .enumerate()
                 .map(|(i, l)| {
                     let num = Span::styled(format!("{:>4} ", scroll + i + 1), theme.get("LineNr"));
@@ -1189,282 +475,99 @@ impl TerminalUi {
         }
 
         // 3. Status Line
-        let (mode_color, mode_label) = match vim.mode {
-            Mode::Normal => (theme.palette.blue, " NORMAL "),
-            Mode::Insert => (theme.palette.green, " INSERT "),
-            Mode::Visual => (theme.palette.purple, " VISUAL "),
-            Mode::VisualBlock => (theme.palette.purple, " V-BLOCK "),
-            Mode::BlockInsert => (theme.palette.orange, " BLOCK INSERT "),
-            Mode::Command => (theme.palette.yellow, " COMMAND "),
-            _ => (theme.palette.blue, " NORMAL "),
+        let (mode_style, mode_label) = match vim.mode {
+            Mode::Normal => (theme.get("StatusLineNormal"), " NORMAL "),
+            Mode::Insert => (theme.get("StatusLineInsert"), " INSERT "),
+            Mode::Visual | Mode::VisualBlock => (theme.get("StatusLineVisual"), if matches!(vim.mode, Mode::Visual) { " VISUAL " } else { " V-BLOCK " }),
+            Mode::BlockInsert => (theme.get("StatusLineInsert"), " BLOCK INSERT "),
+            Mode::Command => (theme.get("StatusLineCommand"), " COMMAND "),
+            _ => (theme.get("StatusLineA"), " ATOM "),
         };
 
-        let mut status_spans = Vec::new();
-
-        // Section A: Mode
-        if vim.config.showmode {
-            status_spans.push(Span::styled(
-                mode_label,
-                Style::default()
-                    .fg(theme.palette.black)
-                    .bg(mode_color)
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
-
-        // BlockInsert: show typed text so far
-        if let Mode::BlockInsert = vim.mode {
-            if !vim.block_insert_text.is_empty() {
-                status_spans.push(Span::styled(
-                    format!(" ▸ \"{}\"", vim.block_insert_text),
-                    theme.get("String"),
-                ));
-            }
-        }
-
-        // Section B: Git
+        let mut git_spans = Vec::new();
         if let Some(git) = &vim.git_info {
-            status_spans.push(Span::styled(
-                format!(" {} {} ", icons::GIT_BRANCH, git.branch),
-                theme.get("StatusLineB"),
-            ));
-
-            // Buffer-level git signs stats
-            let mut buf_added = 0;
-            let mut buf_modified = 0;
-            let mut buf_removed = 0;
-            for (_, sign) in &buffer.git_signs {
-                match sign {
-                    crate::git::GitSign::Add => buf_added += 1,
-                    crate::git::GitSign::Change | crate::git::GitSign::ChangeDelete => {
-                        buf_modified += 1
-                    }
-                    crate::git::GitSign::Delete | crate::git::GitSign::TopDelete => {
-                        buf_removed += 1
-                    }
+            if buf_added > 0 || buf_modified > 0 || buf_removed > 0 {
+                git_spans.push(Span::styled(format!(" {} ", git.branch), theme.get("StatusLineB")));
+                if buf_added > 0 {
+                    git_spans.push(Span::styled(format!("+{} ", buf_added), theme.get("StatusLineGitAdd")));
                 }
-            }
-
-            if buf_added > 0 {
-                status_spans.push(Span::styled(
-                    format!(" {}{} ", icons::GIT_ADD, buf_added),
-                    theme.get("StatusLineGitAdd"),
-                ));
-            }
-            if buf_modified > 0 {
-                status_spans.push(Span::styled(
-                    format!(" {}{} ", icons::GIT_MOD, buf_modified),
-                    theme.get("StatusLineGitMod"),
-                ));
-            }
-            if buf_removed > 0 {
-                status_spans.push(Span::styled(
-                    format!(" {}{} ", icons::GIT_DEL, buf_removed),
-                    theme.get("StatusLineGitDel"),
-                ));
-            }
-        }
-
-        // Section C: Filename
-        let file_name = if vim.show_intro {
-            "ATOM DASHBOARD"
-        } else {
-            buffer
-                .file_path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .unwrap_or("[No Name]")
-        };
-        let modified_icon = if buffer.modified { " ●" } else { "" };
-        status_spans.push(Span::styled(
-            format!(" {}{} ", file_name, modified_icon),
-            theme.get("StatusLineC"),
-        ));
-
-        // Calculate Right Sections
-        let mut right_spans = Vec::new();
-
-        // Section X: LSP Diagnostics
-        if vim.show_diagnostics {
-            if let Some(path) = &buffer.file_path {
-                if let Ok(url) = lsp_types::Url::from_file_path(path) {
-                    let diagnostics = lsp_manager.diagnostics.lock().unwrap();
-                    if let Some(server_diags) = diagnostics.get(&url) {
-                        let mut e = 0;
-                        let mut w = 0;
-                        let mut i = 0;
-                        let mut h = 0;
-                        for diags in server_diags.values() {
-                            for diag in diags {
-                                match diag.severity {
-                                    Some(DiagnosticSeverity::ERROR) => e += 1,
-                                    Some(DiagnosticSeverity::WARNING) => w += 1,
-                                    Some(DiagnosticSeverity::INFORMATION) => i += 1,
-                                    Some(DiagnosticSeverity::HINT) => h += 1,
-                                    _ => {}
-                                }
-                            }
-                        }
-                        if e > 0 {
-                            right_spans.push(Span::styled(
-                                format!(" {} {} ", icons::ERROR, e),
-                                theme.get("StatusLineDiagnosticError"),
-                            ));
-                        }
-                        if w > 0 {
-                            right_spans.push(Span::styled(
-                                format!(" {} {} ", icons::WARNING, w),
-                                theme.get("StatusLineDiagnosticWarn"),
-                            ));
-                        }
-                        if i > 0 {
-                            right_spans.push(Span::styled(
-                                format!(" {} {} ", icons::INFO, i),
-                                theme.get("StatusLineDiagnosticInfo"),
-                            ));
-                        }
-                        if h > 0 {
-                            right_spans.push(Span::styled(
-                                format!(" {} {} ", icons::HINT, h),
-                                theme.get("StatusLineDiagnosticHint"),
-                            ));
-                        }
-                    }
+                if buf_modified > 0 {
+                    git_spans.push(Span::styled(format!("~{} ", buf_modified), theme.get("StatusLineGitMod")));
+                }
+                if buf_removed > 0 {
+                    git_spans.push(Span::styled(format!("-{} ", buf_removed), theme.get("StatusLineGitDel")));
                 }
             }
         }
-
-        // Section Y: LSP Name
-        let lsp_name = if let Some(path) = &buffer.file_path {
-            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                let clients = lsp_manager.clients.lock().unwrap();
-                if let Some(ext_clients) = clients.get(ext) {
-                    let names: Vec<_> = ext_clients
-                        .iter()
-                        .map(|(_, _, name)| name.as_str())
-                        .collect();
-                    if names.is_empty() {
-                        "No LSP".to_string()
-                    } else {
-                        names.join(",")
-                    }
-                } else {
-                    "No LSP".to_string()
-                }
-            } else {
-                "No LSP".to_string()
-            }
-        } else {
-            "No LSP".to_string()
-        };
 
         let lsp_status_text = match &vim.lsp_status {
-            LspStatus::Loading | LspStatus::Installing | LspStatus::Formatting => {
-                format!(" {} {} ", vim.get_spinner(), lsp_name)
-            }
-            LspStatus::Ready => format!(" {} ", lsp_name),
-            LspStatus::Error(_) => format!(" LSP Error "),
-            _ => format!(" {} ", lsp_name),
+            crate::vim::LspStatus::None => "No LSP",
+            crate::vim::LspStatus::Loading => "LSP...",
+            crate::vim::LspStatus::Ready => "LSP",
+            crate::vim::LspStatus::Installing => "Inst...",
+            crate::vim::LspStatus::Formatting => "Fmt...",
+            crate::vim::LspStatus::Error(_) => "LSP Err",
         };
-        right_spans.push(Span::styled(lsp_status_text, theme.get("StatusLineY")));
 
-        // Section Z: Position & Buffers
-        let total_lines = buffer.len_lines();
-        let percent = if total_lines > 0 {
-            (cursor.y + 1) * 100 / total_lines
-        } else {
-            0
-        };
-        let pos_text = format!(" {:>2}% {}:{} ", percent, cursor.y + 1, cursor.x + 1);
-        let buf_text = format!(
-            "(Buffer {}/{}) ",
-            editor.active_idx + 1,
-            editor.buffers.len()
-        );
-        right_spans.push(Span::styled(
-            format!("{}{}", pos_text, buf_text),
-            theme.get("StatusLineZ"),
-        ));
+        let pos_text = format!("{}:{}", cursor_y + 1, cursor_x + 1);
 
-        // Combine all
-        let left_width: usize = status_spans.iter().map(|s| s.content.chars().count()).sum();
-        let right_width: usize = right_spans.iter().map(|s| s.content.chars().count()).sum();
-        let filler_width = (root_chunks[1].width as usize)
-            .saturating_sub(left_width)
-            .saturating_sub(right_width);
+        let mut left_spans = vec![
+            Span::styled(mode_label, mode_style),
+        ];
+        left_spans.extend(git_spans);
+        left_spans.push(Span::styled(format!(" {} ", file_name), theme.get("StatusLineC").add_modifier(Modifier::BOLD)));
+        left_spans.push(Span::styled(modified_flag, theme.get("Keyword")));
 
-        if filler_width > 0 {
-            status_spans.push(Span::styled(
-                " ".repeat(filler_width),
-                theme.get("StatusLine"),
-            ));
-        }
-        status_spans.extend(right_spans);
+        let left_part = Line::from(left_spans);
 
-        frame.render_widget(
-            Paragraph::new(Line::from(status_spans)).style(theme.get("StatusLine")),
-            root_chunks[1],
-        );
+        let right_part = Line::from(vec![
+            Span::styled(format!(" {} ", lsp_status_text), theme.get("StatusLineB")),
+            Span::styled(format!(" {} ", pos_text), theme.get("StatusLineA")),
+        ]);
 
-        // 4. Command/Search/Input Line
+        frame.render_widget(Paragraph::new(left_part).style(theme.get("StatusLine")), root_chunks[1]);
+        frame.render_widget(Paragraph::new(right_part).alignment(Alignment::Right).style(theme.get("StatusLine")), root_chunks[1]);
+
+        // 4. Command Line / Message Area
         match vim.mode {
             Mode::Command => {
-                let mut spans = vec![Span::styled(
-                    format!(":{}", vim.command_buffer),
-                    theme.get("Normal"),
-                )];
-
-                // Ghost text
-                if !vim.command_suggestions.is_empty() {
-                    let suggestion = &vim.command_suggestions[vim.selected_command_suggestion];
-                    if suggestion
-                        .to_lowercase()
-                        .starts_with(&vim.command_buffer.to_lowercase())
-                    {
-                        let ghost = &suggestion[vim.command_buffer.len()..];
-                        spans.push(Span::styled(
-                            ghost,
-                            theme.get("Comment").add_modifier(Modifier::DIM),
-                        ));
-                    }
-                }
-
-                frame.render_widget(Paragraph::new(Line::from(spans)), root_chunks[2]);
+                let prompt = format!(":{}", vim.command_buffer);
+                frame.render_widget(
+                    Paragraph::new(prompt.as_str()).style(theme.get("Normal")),
+                    root_chunks[2],
+                );
                 frame.set_cursor_position((
-                    root_chunks[2].x + vim.command_buffer.len() as u16 + 1,
+                    root_chunks[2].x + prompt.chars().count() as u16,
                     root_chunks[2].y,
                 ));
             }
             Mode::Search => {
-                let text = format!("/{}", vim.search_query);
+                let prompt = format!("/{}", vim.input_buffer);
                 frame.render_widget(
-                    Paragraph::new(text).style(theme.get("Normal")),
+                    Paragraph::new(prompt.as_str()).style(theme.get("Normal")),
                     root_chunks[2],
                 );
                 frame.set_cursor_position((
-                    root_chunks[2].x + vim.search_query.len() as u16 + 1,
+                    root_chunks[2].x + prompt.chars().count() as u16,
                     root_chunks[2].y,
                 ));
             }
             Mode::ExplorerInput(input_type) => {
                 let prompt = match input_type {
-                    ExplorerInputType::Add => {
-                        "Add a new file or directory (directories end with a \"/\"): "
-                    }
-                    ExplorerInputType::Rename => "New File Name: ",
-                    ExplorerInputType::Move => "Move To: ",
-                    ExplorerInputType::DeleteConfirm => "Delete selected? (y/n): ",
-                    ExplorerInputType::Filter => "",
+                    crate::vim::mode::ExplorerInputType::Add => "New File Name: ",
+                    crate::vim::mode::ExplorerInputType::Rename => "Rename To: ",
+                    crate::vim::mode::ExplorerInputType::Move => "Move To: ",
+                    crate::vim::mode::ExplorerInputType::DeleteConfirm => "Delete selected? (y/n): ",
+                    crate::vim::mode::ExplorerInputType::Filter => "",
                 };
-                if input_type != ExplorerInputType::Filter {
-                    let text = format!("{}{}", prompt, vim.input_buffer);
+                if !prompt.is_empty() {
+                    let display = format!("{}{}", prompt, vim.input_buffer);
                     frame.render_widget(
-                        Paragraph::new(text).style(theme.get("Normal")),
+                        Paragraph::new(display).style(theme.get("Keyword")),
                         root_chunks[2],
                     );
                     frame.set_cursor_position((
-                        root_chunks[2].x + prompt.len() as u16 + vim.input_buffer.len() as u16,
+                        root_chunks[2].x + (prompt.chars().count() + vim.input_buffer.chars().count()) as u16,
                         root_chunks[2].y,
                     ));
                 } else {
@@ -1504,37 +607,461 @@ impl TerminalUi {
                         root_chunks[2],
                     );
                 }
-                if !vim.show_intro && vim.focus == Focus::Editor && cursor.y < buffer.len_lines() {
-                    let line = buffer.line(cursor.y).unwrap();
-                    let mut screen_x = 0;
-                    for (i, c) in line.chars().enumerate() {
-                        if i >= cursor.x {
-                            break;
+                if !vim.show_intro && vim.focus == Focus::Editor && cursor_y < buffer.len_lines() {
+                    if let Some(y) = cursor_screen_y_opt {
+                        if y < editor_layout[1].height as usize {
+                            frame.set_cursor_position((
+                                editor_layout[1].x + cursor_screen_x as u16,
+                                editor_layout[1].y + y as u16,
+                            ));
                         }
-                        screen_x += if c == '\t' {
-                            2
-                        } else {
-                            unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                        };
                     }
-                    frame.set_cursor_position((
-                        editor_layout[1].x + (screen_x % editor_width as usize) as u16,
-                        editor_layout[1].y + cursor_screen_y.unwrap_or(0) as u16,
-                    ));
                 }
             }
         }
 
         if let Mode::Nucleus = vim.mode {
-            self.draw_nucleus(frame, editor, lsp_manager, theme, vim);
+            self.draw_nucleus(frame, editor, lsp_manager, &theme, vim);
         }
 
         if let Mode::Keymaps = vim.mode {
-            self.draw_keymaps(frame, vim, theme);
+            self.draw_keymaps(frame, vim, &theme);
         }
 
         if vim.telescope.visible {
-            vim.telescope.draw(frame, theme, vim, editor);
+            vim.telescope.draw(frame, &theme, vim, editor);
+        }
+    }
+
+    pub fn draw_editor_pane(
+        &self,
+        frame: &mut Frame,
+        editor: &mut crate::editor::Editor,
+        vim: &mut crate::vim::VimState,
+        lsp_manager: &crate::lsp::LspManager,
+        pane_area: Rect,
+        buf_idx: usize,
+        is_focused: bool,
+    ) {
+        let theme = editor.highlighter.theme.clone();
+        let (buffer, cursor_y, cursor_x, cursor_scroll_y) = {
+            let buffer = match editor.buffers.get(buf_idx) {
+                Some(b) => b,
+                None => return,
+            };
+            let cursor = match editor.cursors.get(buf_idx) {
+                Some(c) => c,
+                None => return,
+            };
+            (buffer.clone(), cursor.y, cursor.x, cursor.scroll_y)
+        };
+        let visible_height = pane_area.height as usize;
+
+        let gutter_width = match (
+            vim.show_number || vim.relative_number,
+            vim.config.signcolumn,
+        ) {
+            (true, true) => 8,
+            (true, false) => 5,
+            (false, true) => 3,
+            (false, false) => 0,
+        };
+
+        let editor_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
+            .split(pane_area);
+
+        let editor_width = editor_layout[1].width as usize;
+        let screen_to_buffer_lines =
+            editor.get_screen_to_buffer_lines_for_idx(buf_idx, editor_width, vim.config.wrap);
+
+        // Find cursor screen y
+        let cursor_screen_y = screen_to_buffer_lines
+            .iter()
+            .position(|&(idx, row)| {
+                if idx != cursor_y {
+                    return false;
+                }
+                if !vim.config.wrap {
+                    return true;
+                }
+                let line = buffer.line(idx).unwrap();
+                let mut cursor_pos_in_line = 0;
+                for (i, _) in line.chars().enumerate() {
+                    if i >= cursor_x {
+                        break;
+                    }
+                    let c = line.char(i);
+                    cursor_pos_in_line += if c == '\t' {
+                        2
+                    } else {
+                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                    };
+                }
+                let cursor_row = cursor_pos_in_line / editor_width;
+                row == cursor_row
+            })
+            .map(|pos| pos.saturating_sub(cursor_scroll_y));
+
+        // Full width highlight for active line
+        if vim.config.cursorline && is_focused {
+            if let Some(y) = cursor_screen_y {
+                if y < visible_height {
+                    let highlight_rect = Rect {
+                        x: pane_area.x,
+                        y: pane_area.y + y as u16,
+                        width: pane_area.width,
+                        height: 1,
+                    };
+                    frame.render_widget(
+                        Block::default().style(theme.get("CursorLine")),
+                        highlight_rect,
+                    );
+                }
+            }
+        }
+
+        // Line Numbers & Gutter
+        if gutter_width > 0 {
+            let mut line_numbers = Text::default();
+            for i in
+                cursor_scroll_y..std::cmp::min(cursor_scroll_y + visible_height, screen_to_buffer_lines.len())
+            {
+                let (actual_idx, row) = screen_to_buffer_lines[i];
+                let is_first_row = row == 0;
+
+                if is_first_row {
+                    let gutter_text = if vim.relative_number {
+                        let rel = if actual_idx == cursor_y {
+                            actual_idx + 1
+                        } else {
+                            (actual_idx as i32 - cursor_y as i32).abs() as usize
+                        };
+                        format!("{:>4} ", rel)
+                    } else {
+                        format!("{:>4} ", actual_idx + 1)
+                    };
+
+                    let mut style = theme.get("LineNr");
+                    if actual_idx == cursor_y {
+                        style = theme.get("CursorLineNr");
+                    }
+
+                    // Git signs
+                    if vim.config.signcolumn {
+                        let sign = buffer
+                            .git_signs
+                            .iter()
+                            .find(|(l, _)| *l == actual_idx)
+                            .map(|(_, s)| s);
+                        let (sign_char, sign_style) = match sign {
+                            Some(crate::git::GitSign::Add) => ("+", theme.get("GitAdd")),
+                            Some(crate::git::GitSign::Change) => ("~", theme.get("GitChange")),
+                            Some(crate::git::GitSign::Delete) | Some(crate::git::GitSign::TopDelete) => ("-", theme.get("GitDelete")),
+                            _ => (" ", theme.get("Normal")),
+                        };
+                        line_numbers.lines.push(Line::from(vec![
+                            Span::styled(gutter_text, style),
+                            Span::styled(format!("{} ", sign_char), sign_style),
+                        ]));
+                    } else {
+                        line_numbers.lines.push(Line::from(vec![Span::styled(gutter_text, style)]));
+                    }
+                } else {
+                    line_numbers.lines.push(Line::from("      "));
+                }
+            }
+            frame.render_widget(Paragraph::new(line_numbers), editor_layout[0]);
+        }
+
+        // Buffer Content
+        let mut text = Text::default();
+        let search_query = vim.search_query.clone();
+
+        // Get syntax styles from cache
+        editor.refresh_syntax_for_idx(buf_idx);
+        let syntax_styles = &editor.caches[buf_idx].syntax_styles;
+
+        for i in cursor_scroll_y..std::cmp::min(cursor_scroll_y + visible_height, screen_to_buffer_lines.len()) {
+            let (actual_idx, row) = screen_to_buffer_lines[i];
+            let is_current_line = actual_idx == cursor_y;
+
+            if let Some(line) = buffer.line(actual_idx) {
+                let mut spans = Vec::new();
+                let mut current_pos_in_line = 0;
+                for (x, c) in line.chars().enumerate() {
+                    if c == '\n' || c == '\r' {
+                        continue;
+                    }
+                    let char_width = if c == '\t' {
+                        2
+                    } else {
+                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                    };
+                    let char_row = current_pos_in_line / editor_width;
+
+                    if char_row == row {
+                        let mut style = syntax_styles
+                            .get(actual_idx)
+                            .and_then(|s| s.get(x))
+                            .copied()
+                            .unwrap_or(theme.get("Normal"));
+
+                        // Overlay Highlights
+                        let mut is_in_range = false;
+                        if let Some(start) = vim.selection_start {
+                            let cur = crate::vim::Position {
+                                x: cursor_x,
+                                y: cursor_y,
+                            };
+                            match vim.mode {
+                                Mode::VisualBlock | Mode::BlockInsert => {
+                                    // Block selection: highlight rectangular region
+                                    let top_y = start.y.min(cur.y);
+                                    let bot_y = start.y.max(cur.y);
+                                    let left_x = start.x.min(cur.x);
+                                    let right_x = start.x.max(cur.x);
+                                    is_in_range = actual_idx >= top_y
+                                        && actual_idx <= bot_y
+                                        && x >= left_x
+                                        && x <= right_x;
+                                }
+                                _ => {
+                                    // Character-wise selection
+                                    let (s_y, s_x, e_y, e_x) = if (start.y, start.x) < (cur.y, cur.x)
+                                    {
+                                        (start.y, start.x, cur.y, cur.x)
+                                    } else {
+                                        (cur.y, cur.x, start.y, start.x)
+                                    };
+                                    is_in_range = if actual_idx > s_y && actual_idx < e_y {
+                                        true
+                                    } else if actual_idx == s_y && actual_idx == e_y {
+                                        x >= s_x && x <= e_x
+                                    } else if actual_idx == s_y {
+                                        x >= s_x
+                                    } else if actual_idx == e_y {
+                                        x <= e_x
+                                    } else {
+                                        false
+                                    };
+                                }
+                            }
+                            if is_in_range {
+                                style = theme.get("Visual");
+                            }
+                        }
+                        if !search_query.is_empty() {
+                            let line_str = line.to_string();
+                            if let Some(pos) =
+                                line_str.to_lowercase().find(&search_query.to_lowercase())
+                            {
+                                if x >= pos && x < pos + search_query.len() {
+                                    style = theme.get("Search");
+                                }
+                            }
+                        }
+                        if vim.yank_highlight_line == Some(actual_idx) {
+                            style = Style::default()
+                                .bg(theme.palette.blue)
+                                .fg(theme.palette.black);
+                        }
+
+                        // Diagnostics undercurl/underline
+                        if let Some(path) = &buffer.file_path {
+                            if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                                let diagnostics_lock = lsp_manager.diagnostics.lock().unwrap();
+                                if let Some(server_diags) = diagnostics_lock.get(&url) {
+                                    for diags in server_diags.values() {
+                                        for diag in diags {
+                                            if (actual_idx as u32) >= diag.range.start.line
+                                                && (actual_idx as u32) <= diag.range.end.line
+                                            {
+                                                let s_x = if (actual_idx as u32)
+                                                    == diag.range.start.line
+                                                {
+                                                    diag.range.start.character as usize
+                                                } else {
+                                                    0
+                                                };
+                                                let e_x = if (actual_idx as u32)
+                                                    == diag.range.end.line
+                                                {
+                                                    diag.range.end.character as usize
+                                                } else {
+                                                    line.len_chars()
+                                                };
+                                                if x >= s_x && x < e_x {
+                                                    let diag_color = match diag.severity {
+                                                        Some(lsp_types::DiagnosticSeverity::ERROR) => {
+                                                            theme.palette.red
+                                                        }
+                                                        Some(
+                                                            lsp_types::DiagnosticSeverity::WARNING,
+                                                        ) => theme.palette.yellow,
+                                                        _ => theme.palette.blue,
+                                                    };
+                                                    style = style
+                                                        .underline_color(diag_color)
+                                                        .add_modifier(Modifier::UNDERLINED);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if is_current_line
+                            && cursor_screen_y == Some(i.saturating_sub(cursor_scroll_y))
+                            && !is_in_range
+                        {
+                            style.bg = None;
+                        }
+
+                        if c == '\t' {
+                            for _ in 0..2 {
+                                spans.push(Span::styled(" ", style));
+                            }
+                        } else {
+                            let line_str = line.to_string();
+                            let is_indent_pos = x > 0
+                                && x % 2 == 0
+                                && x < line_str.chars().take_while(|&c| c == ' ').count();
+                            if is_indent_pos {
+                                let mut indent_style =
+                                    theme.get("Comment").add_modifier(Modifier::DIM);
+                                if is_current_line
+                                    && cursor_screen_y == Some(i.saturating_sub(cursor_scroll_y))
+                                {
+                                    indent_style.bg = None;
+                                }
+                                spans.push(Span::styled("┆", indent_style));
+                            } else {
+                                spans.push(Span::styled(c.to_string(), style));
+                            }
+                        }
+                    }
+                    current_pos_in_line += char_width;
+                }
+
+                // Fill the rest of the line with CursorLine if active
+                if is_current_line && cursor_screen_y == Some(i.saturating_sub(cursor_scroll_y)) {
+                    let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
+                    if current_width < editor_width {
+                        spans.push(Span::styled(
+                            " ".repeat(editor_width - current_width),
+                            theme.get("CursorLine"),
+                        ));
+                    }
+                }
+
+                let mut line_obj = Line::from(spans);
+                if is_current_line && cursor_screen_y == Some(i.saturating_sub(cursor_scroll_y)) {
+                    line_obj = line_obj.style(theme.get("CursorLine"));
+                }
+
+                // Diagnostic Virtual Text
+                if row == 0 && vim.show_diagnostics {
+                    if let Some(path) = &buffer.file_path {
+                        if let Ok(url) = lsp_types::Url::from_file_path(path) {
+                            let diags_lock = lsp_manager.diagnostics.lock().unwrap();
+                            if let Some(server_diags) = diags_lock.get(&url) {
+                                let mut line_diags = Vec::new();
+                                for diags in server_diags.values() {
+                                    for diag in diags {
+                                        if diag.range.start.line as usize == actual_idx {
+                                            line_diags.push(diag);
+                                        }
+                                    }
+                                }
+                                line_diags.sort_by_key(|d| d.severity);
+                                for (idx, diag) in line_diags.iter().enumerate() {
+                                    let (diag_icon, diag_color) = match diag.severity {
+                                        Some(lsp_types::DiagnosticSeverity::ERROR) => ("■", theme.palette.red),
+                                        Some(lsp_types::DiagnosticSeverity::WARNING) => ("▲", theme.palette.yellow),
+                                        _ => ("●", theme.palette.blue),
+                                    };
+                                    let mut msg = diag.message.clone();
+                                    if let Some(code) = &diag.code {
+                                        let code_str = match code {
+                                            lsp_types::NumberOrString::Number(n) => n.to_string(),
+                                            lsp_types::NumberOrString::String(s) => s.clone(),
+                                        };
+                                        msg = format!("{} [{}]", msg, code_str);
+                                    }
+                                    if idx == 0 {
+                                        line_obj.spans.push(Span::raw("    "));
+                                    } else {
+                                        line_obj.spans.push(Span::raw(", "));
+                                    }
+                                    line_obj.spans.push(Span::styled(
+                                        format!("{} ", diag_icon),
+                                        Style::default().fg(diag_color),
+                                    ));
+                                    line_obj.spans.push(Span::styled(
+                                        msg,
+                                        Style::default()
+                                            .fg(theme.palette.grey_fg)
+                                            .add_modifier(Modifier::ITALIC),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                text.lines.push(line_obj);
+            }
+        }
+        frame.render_widget(Paragraph::new(text), editor_layout[1]);
+
+        // Blame Popup
+        if let Some(blame) = &vim.blame_popup {
+            let popup_width = (blame.len() as u16) + 4;
+            let popup_height = 3;
+
+            if let Some(y) = cursor_screen_y {
+                let line = buffer.line(cursor_y).unwrap();
+                let mut cursor_pos_in_line = 0;
+                for (i, _) in line.chars().enumerate() {
+                    if i >= cursor_x {
+                        break;
+                    }
+                    let c = line.char(i);
+                    cursor_pos_in_line += if c == '\t' {
+                        2
+                    } else {
+                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                    };
+                }
+                let screen_x = (cursor_pos_in_line % editor_width) as u16;
+
+                let x = (editor_layout[1].x + screen_x).min(pane_area.right().saturating_sub(popup_width));
+                let screen_y = (editor_layout[1].y + y as u16).saturating_sub(popup_height);
+
+                let popup_area = Rect {
+                    x,
+                    y: screen_y,
+                    width: popup_width,
+                    height: popup_height,
+                };
+
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(theme.get("TreeExplorerConnector"))
+                    .style(theme.get("Normal"));
+
+                frame.render_widget(Clear, popup_area);
+                frame.render_widget(
+                    Paragraph::new(blame.clone())
+                        .block(block)
+                        .alignment(Alignment::Center),
+                    popup_area,
+                );
+            }
         }
     }
 }

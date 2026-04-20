@@ -313,7 +313,7 @@ export default Counter;"#
             }
 
             let (icon, mut icon_style) = match self.kind {
-                TelescopeKind::Themes => (crate::ui::icons::COLOR, theme.get("Type")),
+                TelescopeKind::Themes => (crate::ui::icons::COLOR.to_string(), theme.get("Type")),
                 _ => {
                     let (icon, icon_group) = crate::ui::TerminalUi::get_file_icon(&res.path);
                     (icon, theme.get(&icon_group))

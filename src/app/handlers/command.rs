@@ -43,6 +43,10 @@ pub const COMMANDS: &[&str] = &[
     "config",
     "help",
     "checkhealth",
+    "sp",
+    "split",
+    "vsp",
+    "vsplit",
 ];
 
 impl App {
@@ -155,6 +159,40 @@ impl App {
             "bn" | "bnext" => self.dispatch_action(Action::NextBuffer, 1),
             "bp" | "bprev" => self.dispatch_action(Action::PrevBuffer, 1),
             "bd" | "bdelete" => self.dispatch_action(Action::CloseBuffer, 1),
+            "sp" | "split" => {
+                let current_buf = self.editor.active_idx;
+                let new_buf = if let Some(p) = args.first() {
+                    let _ = self.editor.open_file(std::path::PathBuf::from(*p));
+                    self.editor.active_idx
+                } else {
+                    current_buf
+                };
+                let new_id = self.vim.next_pane_id;
+                self.vim.next_pane_id += 1;
+                let new_pane = crate::vim::Pane { id: new_id, buffer_idx: new_buf };
+                self.vim.pane_layout.split(self.vim.focused_pane_id, new_pane, crate::vim::mode::SplitKind::Horizontal);
+                self.vim.focused_pane_id = new_id;
+                self.vim.focus = Focus::Editor;
+                let sidx = self.editor.active_idx;
+                self.editor.refresh_split_syntax(sidx);
+            }
+            "vsp" | "vsplit" => {
+                let current_buf = self.editor.active_idx;
+                let new_buf = if let Some(p) = args.first() {
+                    let _ = self.editor.open_file(std::path::PathBuf::from(*p));
+                    self.editor.active_idx
+                } else {
+                    current_buf
+                };
+                let new_id = self.vim.next_pane_id;
+                self.vim.next_pane_id += 1;
+                let new_pane = crate::vim::Pane { id: new_id, buffer_idx: new_buf };
+                self.vim.pane_layout.split(self.vim.focused_pane_id, new_pane, crate::vim::mode::SplitKind::Vertical);
+                self.vim.focused_pane_id = new_id;
+                self.vim.focus = Focus::Editor;
+                let sidx = self.editor.active_idx;
+                self.editor.refresh_split_syntax(sidx);
+            }
             "e" | "edit" => {
                 if let Some(p) = args.first() {
                     let _ = self.editor.open_file(PathBuf::from(*p));

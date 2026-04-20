@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf, sync::{Arc, Mutex}};
+use std::{io, path::{Path, PathBuf}, sync::{Arc, Mutex}, collections::HashMap};
 
 pub mod buffer;
 pub mod cursor;
@@ -6,16 +6,19 @@ pub mod highlighter;
 pub mod todo;
 pub mod treesitter;
 
+pub struct BufferCache {
+    pub last_version: usize,
+    pub syntax_styles: Vec<Vec<ratatui::style::Style>>,
+    pub screen_mappings: HashMap<usize, Vec<(usize, usize)>>, // width -> mapping
+}
+
 pub struct Editor {
     pub buffers: Vec<buffer::Buffer>,
     pub cursors: Vec<cursor::Cursor>,
     pub active_idx: usize,
     pub highlighter: highlighter::Highlighter,
     pub treesitter: Arc<Mutex<treesitter::TreesitterManager>>,
-    pub syntax_styles: Vec<Vec<ratatui::style::Style>>,
-    pub last_syntax_text: String,
-    pub split_syntax_styles: Vec<Vec<ratatui::style::Style>>,
-    pub last_split_syntax_text: String,
+    pub caches: Vec<BufferCache>,
 }
 
 impl Editor {
@@ -27,97 +30,68 @@ impl Editor {
             active_idx: 0,
             highlighter: highlighter::Highlighter::new(theme),
             treesitter: Arc::new(Mutex::new(treesitter::TreesitterManager::new())),
-            syntax_styles: Vec::new(),
-            last_syntax_text: String::new(),
-            split_syntax_styles: Vec::new(),
-            last_split_syntax_text: String::new(),
+            caches: vec![BufferCache {
+                last_version: usize::MAX,
+                syntax_styles: Vec::new(),
+                screen_mappings: HashMap::new(),
+            }],
         }
+    }
+
+    pub fn refresh_syntax_for_idx(&mut self, idx: usize) {
+        if idx >= self.buffers.len() { return; }
+        
+        let buffer_version = self.buffers[idx].version;
+        if self.caches[idx].last_version == buffer_version {
+            return;
+        }
+
+        let text = self.buffers[idx].text.to_string();
+        let ext = self.buffers[idx].file_path.as_ref()
+            .and_then(|p| p.extension())
+            .and_then(|s| s.to_str())
+            .unwrap_or("rs")
+            .to_string();
+        
+        let lang_name = match ext.as_str() {
+            "rs" => "rust",
+            "ts" => "typescript",
+            "tsx" => "tsx",
+            "js" | "jsx" => "javascript",
+            "py" => "python",
+            "go" => "go",
+            "c" | "h" => "c",
+            "cpp" | "hpp" | "cc" | "hh" => "cpp",
+            "lua" => "lua",
+            "json" => "json",
+            "toml" => "toml",
+            "html" => "html",
+            "css" => "css",
+            _ => &ext,
+        };
+
+        let mut ts = self.treesitter.lock().unwrap();
+        self.caches[idx].syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut ts);
+        self.caches[idx].last_version = buffer_version;
+        // Clear screen mappings as they might have changed due to text changes
+        self.caches[idx].screen_mappings.clear();
     }
 
     pub fn refresh_syntax(&mut self) {
-        let (text, ext) = {
-            let buffer = self.buffer();
-            let text = buffer.text.to_string();
-            
-            // Optimization: Skip if text is exactly the same as last time
-            if text == self.last_syntax_text {
-                return;
-            }
-
-            let ext = buffer.file_path.as_ref()
-                .and_then(|p| p.extension())
-                .and_then(|s| s.to_str())
-                .unwrap_or("rs")
-                .to_string();
-            (text, ext)
-        };
-        
-        // Map extension to treesitter language name
-        let lang_name = match ext.as_str() {
-            "rs" => "rust",
-            "ts" => "typescript",
-            "tsx" => "tsx",
-            "js" | "jsx" => "javascript",
-            "py" => "python",
-            "go" => "go",
-            "c" | "h" => "c",
-            "cpp" | "hpp" | "cc" | "hh" => "cpp",
-            "lua" => "lua",
-            "json" => "json",
-            "toml" => "toml",
-            "html" => "html",
-            "css" => "css",
-            _ => &ext,
-        };
-
-        let mut ts = self.treesitter.lock().unwrap();
-        self.syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut ts);
-        self.last_syntax_text = text;
+        self.refresh_syntax_for_idx(self.active_idx);
     }
 
     pub fn refresh_split_syntax(&mut self, split_idx: usize) {
-        if split_idx >= self.buffers.len() {
-            return;
-        }
-        let (text, ext) = {
-            let buffer = &self.buffers[split_idx];
-            let text = buffer.text.to_string();
-            if text == self.last_split_syntax_text {
-                return;
-            }
-            let ext = buffer.file_path.as_ref()
-                .and_then(|p| p.extension())
-                .and_then(|s| s.to_str())
-                .unwrap_or("rs")
-                .to_string();
-            (text, ext)
-        };
-        let lang_name = match ext.as_str() {
-            "rs" => "rust",
-            "ts" => "typescript",
-            "tsx" => "tsx",
-            "js" | "jsx" => "javascript",
-            "py" => "python",
-            "go" => "go",
-            "c" | "h" => "c",
-            "cpp" | "hpp" | "cc" | "hh" => "cpp",
-            "lua" => "lua",
-            "json" => "json",
-            "toml" => "toml",
-            "html" => "html",
-            "css" => "css",
-            _ => &ext,
-        };
-        let mut ts = self.treesitter.lock().unwrap();
-        self.split_syntax_styles = self.highlighter.highlight_buffer(&text, lang_name, &mut ts);
-        self.last_split_syntax_text = text;
+        self.refresh_syntax_for_idx(split_idx);
     }
 
     pub fn set_theme(&mut self, name: &str) {
         let theme = crate::ui::colorscheme::ColorScheme::new(name);
         self.highlighter.theme = theme;
-        // Reset last_syntax_text to force a refresh even if content hasn't changed
-        self.last_syntax_text = String::new();
+        // Force refresh all caches
+        for cache in &mut self.caches {
+            cache.last_version = usize::MAX;
+        }
         self.refresh_syntax();
     }
 
@@ -137,10 +111,31 @@ impl Editor {
         &mut self.cursors[self.active_idx]
     }
 
+    pub fn find_buffer_by_path(&self, path: &Path) -> Option<usize> {
+        self.buffers.iter().position(|b| {
+            b.file_path.as_ref().map_or(false, |p| {
+                // Try canonical paths for better comparison
+                let p_canon = p.canonicalize().unwrap_or_else(|_| p.clone());
+                let path_canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+                p_canon == path_canon
+            })
+        })
+    }
+
     pub fn open_file(&mut self, path: PathBuf) -> io::Result<()> {
+        if let Some(idx) = self.find_buffer_by_path(&path) {
+            self.active_idx = idx;
+            return Ok(());
+        }
+
         let new_buffer = buffer::Buffer::load(path)?;
         self.buffers.push(new_buffer);
         self.cursors.push(cursor::Cursor::new());
+        self.caches.push(BufferCache {
+            last_version: usize::MAX,
+            syntax_styles: Vec::new(),
+            screen_mappings: HashMap::new(),
+        });
         self.active_idx = self.buffers.len() - 1;
         Ok(())
     }
@@ -152,6 +147,11 @@ impl Editor {
         new_buffer.modified = false;
         self.buffers.push(new_buffer);
         self.cursors.push(cursor::Cursor::new());
+        self.caches.push(BufferCache {
+            last_version: usize::MAX,
+            syntax_styles: Vec::new(),
+            screen_mappings: HashMap::new(),
+        });
         self.active_idx = self.buffers.len() - 1;
     }
 
@@ -171,17 +171,26 @@ impl Editor {
         }
     }
 
-    pub fn close_current_buffer(&mut self) {
+    pub fn close_current_buffer(&mut self) -> Option<usize> {
+        let removed = self.active_idx;
         if self.buffers.len() > 1 {
             self.buffers.remove(self.active_idx);
             self.cursors.remove(self.active_idx);
+            self.caches.remove(self.active_idx);
             if self.active_idx >= self.buffers.len() {
                 self.active_idx = self.buffers.len() - 1;
             }
+            Some(removed)
         } else {
             // Keep at least one empty buffer
             self.buffers[0] = buffer::Buffer::new();
             self.cursors[0] = cursor::Cursor::new();
+            self.caches[0] = BufferCache {
+                last_version: usize::MAX,
+                syntax_styles: Vec::new(),
+                screen_mappings: HashMap::new(),
+            };
+            None
         }
     }
 
@@ -225,8 +234,15 @@ impl Editor {
         }
     }
 
-    pub fn get_screen_to_buffer_lines(&self, width: usize, wrap: bool) -> Vec<(usize, usize)> {
-        let buffer = self.buffer();
+    pub fn get_screen_to_buffer_lines_for_idx(&mut self, idx: usize, width: usize, wrap: bool) -> Vec<(usize, usize)> {
+        if idx >= self.buffers.len() { return Vec::new(); }
+
+        // Check cache first
+        if let Some(mapping) = self.caches[idx].screen_mappings.get(&width) {
+            return mapping.clone();
+        }
+
+        let buffer = &self.buffers[idx];
         let mut screen_to_buffer_lines = Vec::new();
         let mut i = 0;
         let num_lines = buffer.len_lines();
@@ -252,7 +268,14 @@ impl Editor {
                 i += 1;
             }
         }
+        
+        // Cache it
+        self.caches[idx].screen_mappings.insert(width, screen_to_buffer_lines.clone());
         screen_to_buffer_lines
+    }
+
+    pub fn get_screen_to_buffer_lines(&mut self, width: usize, wrap: bool) -> Vec<(usize, usize)> {
+        self.get_screen_to_buffer_lines_for_idx(self.active_idx, width, wrap)
     }
 
     pub fn scroll_into_view(&mut self, height: usize, width: usize, wrap: bool) {
@@ -851,6 +874,11 @@ mod tests {
         
         editor.buffers.push(buffer::Buffer::new());
         editor.cursors.push(cursor::Cursor::new());
+        editor.caches.push(BufferCache {
+            last_version: usize::MAX,
+            syntax_styles: Vec::new(),
+            screen_mappings: HashMap::new(),
+        });
         editor.active_idx = 1;
         editor.buffer_mut().text = ropey::Rope::from_str("Buffer 2");
         

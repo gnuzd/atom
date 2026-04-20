@@ -355,32 +355,14 @@ impl App {
                                         })
                                         .split(main_chunks[1]);
 
-                                    // Compute split areas for click detection
-                                    let split_area: Option<Rect> = if let Some(kind) = self.vim.split {
-                                        match kind {
-                                            crate::vim::mode::SplitKind::Vertical => {
-                                                let halves = Layout::default()
-                                                    .direction(Direction::Horizontal)
-                                                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                                                    .split(editor_trouble_chunks[0]);
-                                                Some(halves[1])
-                                            }
-                                            crate::vim::mode::SplitKind::Horizontal => {
-                                                let halves = Layout::default()
-                                                    .direction(Direction::Vertical)
-                                                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                                                    .split(editor_trouble_chunks[0]);
-                                                Some(halves[1])
-                                            }
+                                    let (panes, _) = crate::ui::TerminalUi::get_panes_and_borders(&self.vim.pane_layout, editor_trouble_chunks[0], self.vim.focused_pane_id);
+                                    let mut clicked_pane = None;
+                                    for p in panes {
+                                        if mouse.column >= p.0.x && mouse.column < p.0.x + p.0.width && mouse.row >= p.0.y && mouse.row < p.0.y + p.0.height {
+                                            clicked_pane = Some(p);
+                                            break;
                                         }
-                                    } else {
-                                        None
-                                    };
-
-                                    let clicked_split = split_area.map_or(false, |r| {
-                                        mouse.column >= r.x && mouse.column < r.x + r.width
-                                            && mouse.row >= r.y && mouse.row < r.y + r.height
-                                    });
+                                    }
 
                                     if self.trouble.visible
                                         && mouse.row >= editor_trouble_chunks[1].y
@@ -388,28 +370,32 @@ impl App {
                                         self.vim.focus = Focus::Trouble;
                                         let _click_row =
                                             (mouse.row - editor_trouble_chunks[1].y) as usize;
-                                    } else if clicked_split {
-                                        // Clicked in split pane — focus it, move split cursor
-                                        self.vim.split_focused = true;
+                                    } else if let Some((rect, buf_idx, _)) = clicked_pane {
                                         self.vim.focus = Focus::Editor;
-                                        if let Some(r) = split_area {
-                                            let gutter: u16 = if self.vim.show_number || self.vim.relative_number { 5 } else { 0 };
-                                            let sidx = self.vim.split_buffer_idx;
-                                            if sidx < self.editor.cursors.len() {
-                                                let scroll = self.editor.cursors[sidx].scroll_y;
-                                                let row = (mouse.row.saturating_sub(r.y)) as usize + scroll;
-                                                let col = (mouse.column.saturating_sub(r.x + gutter)) as usize;
-                                                let buf_len = self.editor.buffers[sidx].len_lines();
-                                                let row = row.min(buf_len.saturating_sub(1));
-                                                self.editor.cursors[sidx].y = row;
-                                                self.editor.cursors[sidx].x = col;
-                                            }
+                                        
+                                        // Update focused pane
+                                        let all_panes = self.vim.pane_layout.get_all_panes();
+                                        if let Some(target_pane) = all_panes.iter().find(|p| p.buffer_idx == buf_idx) {
+                                            self.vim.focused_pane_id = target_pane.id;
+                                            self.editor.active_idx = target_pane.buffer_idx;
                                         }
-                                    } else {
-                                        self.vim.split_focused = false;
-                                        self.vim.focus = Focus::Editor;
-                                        if let Some((buf_line, buf_col)) =
-                                            self.mouse_to_editor_pos(mouse.column, mouse.row)
+
+                                        let gutter: u16 = if self.vim.show_number || self.vim.relative_number { 5 } else { 0 };
+                                        let sidx = self.editor.active_idx;
+                                        if sidx < self.editor.cursors.len() {
+                                            let scroll = self.editor.cursors[sidx].scroll_y;
+                                            let row = (mouse.row.saturating_sub(rect.y)) as usize + scroll;
+                                            let col = (mouse.column.saturating_sub(rect.x + gutter)) as usize;
+                                            let buf_len = self.editor.buffers[sidx].len_lines();
+                                            let row = row.min(buf_len.saturating_sub(1));
+                                            self.editor.cursors[sidx].y = row;
+                                            self.editor.cursors[sidx].x = col;
+                                            self.editor.clamp_cursor();
+                                        }
+                                        
+                                        let buf_line = self.editor.cursors[sidx].y;
+                                        let buf_col = self.editor.cursors[sidx].x;
+                                        
                                         {
                                             let now = Instant::now();
                                             let is_double =
@@ -422,10 +408,6 @@ impl App {
                                                 } else {
                                                     false
                                                 };
-
-                                            self.editor.cursor_mut().y = buf_line;
-                                            self.editor.cursor_mut().x = buf_col;
-                                            self.editor.clamp_cursor();
 
                                             if is_double {
                                                 if let Some((word_start, word_end)) =
@@ -503,10 +485,14 @@ impl App {
 
                                 // Ctrl+W: toggle split focus
                                 if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    if self.vim.split.is_some() {
-                                        self.vim.split_focused = !self.vim.split_focused;
-                                        continue;
+                                    let panes = self.vim.pane_layout.get_all_panes();
+                                    if panes.len() > 1 {
+                                        let current_idx = panes.iter().position(|p| p.id == self.vim.focused_pane_id).unwrap_or(0);
+                                        let next_pane = &panes[(current_idx + 1) % panes.len()];
+                                        self.vim.focused_pane_id = next_pane.id;
+                                        self.editor.active_idx = next_pane.buffer_idx;
                                     }
+                                    continue;
                                 }
                                 // Preview popup scroll / close
                                 if self.vim.preview_lines.is_some() {
@@ -705,15 +691,34 @@ impl App {
                                             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                                 if let Some(entry) = self.explorer.selected_entry() {
                                                     if entry.path.is_file() {
-                                                        let primary_idx = self.editor.active_idx;
-                                                        let _ = self.editor.open_file(entry.path.clone());
-                                                        self.vim.split_buffer_idx = self.editor.active_idx;
-                                                        self.editor.active_idx = primary_idx;
-                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Horizontal);
-                                                        self.vim.split_focused = false;
-                                                        self.vim.focus = Focus::Editor;
-                                                        let sidx = self.vim.split_buffer_idx;
-                                                        self.editor.refresh_split_syntax(sidx);
+                                                        let path = entry.path.clone();
+                                                        if let Some(existing_buf_idx) = self.editor.find_buffer_by_path(&path) {
+                                                            let all_panes = self.vim.pane_layout.get_all_panes();
+                                                            if let Some(p) = all_panes.iter().find(|p| p.buffer_idx == existing_buf_idx) {
+                                                                self.vim.focused_pane_id = p.id;
+                                                                self.editor.active_idx = existing_buf_idx;
+                                                                self.vim.focus = Focus::Editor;
+                                                            } else {
+                                                                // Open new split with existing buffer
+                                                                let new_id = self.vim.next_pane_id;
+                                                                self.vim.next_pane_id += 1;
+                                                                let new_pane = crate::vim::Pane { id: new_id, buffer_idx: existing_buf_idx };
+                                                                self.vim.pane_layout.split(self.vim.focused_pane_id, new_pane, crate::vim::mode::SplitKind::Horizontal);
+                                                                self.vim.focused_pane_id = new_id;
+                                                                self.editor.active_idx = existing_buf_idx;
+                                                                self.vim.focus = Focus::Editor;
+                                                            }
+                                                        } else {
+                                                            let _ = self.editor.open_file(path);
+                                                            let new_buf = self.editor.active_idx;
+                                                            let new_id = self.vim.next_pane_id;
+                                                            self.vim.next_pane_id += 1;
+                                                            let new_pane = crate::vim::Pane { id: new_id, buffer_idx: new_buf };
+                                                            self.vim.pane_layout.split(self.vim.focused_pane_id, new_pane, crate::vim::mode::SplitKind::Horizontal);
+                                                            self.vim.focused_pane_id = new_id;
+                                                            self.vim.focus = Focus::Editor;
+                                                        }
+                                                        self.editor.refresh_syntax_for_idx(self.editor.active_idx);
                                                     }
                                                 }
                                             }
@@ -721,15 +726,33 @@ impl App {
                                             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                                 if let Some(entry) = self.explorer.selected_entry() {
                                                     if entry.path.is_file() {
-                                                        let primary_idx = self.editor.active_idx;
-                                                        let _ = self.editor.open_file(entry.path.clone());
-                                                        self.vim.split_buffer_idx = self.editor.active_idx;
-                                                        self.editor.active_idx = primary_idx;
-                                                        self.vim.split = Some(crate::vim::mode::SplitKind::Vertical);
-                                                        self.vim.split_focused = false;
-                                                        self.vim.focus = Focus::Editor;
-                                                        let sidx = self.vim.split_buffer_idx;
-                                                        self.editor.refresh_split_syntax(sidx);
+                                                        let path = entry.path.clone();
+                                                        if let Some(existing_buf_idx) = self.editor.find_buffer_by_path(&path) {
+                                                            let all_panes = self.vim.pane_layout.get_all_panes();
+                                                            if let Some(p) = all_panes.iter().find(|p| p.buffer_idx == existing_buf_idx) {
+                                                                self.vim.focused_pane_id = p.id;
+                                                                self.editor.active_idx = existing_buf_idx;
+                                                                self.vim.focus = Focus::Editor;
+                                                            } else {
+                                                                let new_id = self.vim.next_pane_id;
+                                                                self.vim.next_pane_id += 1;
+                                                                let new_pane = crate::vim::Pane { id: new_id, buffer_idx: existing_buf_idx };
+                                                                self.vim.pane_layout.split(self.vim.focused_pane_id, new_pane, crate::vim::mode::SplitKind::Vertical);
+                                                                self.vim.focused_pane_id = new_id;
+                                                                self.editor.active_idx = existing_buf_idx;
+                                                                self.vim.focus = Focus::Editor;
+                                                            }
+                                                        } else {
+                                                            let _ = self.editor.open_file(path);
+                                                            let new_buf = self.editor.active_idx;
+                                                            let new_id = self.vim.next_pane_id;
+                                                            self.vim.next_pane_id += 1;
+                                                            let new_pane = crate::vim::Pane { id: new_id, buffer_idx: new_buf };
+                                                            self.vim.pane_layout.split(self.vim.focused_pane_id, new_pane, crate::vim::mode::SplitKind::Vertical);
+                                                            self.vim.focused_pane_id = new_id;
+                                                            self.vim.focus = Focus::Editor;
+                                                        }
+                                                        self.editor.refresh_syntax_for_idx(self.editor.active_idx);
                                                     }
                                                 }
                                             }
@@ -1522,14 +1545,16 @@ impl App {
             self.editor
                 .scroll_into_view(visible_height, editor_width, self.vim.config.wrap);
             self.editor.refresh_syntax();
-            if self.vim.split.is_some() {
-                let sidx = self.vim.split_buffer_idx;
-                self.editor.refresh_split_syntax(sidx);
+            let panes = self.vim.pane_layout.get_all_panes();
+            for pane in panes {
+                if pane.id != self.vim.focused_pane_id {
+                    self.editor.refresh_split_syntax(pane.buffer_idx);
+                }
             }
             self.terminal.draw(|f| {
                 self.ui.draw(
                     f,
-                    &self.editor,
+                    &mut self.editor,
                     &mut self.vim,
                     &mut self.explorer,
                     &self.trouble,

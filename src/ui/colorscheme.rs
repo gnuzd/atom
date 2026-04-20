@@ -191,7 +191,7 @@ impl ColorScheme {
         hl.insert("StatusLineZ".into(), Style::default().fg(palette.blue).bg(palette.black2).add_modifier(Modifier::BOLD));
 
         hl.insert("StatusLineGitAdd".into(), Style::default().fg(palette.green).bg(palette.black2));
-        hl.insert("StatusLineGitMod".into(), Style::default().fg(palette.blue).bg(palette.black2));
+        hl.insert("StatusLineGitMod".into(), Style::default().fg(palette.yellow).bg(palette.black2));
         hl.insert("StatusLineGitDel".into(), Style::default().fg(palette.red).bg(palette.black2));
 
         hl.insert("GitSignsAdd".into(), Style::default().fg(palette.green));

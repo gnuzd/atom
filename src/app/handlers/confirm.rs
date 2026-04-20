@@ -12,7 +12,9 @@ impl App {
                 }
                 ConfirmAction::CloseBuffer => {
                     self.save_and_format(None);
-                    self.editor.close_current_buffer();
+                    if let Some(removed) = self.editor.close_current_buffer() {
+                        self.vim.pane_layout.update_buffer_indices(removed);
+                    }
                     self.vim.mode = Mode::Normal;
                 }
             },
@@ -21,7 +23,9 @@ impl App {
                     self.should_quit = true;
                 }
                 ConfirmAction::CloseBuffer => {
-                    self.editor.close_current_buffer();
+                    if let Some(removed) = self.editor.close_current_buffer() {
+                        self.vim.pane_layout.update_buffer_indices(removed);
+                    }
                     self.vim.mode = Mode::Normal;
                 }
             },
