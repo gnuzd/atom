@@ -241,25 +241,28 @@ impl TreesitterManager {
             "",
         ).ok()?;
 
-        // Define capture names that match our theme
-        // Order must match the captures array in highlighter.rs
+        // Define capture names that match our theme.
+        // Order must match the captures array in highlighter.rs.
+        // Tree-sitter picks the LONGEST prefix match, so more specific
+        // names (e.g. "string.special.key") must come before "string".
         let captures = [
-            "keyword",     // 0  → Keyword
-            "function",    // 1  → Function
-            "type",        // 2  → Type
-            "string",      // 3  → String
-            "comment",     // 4  → Comment
-            "constant",    // 5  → Constant  (matches constant.builtin etc.)
-            "variable",    // 6  → Variable
-            "parameter",   // 7  → Identifier
-            "label",       // 8  → Keyword   (reuse)
-            "tag",         // 9  → Tag
-            "attribute",   // 10 → Attribute
-            "number",      // 11 → Constant  (JSON numbers, etc.)
-            "operator",    // 12 → Keyword
-            "property",    // 13 → Property  (JSON keys, struct fields)
-            "namespace",   // 14 → Type
-            "punctuation", // 15 → Normal
+            "keyword",            // 0  → Keyword
+            "function",           // 1  → Function
+            "type",               // 2  → Type
+            "string.special.key", // 3  → Property  (JSON keys: @string.special.key)
+            "string",             // 4  → String    (all other strings)
+            "comment",            // 5  → Comment
+            "constant",           // 6  → Constant  (matches constant.builtin, etc.)
+            "variable",           // 7  → Variable
+            "parameter",          // 8  → Identifier
+            "label",              // 9  → Keyword
+            "tag",                // 10 → Tag
+            "attribute",          // 11 → Attribute
+            "number",             // 12 → Constant
+            "operator",           // 13 → Keyword
+            "property",           // 14 → Property  (@property in other grammars)
+            "namespace",          // 15 → Type
+            "punctuation",        // 16 → Normal
         ];
         config.configure(&captures);
         
