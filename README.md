@@ -29,13 +29,14 @@ Atom is a modern, Vim-inspired terminal editor designed for speed and productivi
 
 ## ✨ Features
 
-- ⌨️ **Vim-inspired Modal Editing**: Powerful motions and operators for efficient text manipulation.
-- 🛠️ **Mason-like Package Manager**: Manage LSPs, DAPs, linters, and formatters with an intuitive UI.
+- ⌨️ **Vim-inspired Modal Editing**: Powerful motions and operators including **Visual Block mode** (`Ctrl+V`).
+- 🛠️ **Nucleus Package Manager**: Manage LSPs, DAPs, linters, and formatters with an intuitive UI (previously Mason).
 - 🔭 **Telescope-like Fuzzy Finder**: Quickly find files, search text, and navigate your project.
 - 🌳 **Tree-sitter Integration**: High-performance, language-aware syntax highlighting and indentation.
 - 🚀 **Native LSP Support**: Auto-completion, diagnostics, go-to-definition, and refactoring out of the box.
-- 📁 **Integrated File Explorer**: Navigate your project structure with support for **scrolling**, **PageUp/PageDown**, and file operations.
-- ⚠️ **Trouble List**: A centralized view for project-wide diagnostics and warnings.
+- 📁 **Integrated File Explorer**: Navigate project structure with **file previews** (`Shift+P`), splits, and vertical guides.
+- ⌨️ **Command Wildmenu**: Vim-style command-line completion with `Tab` and `Shift+Tab`.
+- ⚙️ **Lua Configuration**: Customize Atom using a familiar `init.lua` with `vim.opt` and `vim.keymap.set`.
 - 🌿 **Git Integration**: Real-time branch status and file changes in the status line.
 - 🎨 **Beautiful UI**: Modern aesthetics with rounded borders, icons, and customizable themes.
 
@@ -72,23 +73,39 @@ atom [file or directory]
 
 - `i` - Insert mode
 - `v` - Visual mode
+- `Ctrl+v` - Visual Block mode
 - `Esc` - Back to Normal mode
 - `:w` - Save file
 - `:q` - Quit
 - `<Space>ff` - Find files (Telescope)
 - `\` - Toggle File Explorer
 - `<Space>tt` - Toggle Trouble List
-- `<Space>m` - Open Mason (Package Manager)
+- `<Space>m` - Open Nucleus (Package Manager)
 - `gg` / `G` - Jump to start/end (Editor or Explorer)
 - `PageUp` / `PageDown` - Page scrolling (Editor or Explorer)
 
 
 ## ⚙️ Customization
 
-Atom is highly configurable. Configuration files are located in `~/.config/atom/` (or platform equivalent).
+Atom is highly configurable via Lua. Create your configuration at `~/.config/atom/init.lua`:
 
-- `config.toml`: General editor settings.
+```lua
+-- ~/.config/atom/init.lua
+
+-- Options
+vim.opt.colorscheme = "gruvbox-material"
+vim.opt.number = true
+vim.opt.relativenumber = true
+vim.opt.tabstop = 4
+
+-- Keymaps: vim.keymap.set(mode, lhs, rhs)
+vim.keymap.set("i", "jk", "ExitMode")
+vim.keymap.set("n", "<C-s>", "Save")
+```
+
+Additional configuration files:
 - `colorscheme.toml`: Customize your editor's look.
+- `config.json`: Legacy JSON configuration (optional).
 
 ## 🤝 Contributing
 
