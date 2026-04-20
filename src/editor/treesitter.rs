@@ -242,8 +242,24 @@ impl TreesitterManager {
         ).ok()?;
 
         // Define capture names that match our theme
+        // Order must match the captures array in highlighter.rs
         let captures = [
-            "keyword", "function", "type", "string", "comment", "constant", "variable", "parameter", "label", "tag", "attribute"
+            "keyword",     // 0  → Keyword
+            "function",    // 1  → Function
+            "type",        // 2  → Type
+            "string",      // 3  → String
+            "comment",     // 4  → Comment
+            "constant",    // 5  → Constant  (matches constant.builtin etc.)
+            "variable",    // 6  → Variable
+            "parameter",   // 7  → Identifier
+            "label",       // 8  → Keyword   (reuse)
+            "tag",         // 9  → Tag
+            "attribute",   // 10 → Attribute
+            "number",      // 11 → Constant  (JSON numbers, etc.)
+            "operator",    // 12 → Keyword
+            "property",    // 13 → Property  (JSON keys, struct fields)
+            "namespace",   // 14 → Type
+            "punctuation", // 15 → Normal
         ];
         config.configure(&captures);
         

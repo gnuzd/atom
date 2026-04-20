@@ -175,6 +175,7 @@ impl ColorScheme {
         hl.insert("Tag".into(), Style::default().fg(palette.orange));
         hl.insert("Attribute".into(), Style::default().fg(palette.cyan));
         hl.insert("Property".into(), Style::default().fg(palette.blue));
+        hl.insert("Label".into(), Style::default().fg(palette.purple));
         hl.insert("Todo".into(), Style::default().fg(palette.black).bg(palette.yellow).add_modifier(Modifier::BOLD));
 
         // Statusline
@@ -212,6 +213,8 @@ impl ColorScheme {
         hl.insert("TreeExplorerFileIcon".into(), Style::default().fg(palette.blue));
         hl.insert("TreeExplorerFolderName".into(), Style::default().fg(palette.white).add_modifier(Modifier::BOLD));
         hl.insert("TreeExplorerFileName".into(), Style::default().fg(palette.white));
+        hl.insert("TreeExplorerFilter".into(), Style::default().fg(palette.cyan));
+        hl.insert("TreeExplorerCount".into(), Style::default().fg(palette.grey_fg));
 
         Self { palette, highlights: hl }
     }

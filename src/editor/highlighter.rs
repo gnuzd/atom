@@ -50,8 +50,24 @@ impl Highlighter {
                 current_offset += line.len();
             }
 
+            // Must stay in sync with the captures array in treesitter.rs
             let captures = [
-                "Keyword", "Function", "Type", "String", "Comment", "Constant", "Identifier", "Identifier", "Label", "Tag", "Attribute"
+                "Keyword",    // 0  keyword
+                "Function",   // 1  function
+                "Type",       // 2  type
+                "String",     // 3  string
+                "Comment",    // 4  comment
+                "Constant",   // 5  constant / constant.builtin
+                "Variable",   // 6  variable
+                "Identifier", // 7  parameter
+                "Keyword",    // 8  label
+                "Tag",        // 9  tag
+                "Attribute",  // 10 attribute
+                "Constant",   // 11 number
+                "Keyword",    // 12 operator
+                "Property",   // 13 property
+                "Type",       // 14 namespace
+                "Normal",     // 15 punctuation
             ];
 
             for event in highlights {
