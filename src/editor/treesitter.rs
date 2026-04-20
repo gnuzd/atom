@@ -235,10 +235,10 @@ impl TreesitterManager {
 
         let mut config = HighlightConfiguration::new(
             lang,
+            lang_name,
             &highlights_scm,
             &injections_scm,
             &locals_scm,
-            "",
         ).ok()?;
 
         // Define capture names that match our theme.
