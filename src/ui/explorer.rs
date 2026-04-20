@@ -418,15 +418,15 @@ impl FileExplorer {
                         .map(|j| self.entries[j].is_last)
                         .unwrap_or(false);
                     if ancestor_is_last {
-                        guide.push_str("   ");
+                        guide.push_str("  ");
                     } else {
-                        guide.push_str("│  ");
+                        guide.push_str("│ ");
                     }
                 }
                 if entry.is_last {
-                    guide.push_str("└─ ");
+                    guide.push_str("└─");
                 } else {
-                    guide.push_str("├─ ");
+                    guide.push_str("├─");
                 }
             }
 
@@ -459,8 +459,9 @@ impl FileExplorer {
                 theme.get("TreeExplorerFileName")
             };
 
+            let guide_with_gap = if entry.depth > 0 { format!("{} ", guide) } else { guide };
             list_items.push(ListItem::new(Line::from(vec![
-                Span::styled(guide, theme.get("TreeExplorerConnector")),
+                Span::styled(guide_with_gap, theme.get("TreeExplorerConnector")),
                 Span::styled(format!("{} ", icon), icon_style),
                 Span::styled(name, name_style),
             ])));
