@@ -393,6 +393,14 @@ impl FileExplorer {
         let height = area.height as usize;
         self.scroll_into_view(height);
 
+        // Apply horizontal padding (1 cell each side) matching the header block
+        let padded_area = ratatui::layout::Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(2),
+            height: area.height,
+        };
+
         let mut list_items = Vec::new();
         for i in self.scroll_y..std::cmp::min(self.scroll_y + height, self.entries.len()) {
             let entry = &self.entries[i];
@@ -401,9 +409,25 @@ impl FileExplorer {
                 name.push('/');
             }
 
+            // Build proper tree connectors using is_last flags
             let mut guide = String::new();
-            for _ in 0..entry.depth {
-                guide.push_str("│ ");
+            if entry.depth > 0 {
+                for k in 1..entry.depth {
+                    let ancestor_is_last = (0..i).rev()
+                        .find(|&j| self.entries[j].depth == k)
+                        .map(|j| self.entries[j].is_last)
+                        .unwrap_or(false);
+                    if ancestor_is_last {
+                        guide.push_str("  ");
+                    } else {
+                        guide.push_str("│ ");
+                    }
+                }
+                if entry.is_last {
+                    guide.push_str("└ ");
+                } else {
+                    guide.push_str("├ ");
+                }
             }
 
             let (icon, icon_style): (&str, ratatui::style::Style) = if entry.is_dir {
@@ -442,6 +466,6 @@ impl FileExplorer {
             ])));
         }
 
-        frame.render_widget(List::new(list_items), area);
+        frame.render_widget(List::new(list_items), padded_area);
     }
 }
