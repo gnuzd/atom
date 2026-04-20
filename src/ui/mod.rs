@@ -217,8 +217,8 @@ impl TerminalUi {
         let editor_width = editor_layout[1].width as usize;
 
         // Calculate cursor screen position
-        let line = buffer.line(cursor_y).unwrap();
         let mut cursor_pos_in_line = 0;
+        if let Some(line) = buffer.line(cursor_y) {
         for (i, c) in line.chars().enumerate() {
             if i >= cursor_x {
                 break;
@@ -228,6 +228,7 @@ impl TerminalUi {
             } else {
                 unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
             };
+        }
         }
         let cursor_screen_x = cursor_pos_in_line % editor_width;
 
@@ -686,18 +687,19 @@ impl TerminalUi {
                 if !vim.config.wrap {
                     return true;
                 }
-                let line = buffer.line(idx).unwrap();
                 let mut cursor_pos_in_line = 0;
-                for (i, _) in line.chars().enumerate() {
-                    if i >= cursor_x {
-                        break;
+                if let Some(line) = buffer.line(idx) {
+                    for (i, _) in line.chars().enumerate() {
+                        if i >= cursor_x {
+                            break;
+                        }
+                        let c = line.char(i);
+                        cursor_pos_in_line += if c == '\t' {
+                            2
+                        } else {
+                            unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                        };
                     }
-                    let c = line.char(i);
-                    cursor_pos_in_line += if c == '\t' {
-                        2
-                    } else {
-                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                    };
                 }
                 let cursor_row = cursor_pos_in_line / editor_width;
                 row == cursor_row
@@ -1023,18 +1025,15 @@ impl TerminalUi {
             let popup_height = 3;
 
             if let Some(y) = cursor_screen_y {
-                let line = buffer.line(cursor_y).unwrap();
                 let mut cursor_pos_in_line = 0;
-                for (i, _) in line.chars().enumerate() {
-                    if i >= cursor_x {
-                        break;
+                if let Some(line) = buffer.line(cursor_y) {
+                    for (i, _) in line.chars().enumerate() {
+                        if i >= cursor_x { break; }
+                        let c = line.char(i);
+                        cursor_pos_in_line += if c == '\t' { 2 } else {
+                            unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                        };
                     }
-                    let c = line.char(i);
-                    cursor_pos_in_line += if c == '\t' {
-                        2
-                    } else {
-                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
-                    };
                 }
                 let screen_x = (cursor_pos_in_line % editor_width) as u16;
 

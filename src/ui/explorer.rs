@@ -418,15 +418,15 @@ impl FileExplorer {
                         .map(|j| self.entries[j].is_last)
                         .unwrap_or(false);
                     if ancestor_is_last {
-                        guide.push_str("   ");
+                        guide.push_str("  ");
                     } else {
-                        guide.push_str("│  ");
+                        guide.push_str("│ ");
                     }
                 }
                 if entry.is_last {
-                    guide.push_str("└─ ");
+                    guide.push_str("└─");
                 } else {
-                    guide.push_str("├─ ");
+                    guide.push_str("├─");
                 }
             }
 
