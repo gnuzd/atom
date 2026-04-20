@@ -696,10 +696,31 @@ impl App {
             Action::Quit => {
                 if self.editor.buffer().modified {
                     self.vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::Quit);
-                } else if self.editor.buffers.len() > 1 {
-                    self.editor.close_current_buffer();
                 } else {
-                    self.should_quit = true;
+                    let panes = self.vim.pane_layout.get_all_panes();
+                    if panes.len() > 1 {
+                        let target_id = self.vim.focused_pane_id;
+                        let removed_idx = self.editor.active_idx;
+                        
+                        self.vim.pane_layout.remove_pane(target_id);
+                        
+                        // If this buffer is no longer visible in any pane, we can close it
+                        let remaining_panes = self.vim.pane_layout.get_all_panes();
+                        let buffer_still_visible = remaining_panes.iter().any(|p| p.buffer_idx == removed_idx);
+                        
+                        if !buffer_still_visible {
+                            if let Some(removed) = self.editor.close_current_buffer() {
+                                self.vim.pane_layout.update_buffer_indices(removed);
+                            }
+                        }
+
+                        // Focus another pane
+                        let remaining_panes = self.vim.pane_layout.get_all_panes();
+                        self.vim.focused_pane_id = remaining_panes[0].id;
+                        self.editor.active_idx = remaining_panes[0].buffer_idx;
+                    } else {
+                        self.should_quit = true;
+                    }
                 }
             }
             Action::QuitAll => {
@@ -714,7 +735,9 @@ impl App {
                 if self.editor.buffer().modified {
                     self.vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::CloseBuffer);
                 } else {
-                    self.editor.close_current_buffer();
+                    if let Some(removed) = self.editor.close_current_buffer() {
+                        self.vim.pane_layout.update_buffer_indices(removed);
+                    }
                     self.sync_explorer();
                 }
             }
@@ -1156,15 +1179,34 @@ impl App {
                         self.explorer.expand();
                     } else {
                         let path = entry.path.clone();
-                        if let Err(e) = self.editor.open_file(path.clone()) {
+                        if let Some(existing_buf_idx) = self.editor.find_buffer_by_path(&path) {
+                            // Check if any pane is already showing this buffer
+                            let all_panes = self.vim.pane_layout.get_all_panes();
+                            if let Some(p) = all_panes.iter().find(|p| p.buffer_idx == existing_buf_idx) {
+                                self.vim.focused_pane_id = p.id;
+                                self.editor.active_idx = existing_buf_idx;
+                                self.vim.focus = Focus::Editor;
+                            } else {
+                                self.editor.active_idx = existing_buf_idx;
+                                if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                    pane.buffer_idx = existing_buf_idx;
+                                }
+                                self.vim.focus = Focus::Editor;
+                            }
+                        } else if let Err(e) = self.editor.open_file(path.clone()) {
                             self.vim.set_message(format!("Error: {}", e));
                         } else {
+                            let new_idx = self.editor.active_idx;
+                            if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                pane.buffer_idx = new_idx;
+                            }
                             self.vim.focus = Focus::Editor;
-                            if let Some(buf) = self.editor.buffers.last_mut() {
+                            if let Some(buf) = self.editor.buffers.get_mut(new_idx) {
                                 let content = buf.text.to_string();
                                 buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
                             }
                         }
+                        self.editor.refresh_syntax_for_idx(self.editor.active_idx);
                     }
                 }
             }
@@ -1177,15 +1219,33 @@ impl App {
                         self.explorer.toggle_expand();
                     } else {
                         let path = entry.path.clone();
-                        if let Err(e) = self.editor.open_file(path.clone()) {
+                        if let Some(existing_buf_idx) = self.editor.find_buffer_by_path(&path) {
+                            let all_panes = self.vim.pane_layout.get_all_panes();
+                            if let Some(p) = all_panes.iter().find(|p| p.buffer_idx == existing_buf_idx) {
+                                self.vim.focused_pane_id = p.id;
+                                self.editor.active_idx = existing_buf_idx;
+                                self.vim.focus = Focus::Editor;
+                            } else {
+                                self.editor.active_idx = existing_buf_idx;
+                                if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                    pane.buffer_idx = existing_buf_idx;
+                                }
+                                self.vim.focus = Focus::Editor;
+                            }
+                        } else if let Err(e) = self.editor.open_file(path.clone()) {
                             self.vim.set_message(format!("Error: {}", e));
                         } else {
+                            let new_idx = self.editor.active_idx;
+                            if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                pane.buffer_idx = new_idx;
+                            }
                             self.vim.focus = Focus::Editor;
-                            if let Some(buf) = self.editor.buffers.last_mut() {
+                            if let Some(buf) = self.editor.buffers.get_mut(new_idx) {
                                 let content = buf.text.to_string();
                                 buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
                             }
                         }
+                        self.editor.refresh_syntax_for_idx(self.editor.active_idx);
                     }
                 }
             }
@@ -1402,15 +1462,33 @@ impl App {
                             self.explorer.toggle_expand();
                         } else {
                             let path = entry.path.clone();
-                            if let Err(e) = self.editor.open_file(path.clone()) {
+                            if let Some(existing_buf_idx) = self.editor.find_buffer_by_path(&path) {
+                                let all_panes = self.vim.pane_layout.get_all_panes();
+                                if let Some(p) = all_panes.iter().find(|p| p.buffer_idx == existing_buf_idx) {
+                                    self.vim.focused_pane_id = p.id;
+                                    self.editor.active_idx = existing_buf_idx;
+                                    self.vim.focus = Focus::Editor;
+                                } else {
+                                    self.editor.active_idx = existing_buf_idx;
+                                    if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                        pane.buffer_idx = existing_buf_idx;
+                                    }
+                                    self.vim.focus = Focus::Editor;
+                                }
+                            } else if let Err(e) = self.editor.open_file(path.clone()) {
                                 self.vim.set_message(format!("Error: {}", e));
                             } else {
+                                let new_idx = self.editor.active_idx;
+                                if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                    pane.buffer_idx = new_idx;
+                                }
                                 self.vim.focus = Focus::Editor;
-                                if let Some(buf) = self.editor.buffers.last_mut() {
+                                if let Some(buf) = self.editor.buffers.get_mut(new_idx) {
                                     let content = buf.text.to_string();
                                     buf.git_signs = self.vim.git_manager.get_signs(&path, &content);
                                 }
                             }
+                            self.editor.refresh_syntax_for_idx(self.editor.active_idx);
                         }
                     }
                 } else if self.vim.focus == Focus::Trouble {
