@@ -424,9 +424,9 @@ impl FileExplorer {
                     }
                 }
                 if entry.is_last {
-                    guide.push_str("└─");
+                    guide.push_str("└ ");
                 } else {
-                    guide.push_str("├─");
+                    guide.push_str("├ ");
                 }
             }
 
