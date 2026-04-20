@@ -405,9 +405,9 @@ impl FileExplorer {
         for i in self.scroll_y..std::cmp::min(self.scroll_y + height, self.entries.len()) {
             let entry = &self.entries[i];
             let mut name = entry.path.file_name().and_then(|s| s.to_str()).unwrap_or("/").to_string();
-            if entry.is_dir && !name.ends_with('/') {
-                name.push('/');
-            }
+            // if entry.is_dir && !name.ends_with('/') {
+            //     name.push('/');
+            // }
 
             // Build proper tree connectors using is_last flags
             let mut guide = String::new();
@@ -424,7 +424,7 @@ impl FileExplorer {
                     }
                 }
                 if entry.is_last {
-                    guide.push_str("└ ");
+                    guide.push_str("└─");
                 } else {
                     guide.push_str("├─");
                 }
