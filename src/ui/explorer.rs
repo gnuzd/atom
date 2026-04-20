@@ -404,7 +404,7 @@ impl FileExplorer {
         let mut list_items = Vec::new();
         for i in self.scroll_y..std::cmp::min(self.scroll_y + height, self.entries.len()) {
             let entry = &self.entries[i];
-            let mut name = entry.path.file_name().and_then(|s| s.to_str()).unwrap_or("/").to_string();
+            let name = entry.path.file_name().and_then(|s| s.to_str()).unwrap_or("/").to_string();
             // if entry.is_dir && !name.ends_with('/') {
             //     name.push('/');
             // }
