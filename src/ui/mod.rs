@@ -487,7 +487,7 @@ impl TerminalUi {
 
         let mut git_spans = Vec::new();
         if let Some(git) = &vim.git_info {
-            git_spans.push(Span::styled(format!(" {} ", git.branch), theme.get("StatusLineB")));
+            git_spans.push(Span::styled(format!("  {} ", git.branch), theme.get("StatusLineB")));
             if buf_added > 0 {
                 git_spans.push(Span::styled(format!("+{} ", buf_added), theme.get("StatusLineGitAdd")));
             }
