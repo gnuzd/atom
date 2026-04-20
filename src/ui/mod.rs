@@ -818,7 +818,7 @@ impl TerminalUi {
                     line_numbers.lines.push(Line::from("      "));
                 }
             }
-            frame.render_widget(Paragraph::new(line_numbers), editor_layout[0]);
+            frame.render_widget(Paragraph::new(line_numbers).style(theme.get("Normal")), editor_layout[0]);
         }
 
         // Buffer Content
