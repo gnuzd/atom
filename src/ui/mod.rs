@@ -992,6 +992,27 @@ impl TerminalUi {
                     current_pos_in_line += char_width;
                 }
 
+                // V-Block: show highlight on empty/short lines that have no chars in the range
+                if matches!(vim.mode, Mode::VisualBlock | Mode::BlockInsert) {
+                    if let Some(start) = vim.selection_start {
+                        let cur = crate::vim::Position { x: cursor_x, y: cursor_y };
+                        let top_y = start.y.min(cur.y);
+                        let bot_y = start.y.max(cur.y);
+                        let left_x = start.x.min(cur.x);
+                        if actual_idx >= top_y && actual_idx <= bot_y && row == 0 {
+                            let line_len = line.chars().filter(|&c| c != '\n' && c != '\r').count();
+                            if line_len <= left_x {
+                                // Pad up to left_x then render one highlighted space
+                                let pad = left_x.saturating_sub(line_len);
+                                if pad > 0 {
+                                    spans.push(Span::styled(" ".repeat(pad), theme.get("Normal")));
+                                }
+                                spans.push(Span::styled(" ", theme.get("Visual")));
+                            }
+                        }
+                    }
+                }
+
                 // Fill the rest of the line with CursorLine if active
                 if is_current_line && cursor_screen_y == Some(i.saturating_sub(cursor_scroll_y)) {
                     let current_width = spans.iter().map(|s| s.width()).sum::<usize>();
