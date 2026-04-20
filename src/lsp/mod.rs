@@ -480,15 +480,26 @@ impl LspManager {
 
             match LspClient::start(&final_cmd, args) {
                 Ok(client) => {
-                    let root_uri = Url::from_directory_path(&root_path).unwrap();
-                    client.send_initialize(root_uri)?;
+                    let abs_root = if root_path.is_absolute() {
+                        root_path.clone()
+                    } else {
+                        std::env::current_dir().unwrap_or_default().join(&root_path)
+                    };
+                    let root_uri = match Url::from_directory_path(&abs_root) {
+                        Ok(u) => u,
+                        Err(_) => {
+                            eprintln!("LSP: could not build root URI for {:?}", abs_root);
+                            continue;
+                        }
+                    };
+                    if let Err(e) = client.send_initialize(root_uri) {
+                        eprintln!("LSP init failed for {}: {}", cmd, e);
+                        continue;
+                    }
                     let mut clients = self.clients.lock().unwrap();
                     clients.entry(ext.to_string()).or_default().push((client, ClientState::Starting, cmd.to_string()));
                 }
                 Err(e) => {
-                    // Don't mark extension as failed if only one server fails (e.g. eslint_d fails but typescript-lsp works)
-                    // Unless it's the only server.
-                    // For now let's just log or ignore.
                     eprintln!("Failed to start LSP {}: {}", cmd, e);
                 }
             }

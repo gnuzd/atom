@@ -191,15 +191,17 @@ impl App {
                                     resp.result.unwrap_or_default(),
                                 ) {
                                     if let GotoDefinitionResponse::Scalar(loc) = value {
-                                        let path = PathBuf::from(loc.uri.to_file_path().unwrap());
-                                        let pos = Position {
-                                            x: loc.range.start.character as usize,
-                                            y: loc.range.start.line as usize,
-                                        };
-                                        let _ = self.editor.open_file(path);
-                                        self.editor.cursor_mut().y = pos.y;
-                                        self.editor.cursor_mut().x = pos.x;
-                                        self.sync_explorer();
+                                        if let Ok(file_path) = loc.uri.to_file_path() {
+                                            let path = PathBuf::from(file_path);
+                                            let pos = Position {
+                                                x: loc.range.start.character as usize,
+                                                y: loc.range.start.line as usize,
+                                            };
+                                            let _ = self.editor.open_file(path);
+                                            self.editor.cursor_mut().y = pos.y;
+                                            self.editor.cursor_mut().x = pos.x;
+                                            self.sync_explorer();
+                                        }
                                     }
                                 }
                             } else if let Ok(value) = serde_json::from_value::<CompletionResponse>(
