@@ -14,7 +14,6 @@ use super::*;
 impl App {
     /// Dispatches a raw terminal key event to the handler for the current mode.
     pub fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) {
-        self.vim.show_intro = false;
         self.vim.yank_highlight_line = None;
 
         if self.vim.blame_popup.is_some() {

@@ -500,7 +500,6 @@ impl App {
                         }
                     }
                     if let Event::Key(key) = event {
-                        self.vim.show_intro = false;
                         self.vim.yank_highlight_line = None;
                         if self.vim.blame_popup.is_some() {
                             self.vim.blame_popup = None;
@@ -1312,6 +1311,14 @@ impl App {
                             Mode::Command => self.handle_command_mode(key),
                             Mode::VisualBlock => self.handle_visual_block_mode(key),
                             Mode::BlockInsert => self.handle_block_insert_mode(key),
+                        }
+
+                        // Hide intro once editing begins or a file is opened (like Vim)
+                        if self.vim.show_intro {
+                            let buf = self.editor.buffers.get(self.editor.active_idx);
+                            if buf.map(|b| b.modified || b.file_path.is_some()).unwrap_or(false) {
+                                self.vim.show_intro = false;
+                            }
                         }
                     }
                 }
