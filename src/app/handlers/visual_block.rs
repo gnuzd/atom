@@ -41,12 +41,16 @@ impl App {
         let cur = crate::vim::Position { x: self.editor.cursor().x, y: self.editor.cursor().y };
 
         let top_y = anchor.y.min(cur.y);
+        let bottom_y = anchor.y.max(cur.y);
         let left_col = anchor.x.min(cur.x);
 
         // Move cursor to top line, insert column
         self.editor.cursor_mut().y = top_y;
         self.editor.cursor_mut().x = left_col;
 
+        // Store bottom_y in selection_start so exit_block_insert can recover the full range.
+        // (cursor is moved to top_y, so we'd lose bottom_y otherwise.)
+        self.vim.selection_start = Some(crate::vim::Position { x: left_col, y: bottom_y });
         self.vim.block_insert_col = left_col;
         self.vim.block_insert_text.clear();
         self.vim.mode = Mode::BlockInsert;
@@ -95,10 +99,9 @@ impl App {
                 return;
             }
         };
-        let cur_y = self.editor.cursor().y;
-        let anchor_y = anchor.y;
-        let top_y = anchor_y.min(cur_y);
-        let bottom_y = anchor_y.max(cur_y);
+        // cursor is at top_y (set in enter_block_insert); anchor.y holds bottom_y.
+        let top_y = self.editor.cursor().y;
+        let bottom_y = anchor.y;
         let col = self.vim.block_insert_col;
 
         // Apply text to all other lines in the block (top_y is already modified)
