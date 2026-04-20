@@ -200,7 +200,7 @@ impl TerminalUi {
         };
 
         let gutter_width = match (vim.show_number || vim.relative_number, vim.config.signcolumn) {
-            (true, true) => 8,
+            (true, true) => 7,
             (true, false) => 5,
             (false, true) => 3,
             (false, false) => 0,
@@ -706,7 +706,7 @@ impl TerminalUi {
             vim.show_number || vim.relative_number,
             vim.config.signcolumn,
         ) {
-            (true, true) => 8,
+            (true, true) => 7,
             (true, false) => 5,
             (false, true) => 3,
             (false, false) => 0,

@@ -386,7 +386,7 @@ impl App {
                                             self.vim.show_number || self.vim.relative_number,
                                             self.vim.config.signcolumn,
                                         ) {
-                                            (true, true) => 8,
+                                            (true, true) => 7,
                                             (true, false) => 5,
                                             (false, true) => 3,
                                             (false, false) => 0,
@@ -1377,7 +1377,7 @@ impl App {
             self.vim.show_number || self.vim.relative_number,
             self.vim.config.signcolumn,
         ) {
-            (true, true) => 8,
+            (true, true) => 7,
             (true, false) => 5,
             (false, true) => 3,
             (false, false) => 0,

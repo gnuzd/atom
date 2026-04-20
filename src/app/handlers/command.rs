@@ -73,6 +73,10 @@ impl App {
                 self.vim.selected_command_suggestion = 0;
             }
             KeyCode::Tab => {
+                // Populate all commands if nothing typed yet
+                if self.vim.command_suggestions.is_empty() {
+                    self.refresh_command_suggestions();
+                }
                 if !self.vim.command_suggestions.is_empty() {
                     if !self.vim.command_wildmenu_open {
                         // First Tab: open wildmenu at first match
@@ -258,7 +262,10 @@ impl App {
                 let _ = self.vim.config.save();
             }
             "help" => self.dispatch_action(Action::EnterKeymaps, 1),
-            _ => {}
+            "checkhealth" => self.dispatch_action(Action::EnterNucleus, 1),
+            _ => {
+                self.vim.set_message(format!("E492: Not an editor command: {}", cmd));
+            }
         }
     }
 }
