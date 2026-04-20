@@ -171,6 +171,10 @@ impl TerminalUi {
             );
         }
 
+        if vim.show_intro {
+            intro::draw_intro(frame, editor_container_area, &theme);
+        }
+
         // Common variables for status line and completion
         let buf_idx = editor.active_idx;
         let (buffer, cursor_y, cursor_x, cursor_scroll_y, buf_added, buf_modified, buf_removed, file_name, modified_flag) = {
