@@ -721,18 +721,24 @@ impl LspManager {
         match ext {
             "js" | "ts" | "jsx" | "tsx" => {
                 if self.is_installed("eslint_d") {
-                    let diags = self.run_eslint_d(path, text);
-                    let uri = Self::path_to_uri(path);
-                    let mut diagnostics = self.diagnostics.lock().unwrap();
-                    let file_diags = diagnostics.entry(uri).or_default();
-                    file_diags.insert("eslint_d".to_string(), diags);
+                    // Run eslint_d in a background thread so it never blocks the UI.
+                    let diagnostics = Arc::clone(&self.diagnostics);
+                    let path = path.to_path_buf();
+                    let text = text.to_string();
+                    std::thread::spawn(move || {
+                        let diags = Self::run_eslint_d_bg(&path, &text);
+                        let uri = Self::path_to_uri(&path);
+                        let mut diag_map = diagnostics.lock().unwrap();
+                        let file_diags = diag_map.entry(uri).or_default();
+                        file_diags.insert("eslint_d".to_string(), diags);
+                    });
                 }
             }
             _ => {}
         }
     }
 
-    fn run_eslint_d(&self, path: &Path, text: &str) -> Vec<Diagnostic> {
+    fn run_eslint_d_bg(path: &Path, text: &str) -> Vec<Diagnostic> {
         let local_bin = Self::get_local_bin_dir().join("node_modules").join(".bin").join("eslint_d");
         let cmd = if local_bin.exists() {
             local_bin.to_string_lossy().to_string()

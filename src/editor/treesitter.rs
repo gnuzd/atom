@@ -231,14 +231,10 @@ impl TreesitterManager {
         let lang = self.get_language(lang_name)?;
         let repo_dir = self.parser_dir.join(format!("{}-repo", lang_name));
         
-        // Find queries
-        let queries_dir = if lang_name == "typescript" {
-            repo_dir.join("typescript").join("queries")
-        } else if lang_name == "tsx" {
-            repo_dir.join("tsx").join("queries")
-        } else {
-            repo_dir.join("queries")
-        };
+        // Find queries. For tree-sitter-typescript, both "typescript" and "tsx"
+        // share a single queries/ dir at the repo root (not under typescript/queries
+        // or tsx/queries, which only contain src/).
+        let queries_dir = repo_dir.join("queries");
 
         let base_highlights = std::fs::read_to_string(queries_dir.join("highlights.scm")).unwrap_or_default();
         let injections_scm = std::fs::read_to_string(queries_dir.join("injections.scm")).unwrap_or_default();
