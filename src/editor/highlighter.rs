@@ -41,7 +41,8 @@ impl Highlighter {
             };
             
             let mut current_style = self.theme.get("Normal");
-            
+            let mut highlight_stack: Vec<Style> = Vec::new();
+
             // Pre-calculate line start offsets
             let mut line_starts = Vec::with_capacity(lines.len());
             let mut current_offset = 0;
@@ -112,11 +113,12 @@ impl Highlighter {
                         }
                     }
                     Ok(HighlightEvent::HighlightStart(s)) => {
+                        highlight_stack.push(current_style);
                         let cap_name = captures.get(s.0).copied().unwrap_or("Normal");
                         current_style = self.theme.get(cap_name);
                     }
                     Ok(HighlightEvent::HighlightEnd) => {
-                        current_style = self.theme.get("Normal");
+                        current_style = highlight_stack.pop().unwrap_or(self.theme.get("Normal"));
                     }
                     _ => {}
                 }
