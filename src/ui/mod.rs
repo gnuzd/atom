@@ -214,7 +214,7 @@ impl TerminalUi {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
             .split(editor_area);
-        let editor_width = editor_layout[1].width as usize;
+        let editor_width = editor_layout[1].width.max(1) as usize;
 
         // Calculate cursor screen position
         let mut cursor_pos_in_line = 0;
@@ -673,7 +673,7 @@ impl TerminalUi {
             .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
             .split(pane_area);
 
-        let editor_width = editor_layout[1].width as usize;
+        let editor_width = editor_layout[1].width.max(1) as usize;
         let screen_to_buffer_lines =
             editor.get_screen_to_buffer_lines_for_idx(buf_idx, editor_width, vim.config.wrap);
 

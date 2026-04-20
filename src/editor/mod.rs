@@ -236,6 +236,7 @@ impl Editor {
 
     pub fn get_screen_to_buffer_lines_for_idx(&mut self, idx: usize, width: usize, wrap: bool) -> Vec<(usize, usize)> {
         if idx >= self.buffers.len() { return Vec::new(); }
+        let width = width.max(1);
 
         // Check cache first
         if let Some(mapping) = self.caches[idx].screen_mappings.get(&width) {
