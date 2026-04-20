@@ -7,7 +7,7 @@ class Atom < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/gnuzd/atom/releases/download/v0.1.9/atom-v0.1.9-aarch64-apple-darwin.tar.gz"
-      sha256 "560bdb03f0fefe4708c5ff75c833d03d2814f9873d14cd5584b0922b5a6d52c7"
+      sha256 "260168b8ec1228ffabdb4479950447d75c5192eebed493c33138d05e566ee623"
     else
       url "https://github.com/gnuzd/atom/releases/download/v0.1.9/atom-v0.1.9-x86_64-apple-darwin.tar.gz"
       sha256 "REPLACE_WITH_X86_64_SHA256"
