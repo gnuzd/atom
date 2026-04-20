@@ -55,13 +55,16 @@ impl App {
             KeyCode::Esc => {
                 self.vim.mode = Mode::Normal;
                 self.vim.command_suggestions.clear();
+                self.vim.command_wildmenu_open = false;
             }
             KeyCode::Char(c) => {
                 self.vim.command_buffer.push(c);
+                self.vim.command_wildmenu_open = false;
                 self.refresh_command_suggestions();
             }
             KeyCode::Backspace => {
                 self.vim.command_buffer.pop();
+                self.vim.command_wildmenu_open = false;
                 if self.vim.command_buffer.is_empty() {
                     self.vim.command_suggestions.clear();
                 } else {
@@ -71,15 +74,22 @@ impl App {
             }
             KeyCode::Tab => {
                 if !self.vim.command_suggestions.is_empty() {
-                    self.vim.selected_command_suggestion =
-                        (self.vim.selected_command_suggestion + 1)
-                            % self.vim.command_suggestions.len();
+                    if !self.vim.command_wildmenu_open {
+                        // First Tab: open wildmenu at first match
+                        self.vim.command_wildmenu_open = true;
+                        self.vim.selected_command_suggestion = 0;
+                    } else {
+                        self.vim.selected_command_suggestion =
+                            (self.vim.selected_command_suggestion + 1)
+                                % self.vim.command_suggestions.len();
+                    }
                     self.vim.command_buffer =
                         self.vim.command_suggestions[self.vim.selected_command_suggestion].clone();
                 }
             }
             KeyCode::BackTab => {
                 if !self.vim.command_suggestions.is_empty() {
+                    self.vim.command_wildmenu_open = true;
                     self.vim.selected_command_suggestion = self.vim.selected_command_suggestion
                         .checked_sub(1)
                         .unwrap_or(self.vim.command_suggestions.len() - 1);

@@ -542,11 +542,11 @@ impl TerminalUi {
                     root_chunks[2].y,
                 ));
 
-                // Wildmenu: render suggestions popup above the command line
-                if !vim.command_suggestions.is_empty() {
+                // Wildmenu: render suggestions popup above the command line (only after Tab)
+                if vim.command_wildmenu_open && !vim.command_suggestions.is_empty() {
                     let max_visible: u16 = 10.min(vim.command_suggestions.len() as u16);
-                    let popup_w = (vim.command_suggestions.iter().map(|s| s.len()).max().unwrap_or(4) as u16 + 2)
-                        .min(area.width / 2);
+                    let popup_w = (vim.command_suggestions.iter().map(|s| s.len()).max().unwrap_or(4) as u16 + 4)
+                        .min(area.width * 2 / 3);
                     let popup_h = max_visible;
                     let popup_y = root_chunks[2].y.saturating_sub(popup_h);
 
