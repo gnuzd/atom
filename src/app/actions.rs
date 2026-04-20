@@ -1518,6 +1518,15 @@ impl App {
                     self.editor.cursor_mut().x = 0;
                 }
             }
+            Action::Custom(cmd) => {
+                let cmd = cmd.clone();
+                let mut parts = cmd.split_whitespace();
+                let first = parts.next().unwrap_or("");
+                let force = first.ends_with('!');
+                let base = if force { &first[..first.len()-1] } else { first };
+                let args: Vec<&str> = parts.collect();
+                self.dispatch_ex_command(base, force, &args);
+            }
             _ => {}
         }
     }

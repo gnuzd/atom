@@ -99,6 +99,119 @@ pub enum Action {
 
     // Raw key passthrough
     Unbound,
+
+    // User-defined ex command (e.g. ":split", ":w")
+    Custom(String),
+}
+
+impl Action {
+    /// Parse an action name string (from init.lua rhs) into an Action.
+    pub fn from_str(s: &str) -> Self {
+        if s.starts_with(':') {
+            return Action::Custom(s[1..].to_string());
+        }
+        match s {
+            "EnterInsert"           => Action::EnterInsert,
+            "EnterInsertLineStart"  => Action::EnterInsertLineStart,
+            "EnterVisual"           => Action::EnterVisual,
+            "EnterVisualBlock"      => Action::EnterVisualBlock,
+            "EnterCommand"          => Action::EnterCommand,
+            "EnterSearch"           => Action::EnterSearch,
+            "ExitMode"              => Action::ExitMode,
+            "EnterNucleus"          => Action::EnterNucleus,
+            "EnterTrouble"          => Action::EnterTrouble,
+            "EnterKeymaps"          => Action::EnterKeymaps,
+            "Save"                  => Action::Save,
+            "SaveAs"                => Action::SaveAs,
+            "Quit"                  => Action::Quit,
+            "QuitAll"               => Action::QuitAll,
+            "SaveAndQuit"           => Action::SaveAndQuit,
+            "QuitWithoutSaving"     => Action::QuitWithoutSaving,
+            "CloseBuffer"           => Action::CloseBuffer,
+            "NextBuffer"            => Action::NextBuffer,
+            "PrevBuffer"            => Action::PrevBuffer,
+            "ReloadFile"            => Action::ReloadFile,
+            "MoveLeft"              => Action::MoveLeft,
+            "MoveRight"             => Action::MoveRight,
+            "MoveUp"                => Action::MoveUp,
+            "MoveDown"              => Action::MoveDown,
+            "MoveWordForward"       => Action::MoveWordForward,
+            "MoveWordBackward"      => Action::MoveWordBackward,
+            "MoveWordEnd"           => Action::MoveWordEnd,
+            "MoveLineStart"         => Action::MoveLineStart,
+            "MoveLineEnd"           => Action::MoveLineEnd,
+            "MovePageUp"            => Action::MovePageUp,
+            "MovePageDown"          => Action::MovePageDown,
+            "JumpToFirstLine"       => Action::JumpToFirstLine,
+            "JumpToLastLine"        => Action::JumpToLastLine,
+            "DeleteChar"            => Action::DeleteChar,
+            "DeleteCharBefore"      => Action::DeleteCharBefore,
+            "Substitute"            => Action::Substitute,
+            "DeleteLine"            => Action::DeleteLine,
+            "YankLine"              => Action::YankLine,
+            "CopyToClipboard"       => Action::CopyToClipboard,
+            "PasteAfter"            => Action::PasteAfter,
+            "PasteBefore"           => Action::PasteBefore,
+            "PasteFromClipboard"    => Action::PasteFromClipboard,
+            "Undo"                  => Action::Undo,
+            "Redo"                  => Action::Redo,
+            "ToggleComment"         => Action::ToggleComment,
+            "OpenLineBelow"         => Action::OpenLineBelow,
+            "OpenLineAbove"         => Action::OpenLineAbove,
+            "DeleteSelection"       => Action::DeleteSelection,
+            "Indent"                => Action::Indent,
+            "Outdent"               => Action::Outdent,
+            "TelescopeFiles"        => Action::TelescopeFiles,
+            "TelescopeLiveGrep"     => Action::TelescopeLiveGrep,
+            "TelescopeBuffers"      => Action::TelescopeBuffers,
+            "TelescopeThemes"       => Action::TelescopeThemes,
+            "LspDefinition"         => Action::LspDefinition,
+            "ToggleExplorer"        => Action::ToggleExplorer,
+            "ToggleRelativeNumber"  => Action::ToggleRelativeNumber,
+            "ToggleTrouble"         => Action::ToggleTrouble,
+            "ToggleAutoformat"      => Action::ToggleAutoformat,
+            "GitBlame"              => Action::GitBlame,
+            "ToggleFold"            => Action::ToggleFold,
+            "NextHunk"              => Action::NextHunk,
+            "PrevHunk"              => Action::PrevHunk,
+            "Format"                => Action::Format,
+            "ExplorerExpand"        => Action::ExplorerExpand,
+            "ExplorerCollapse"      => Action::ExplorerCollapse,
+            "ExplorerToggleExpand"  => Action::ExplorerToggleExpand,
+            "ExplorerAdd"           => Action::ExplorerAdd,
+            "ExplorerRename"        => Action::ExplorerRename,
+            "ExplorerDelete"        => Action::ExplorerDelete,
+            "ExplorerMove"          => Action::ExplorerMove,
+            "ExplorerFilter"        => Action::ExplorerFilter,
+            "ExplorerOpenSystem"    => Action::ExplorerOpenSystem,
+            "ExplorerToggleHidden"  => Action::ExplorerToggleHidden,
+            "ExplorerToggleIgnored" => Action::ExplorerToggleIgnored,
+            "ExplorerCloseAll"      => Action::ExplorerCloseAll,
+            "SelectNext"            => Action::SelectNext,
+            "SelectPrev"            => Action::SelectPrev,
+            "Confirm"               => Action::Confirm,
+            other                   => Action::Custom(other.to_string()),
+        }
+    }
+}
+
+/// Normalize a Vim-notation key string to our internal format.
+/// e.g. "<CR>" → "CR", "<C-s>" → "<C-s>", "<leader>" → "\\"
+pub fn normalize_key(key: &str, leader: &str) -> String {
+    // Replace <leader> with the actual leader key
+    let key = key.replace("<leader>", leader);
+    // Strip outer <> from special keys that are already bare in our format
+    let k = key.trim();
+    if k.starts_with('<') && k.ends_with('>') {
+        let inner = &k[1..k.len()-1];
+        // Modifier combos like C-s, S-Tab stay wrapped
+        if inner.contains('-') {
+            return format!("<{}>", inner);
+        }
+        // Bare specials: CR, BS, Esc, Tab, Space, etc.
+        return inner.to_string();
+    }
+    k.to_string()
 }
 
 #[derive(Debug, Default, Clone)]

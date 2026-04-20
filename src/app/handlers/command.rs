@@ -149,7 +149,7 @@ impl App {
         self.dispatch_ex_command(cmd, force, &args);
     }
 
-    fn dispatch_ex_command(&mut self, cmd: &str, force: bool, args: &[&str]) {
+    pub(crate) fn dispatch_ex_command(&mut self, cmd: &str, force: bool, args: &[&str]) {
         match cmd {
             "q" | "quit" => self.dispatch_action(
                 if force { Action::QuitAll } else { Action::Quit },

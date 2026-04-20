@@ -25,7 +25,7 @@ use std::{
 };
 
 use crate::editor::Editor;
-use crate::input::keymap::{Action, Keymap};
+use crate::input::keymap::{Action, Keymap, normalize_key};
 use crate::lsp::LspManager;
 use crate::plugins::PluginManager;
 use crate::ui::explorer::FileExplorer;
@@ -83,7 +83,8 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<Self> {
-        let config = crate::config::Config::load();
+        let _ = crate::config::Config::write_default_lua();
+        let (config, user_keymaps) = crate::config::Config::load_with_keymaps();
         let project_root = find_project_root(&env::current_dir().unwrap_or_default());
         let vim = VimState::new(config, project_root);
 
@@ -138,6 +139,20 @@ impl App {
         keymap_explorer.bind("CR", Action::Confirm);
         keymap_explorer.bind("h", Action::ExplorerCollapse);
         keymap_explorer.bind("Left", Action::ExplorerCollapse);
+
+        // Apply user keymaps from init.lua (overrides defaults)
+        let leader = "\\";
+        for km in &user_keymaps {
+            let key = normalize_key(&km.key, leader);
+            let action = Action::from_str(&km.action);
+            match km.mode.as_str() {
+                "n" | "normal" => keymap_normal.bind(key, action),
+                "i" | "insert" => keymap_insert.bind(key, action),
+                "x" | "v" | "visual" => keymap_normal.bind(key, action), // visual uses normal keymap
+                "e" | "explorer" => keymap_explorer.bind(key, action),
+                _ => keymap_normal.bind(key, action),
+            }
+        }
 
         Ok(Self {
             vim,
