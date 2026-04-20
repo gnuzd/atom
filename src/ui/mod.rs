@@ -493,13 +493,13 @@ impl TerminalUi {
         if let Some(git) = &vim.git_info {
             git_spans.push(Span::styled(format!(" \u{e0a0} {} ", git.branch), theme.get("StatusLineB")));
             if buf_added > 0 {
-                git_spans.push(Span::styled(format!("+{} ", buf_added), theme.get("StatusLineGitAdd")));
+                git_spans.push(Span::styled(format!("+{} ", buf_added), theme.get("GitSignsAdd")));
             }
             if buf_modified > 0 {
-                git_spans.push(Span::styled(format!("~{} ", buf_modified), theme.get("StatusLineGitMod")));
+                git_spans.push(Span::styled(format!("~{} ", buf_modified), theme.get("GitSignsChange")));
             }
             if buf_removed > 0 {
-                git_spans.push(Span::styled(format!("-{} ", buf_removed), theme.get("StatusLineGitDel")));
+                git_spans.push(Span::styled(format!("-{} ", buf_removed), theme.get("GitSignsDelete")));
             }
         }
 
@@ -808,6 +808,7 @@ impl TerminalUi {
                         let (sign_char, sign_style) = match sign {
                             Some(crate::git::GitSign::Add) => ("+", theme.get("GitSignsAdd")),
                             Some(crate::git::GitSign::Change) => ("~", theme.get("GitSignsChange")),
+                            Some(crate::git::GitSign::ChangeDelete) => ("~", theme.get("GitSignsChange")),
                             Some(crate::git::GitSign::Delete) | Some(crate::git::GitSign::TopDelete) => ("-", theme.get("GitSignsDelete")),
                             _ => (" ", theme.get("Normal")),
                         };

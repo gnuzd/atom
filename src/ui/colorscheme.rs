@@ -193,10 +193,7 @@ impl ColorScheme {
         hl.insert("StatusLineY".into(), Style::default().fg(palette.white).bg(palette.black2));
         hl.insert("StatusLineZ".into(), Style::default().fg(palette.blue).bg(palette.black2).add_modifier(Modifier::BOLD));
 
-        hl.insert("StatusLineGitAdd".into(), Style::default().fg(palette.green).bg(palette.black2));
-        hl.insert("StatusLineGitMod".into(), Style::default().fg(palette.yellow).bg(palette.black2));
-        hl.insert("StatusLineGitDel".into(), Style::default().fg(palette.red).bg(palette.black2));
-
+        // Git sign colors — single source of truth, used in both gutter and statusline
         hl.insert("GitSignsAdd".into(), Style::default().fg(palette.green));
         hl.insert("GitSignsChange".into(), Style::default().fg(palette.yellow));
         hl.insert("GitSignsDelete".into(), Style::default().fg(palette.red));
