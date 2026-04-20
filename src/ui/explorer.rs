@@ -426,7 +426,7 @@ impl FileExplorer {
                 if entry.is_last {
                     guide.push_str("└ ");
                 } else {
-                    guide.push_str("├ ");
+                    guide.push_str("├─");
                 }
             }
 
@@ -436,8 +436,8 @@ impl FileExplorer {
                 let ext = entry.path.extension().and_then(|s| s.to_str()).unwrap_or("");
                 let (icon, style_name) = match ext {
                     "rs" => ("", "TreeExplorerFileIcon"),
-                    "ts" | "tsx" => (" ", "Type"),
-                    "js" | "jsx" => (" ", "Constant"),
+                    "ts" | "tsx" => ("", "Type"),
+                    "js" | "jsx" => ("", "Constant"),
                     "py" => ("", "Function"),
                     "go" => ("", "Type"),
                     "lua" => ("", "Constant"),

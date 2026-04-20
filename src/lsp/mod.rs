@@ -501,6 +501,11 @@ impl LspManager {
                 }
                 Err(e) => {
                     eprintln!("Failed to start LSP {}: {}", cmd, e);
+                    // If binary not found, mark ext as failed so we don't retry every frame
+                    let msg = e.to_string();
+                    if msg.contains("No such file") || msg.contains("os error 2") || msg.contains("program not found") {
+                        self.failed_exts.lock().unwrap().insert(ext.to_string());
+                    }
                 }
             }
         }
