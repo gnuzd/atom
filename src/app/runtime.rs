@@ -382,16 +382,43 @@ impl App {
                                             self.editor.active_idx = target_pane.buffer_idx;
                                         }
 
-                                        let gutter: u16 = if self.vim.show_number || self.vim.relative_number { 5 } else { 0 };
+                                        let gutter: u16 = match (
+                                            self.vim.show_number || self.vim.relative_number,
+                                            self.vim.config.signcolumn,
+                                        ) {
+                                            (true, true) => 8,
+                                            (true, false) => 5,
+                                            (false, true) => 3,
+                                            (false, false) => 0,
+                                        };
                                         let sidx = self.editor.active_idx;
                                         if sidx < self.editor.cursors.len() {
                                             let scroll = self.editor.cursors[sidx].scroll_y;
                                             let row = (mouse.row.saturating_sub(rect.y)) as usize + scroll;
-                                            let col = (mouse.column.saturating_sub(rect.x + gutter)) as usize;
+                                            let display_col = mouse.column.saturating_sub(rect.x + gutter) as usize;
                                             let buf_len = self.editor.buffers[sidx].len_lines();
                                             let row = row.min(buf_len.saturating_sub(1));
+
+                                            // Convert display column → char index, accounting for tabs and wide chars
+                                            let char_col = if let Some(line) = self.editor.buffers[sidx].line(row) {
+                                                let mut cells = 0usize;
+                                                let mut idx = 0usize;
+                                                for c in line.chars() {
+                                                    if c == '\n' || c == '\r' { break; }
+                                                    let w = if c == '\t' { self.vim.config.tabstop } else {
+                                                        unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                                                    };
+                                                    if cells + w > display_col { break; }
+                                                    cells += w;
+                                                    idx += 1;
+                                                }
+                                                idx
+                                            } else {
+                                                0
+                                            };
+
                                             self.editor.cursors[sidx].y = row;
-                                            self.editor.cursors[sidx].x = col;
+                                            self.editor.cursors[sidx].x = char_col;
                                             self.editor.clamp_cursor();
                                         }
                                         
@@ -1584,6 +1611,7 @@ impl App {
 
     /// Converts terminal mouse coordinates to (buffer_line, buffer_col).
     fn mouse_to_editor_pos(&self, col: u16, row: u16) -> Option<(usize, usize)> {
+        let area = self.terminal.size().ok()?;
         let gutter_width: u16 = match (
             self.vim.show_number || self.vim.relative_number,
             self.vim.config.signcolumn,
@@ -1594,26 +1622,50 @@ impl App {
             (false, false) => 0,
         };
         let explorer_width = if self.explorer.visible { self.explorer.width } else { 0 };
-        let text_start_col = explorer_width + gutter_width;
 
+        // Determine pane y-offset so row is relative to the editor content area
+        let root_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(if self.vim.config.laststatus >= 2 { 1 } else { 0 }),
+                Constraint::Length(1),
+            ])
+            .split(area.into());
+        let pane_y = root_chunks[0].y;
+
+        let text_start_col = explorer_width + gutter_width;
         if col < text_start_col {
             return None;
         }
+        if row < pane_y {
+            return None;
+        }
 
-        let col_in_text = (col - text_start_col) as usize;
+        let display_col = (col - text_start_col) as usize;
         let scroll_y = self.editor.cursor().scroll_y;
-        let buf_line = scroll_y + row as usize;
+        let buf_line = scroll_y + (row - pane_y) as usize;
 
         let num_lines = self.editor.buffer().len_lines();
         if buf_line >= num_lines {
             return None;
         }
 
+        // Convert display column → char index (handles tabs and wide chars)
         let line = self.editor.buffer().line(buf_line)?;
-        let line_len: usize = line.chars().filter(|&c| c != '\n' && c != '\r').count();
-        let buf_col = col_in_text.min(line_len);
+        let mut cells = 0usize;
+        let mut char_col = 0usize;
+        for c in line.chars() {
+            if c == '\n' || c == '\r' { break; }
+            let w = if c == '\t' { self.vim.config.tabstop } else {
+                unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+            };
+            if cells + w > display_col { break; }
+            cells += w;
+            char_col += 1;
+        }
 
-        Some((buf_line, buf_col))
+        Some((buf_line, char_col))
     }
 
     /// Returns (word_start, word_end) char indices (inclusive) for the word at the given position.
