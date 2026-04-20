@@ -189,6 +189,17 @@ impl TreesitterManager {
         Self::uninstall_at(lang_name, &self.parser_dir)
     }
 
+    /// Returns extra highlight query patterns to append after the grammar's highlights.scm.
+    /// In tree-sitter-highlight, the LAST pattern matching a node wins. Grammars sometimes
+    /// place specific captures (e.g. @string.special.key) before the general one (@string),
+    /// causing the general one to override. Appending the specific pattern again ensures it wins.
+    fn highlight_overrides(lang_name: &str) -> &'static str {
+        match lang_name {
+            "json" => "\n(pair key: (_) @string.special.key)\n",
+            _ => "",
+        }
+    }
+
     pub fn get_language(&mut self, lang_name: &str) -> Option<Language> {
         if let Some((lang, _)) = self.loaded_languages.get(lang_name) {
             return Some(lang.clone());
@@ -229,9 +240,16 @@ impl TreesitterManager {
             repo_dir.join("queries")
         };
 
-        let highlights_scm = std::fs::read_to_string(queries_dir.join("highlights.scm")).unwrap_or_default();
+        let base_highlights = std::fs::read_to_string(queries_dir.join("highlights.scm")).unwrap_or_default();
         let injections_scm = std::fs::read_to_string(queries_dir.join("injections.scm")).unwrap_or_default();
         let locals_scm = std::fs::read_to_string(queries_dir.join("locals.scm")).unwrap_or_default();
+
+        // In tree-sitter-highlight, when multiple patterns match the same node the LAST
+        // pattern wins. Grammars often place specific captures (e.g. @string.special.key)
+        // before the general one (@string), so the general one overrides them. Fix this by
+        // appending language-specific overrides at the end so they have the highest pattern
+        // index and always win for their node type.
+        let highlights_scm = format!("{}{}", base_highlights, Self::highlight_overrides(lang_name));
 
         let mut config = HighlightConfiguration::new(
             lang,

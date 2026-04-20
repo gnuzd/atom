@@ -806,9 +806,9 @@ impl TerminalUi {
                             .find(|(l, _)| *l == actual_idx)
                             .map(|(_, s)| s);
                         let (sign_char, sign_style) = match sign {
-                            Some(crate::git::GitSign::Add) => ("+", theme.get("GitAdd")),
-                            Some(crate::git::GitSign::Change) => ("~", theme.get("GitChange")),
-                            Some(crate::git::GitSign::Delete) | Some(crate::git::GitSign::TopDelete) => ("-", theme.get("GitDelete")),
+                            Some(crate::git::GitSign::Add) => ("+", theme.get("GitSignsAdd")),
+                            Some(crate::git::GitSign::Change) => ("~", theme.get("GitSignsChange")),
+                            Some(crate::git::GitSign::Delete) | Some(crate::git::GitSign::TopDelete) => ("-", theme.get("GitSignsDelete")),
                             _ => (" ", theme.get("Normal")),
                         };
                         line_numbers.lines.push(Line::from(vec![
