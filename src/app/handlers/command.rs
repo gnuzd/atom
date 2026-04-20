@@ -74,6 +74,17 @@ impl App {
                     self.vim.selected_command_suggestion =
                         (self.vim.selected_command_suggestion + 1)
                             % self.vim.command_suggestions.len();
+                    self.vim.command_buffer =
+                        self.vim.command_suggestions[self.vim.selected_command_suggestion].clone();
+                }
+            }
+            KeyCode::BackTab => {
+                if !self.vim.command_suggestions.is_empty() {
+                    self.vim.selected_command_suggestion = self.vim.selected_command_suggestion
+                        .checked_sub(1)
+                        .unwrap_or(self.vim.command_suggestions.len() - 1);
+                    self.vim.command_buffer =
+                        self.vim.command_suggestions[self.vim.selected_command_suggestion].clone();
                 }
             }
             KeyCode::Enter => self.execute_command(),

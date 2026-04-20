@@ -160,6 +160,8 @@ impl ColorScheme {
         hl.insert("CursorLineNr".into(), Style::default().fg(palette.white).add_modifier(Modifier::BOLD));
         hl.insert("Visual".into(), Style::default().bg(palette.grey_fg));
         hl.insert("Search".into(), Style::default().fg(palette.black).bg(palette.yellow));
+        hl.insert("Pmenu".into(), Style::default().fg(palette.white).bg(palette.black2));
+        hl.insert("PmenuSel".into(), Style::default().fg(palette.black).bg(palette.blue).add_modifier(Modifier::BOLD));
         
         // Syntax
         hl.insert("Keyword".into(), Style::default().fg(palette.purple).add_modifier(Modifier::BOLD));

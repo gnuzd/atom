@@ -541,6 +541,51 @@ impl TerminalUi {
                     root_chunks[2].x + prompt.chars().count() as u16,
                     root_chunks[2].y,
                 ));
+
+                // Wildmenu: render suggestions popup above the command line
+                if !vim.command_suggestions.is_empty() {
+                    let max_visible: u16 = 10.min(vim.command_suggestions.len() as u16);
+                    let popup_w = (vim.command_suggestions.iter().map(|s| s.len()).max().unwrap_or(4) as u16 + 2)
+                        .min(area.width / 2);
+                    let popup_h = max_visible;
+                    let popup_y = root_chunks[2].y.saturating_sub(popup_h);
+
+                    let popup_rect = Rect {
+                        x: root_chunks[2].x,
+                        y: popup_y,
+                        width: popup_w,
+                        height: popup_h,
+                    };
+
+                    // Scroll window so selected item is visible
+                    let sel = vim.selected_command_suggestion;
+                    let scroll_offset = if sel >= max_visible as usize {
+                        sel + 1 - max_visible as usize
+                    } else {
+                        0
+                    };
+
+                    let items: Vec<ListItem> = vim.command_suggestions
+                        .iter()
+                        .enumerate()
+                        .skip(scroll_offset)
+                        .take(max_visible as usize)
+                        .map(|(i, s)| {
+                            let style = if i == sel {
+                                theme.get("PmenuSel")
+                            } else {
+                                theme.get("Pmenu")
+                            };
+                            ListItem::new(format!(" {}", s)).style(style)
+                        })
+                        .collect();
+
+                    frame.render_widget(Clear, popup_rect);
+                    frame.render_widget(
+                        List::new(items).style(theme.get("Pmenu")),
+                        popup_rect,
+                    );
+                }
             }
             Mode::Search => {
                 let prompt = format!("/{}", vim.input_buffer);
