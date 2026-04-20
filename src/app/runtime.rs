@@ -61,6 +61,34 @@ impl App {
                 self.vim.set_message(msg);
             }
 
+            // Hot-reload: invalidate highlight config cache for freshly installed parsers
+            // so open buffers pick up the new grammar without a restart.
+            let newly_installed: Vec<String> = {
+                let mut q = self.lsp_manager.installed_parsers.lock().unwrap();
+                q.drain(..).collect()
+            };
+            for lang_name in newly_installed {
+                self.editor.highlighter.invalidate_lang_config(&lang_name);
+                // Find the file extensions that map to this language and reset those buffer caches.
+                let exts: Vec<&str> = crate::editor::treesitter::LANGUAGES
+                    .iter()
+                    .find(|l| l.name == lang_name)
+                    .map(|l| l.file_types)
+                    .unwrap_or(&[]).to_vec();
+                for cache_idx in 0..self.editor.caches.len() {
+                    let matches = self.editor.buffers[cache_idx]
+                        .file_path
+                        .as_ref()
+                        .and_then(|p| p.extension())
+                        .and_then(|e| e.to_str())
+                        .map(|e| exts.contains(&e))
+                        .unwrap_or(false);
+                    if matches {
+                        self.editor.caches[cache_idx].last_version = usize::MAX;
+                    }
+                }
+            }
+
             while let Ok(AsyncFileResult { path, ext: _ext, result: async_res, git_signs: signs, op: _op }) = self.async_rx.try_recv() {
                 self.vim.lsp_status = LspStatus::None;
 

@@ -240,6 +240,9 @@ impl App {
                                     format!("parser {} {} failed", lang_name, action_label)
                                 };
                                 lsp_manager.op_messages.lock().unwrap().push((msg, ok));
+                                if ok {
+                                    lsp_manager.installed_parsers.lock().unwrap().push(lang_name.clone());
+                                }
                             });
                         }
                     }

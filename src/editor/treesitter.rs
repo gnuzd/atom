@@ -200,6 +200,53 @@ impl TreesitterManager {
         }
     }
 
+    /// JavaScript base highlights prepended to TypeScript/TSX configs.
+    ///
+    /// The tree-sitter-typescript `queries/highlights.scm` only captures
+    /// TypeScript-specific additions; it assumes JavaScript base highlights
+    /// are inherited separately. Since we don't chain grammars, we inline the
+    /// essential JS constructs here so keywords like `class`, `import`,
+    /// `function`, etc. get colored.
+    fn js_base_highlights() -> &'static str {
+        r#"
+[
+  "as" "async" "await" "break" "case" "catch" "class" "const"
+  "continue" "debugger" "default" "delete" "do" "else" "export"
+  "extends" "finally" "for" "from" "function" "if" "import"
+  "in" "instanceof" "let" "new" "of" "return" "static" "super"
+  "switch" "target" "this" "throw" "try" "typeof" "var" "void"
+  "while" "with" "yield"
+] @keyword
+
+(true)  @constant
+(false) @constant
+(null)  @constant
+
+(comment) @comment
+
+(string)          @string
+(template_string) @string
+(regex)           @string
+
+(number) @number
+
+(function_declaration  name: (identifier) @function)
+(function_expression   name: (identifier) @function)
+(method_definition     name: [(property_identifier)(private_property_identifier)] @function)
+(call_expression
+  function: [
+    (identifier) @function
+    (member_expression property: [(property_identifier)(private_property_identifier)] @function)
+  ])
+(new_expression constructor: (identifier) @type)
+
+(identifier) @variable
+(member_expression property: (property_identifier) @property)
+(shorthand_property_identifier)         @property
+(shorthand_property_identifier_pattern) @property
+"#
+    }
+
     pub fn get_language(&mut self, lang_name: &str) -> Option<Language> {
         if let Some((lang, _)) = self.loaded_languages.get(lang_name) {
             return Some(lang.clone());
@@ -240,12 +287,17 @@ impl TreesitterManager {
         let injections_scm = std::fs::read_to_string(queries_dir.join("injections.scm")).unwrap_or_default();
         let locals_scm = std::fs::read_to_string(queries_dir.join("locals.scm")).unwrap_or_default();
 
-        // In tree-sitter-highlight, when multiple patterns match the same node the LAST
-        // pattern wins. Grammars often place specific captures (e.g. @string.special.key)
-        // before the general one (@string), so the general one overrides them. Fix this by
-        // appending language-specific overrides at the end so they have the highest pattern
-        // index and always win for their node type.
-        let highlights_scm = format!("{}{}", base_highlights, Self::highlight_overrides(lang_name));
+        // For TypeScript/TSX, prepend the JS base highlights so that constructs
+        // like `class`, `import`, `function` etc. get colored. The grammar's own
+        // highlights.scm only has TS-specific additions; JS base is assumed to be
+        // inherited from a separate grammar (which we inline here instead).
+        let js_prefix = match lang_name {
+            "typescript" | "tsx" => Self::js_base_highlights(),
+            _ => "",
+        };
+
+        // Append language-specific overrides last (highest pattern index wins).
+        let highlights_scm = format!("{}{}{}", js_prefix, base_highlights, Self::highlight_overrides(lang_name));
 
         let mut config = HighlightConfiguration::new(
             lang,

@@ -18,6 +18,10 @@ impl Highlighter {
         }
     }
 
+    pub fn invalidate_lang_config(&mut self, lang_name: &str) {
+        self.configs.remove(lang_name);
+    }
+
     pub fn ensure_config(&mut self, lang_name: &str, ts_manager: &mut crate::editor::treesitter::TreesitterManager) {
         if !self.configs.contains_key(lang_name) {
             if let Some(config) = ts_manager.get_highlight_config(lang_name) {

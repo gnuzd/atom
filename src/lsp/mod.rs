@@ -206,6 +206,9 @@ pub struct LspManager {
     pub op_status: Arc<Mutex<HashMap<String, String>>>,
     /// Completed operation messages: (display text, is_success)
     pub op_messages: Arc<Mutex<Vec<(String, bool)>>>,
+    /// Language names whose parsers were just installed/updated — consumed by the main loop
+    /// to invalidate highlight caches so new parsers take effect without a restart.
+    pub installed_parsers: Arc<Mutex<Vec<String>>>,
     pub formatter_cache: Arc<Mutex<HashMap<String, String>>>,
     pub not_found_cache: Arc<Mutex<HashSet<String>>>,
     pub root_cache: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
@@ -226,6 +229,7 @@ impl LspManager {
             installing: Arc::new(Mutex::new(HashSet::new())),
             op_status: Arc::new(Mutex::new(HashMap::new())),
             op_messages: Arc::new(Mutex::new(Vec::new())),
+            installed_parsers: Arc::new(Mutex::new(Vec::new())),
             formatter_cache: Arc::new(Mutex::new(HashMap::new())),
             not_found_cache: Arc::new(Mutex::new(HashSet::new())),
             root_cache: Arc::new(Mutex::new(HashMap::new())),
