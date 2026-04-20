@@ -528,8 +528,13 @@ impl TerminalUi {
             Span::styled(format!(" {} ", pos_text), theme.get("StatusLineA")),
         ]);
 
-        frame.render_widget(Paragraph::new(left_part).style(theme.get("StatusLine")), root_chunks[1]);
-        frame.render_widget(Paragraph::new(right_part).alignment(Alignment::Right).style(theme.get("StatusLine")), root_chunks[1]);
+        // Pre-fill the statusline background once. Each Paragraph::style() call patches its
+        // style onto ALL cells in the area, so a second render overwrites fg colors set by
+        // the first. By pre-filling and rendering both without a base style, span colors
+        // (green/yellow/red for git signs) are preserved.
+        frame.render_widget(Block::default().style(theme.get("StatusLine")), root_chunks[1]);
+        frame.render_widget(Paragraph::new(left_part), root_chunks[1]);
+        frame.render_widget(Paragraph::new(right_part).alignment(Alignment::Right), root_chunks[1]);
 
         // 4. Command Line / Message Area
         match vim.mode {
