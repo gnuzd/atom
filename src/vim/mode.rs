@@ -27,6 +27,7 @@ pub enum TelescopeKind {
 pub enum ConfirmAction {
     Quit,
     CloseBuffer,
+    ReloadFile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

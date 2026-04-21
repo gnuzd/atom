@@ -156,15 +156,8 @@ impl App {
                 }
             }
 
-            for _path in buffers_to_reload {
-                if !self.editor.buffer().modified {
-                    if let Err(e) = self.editor.buffer_mut().reload() {
-                        self.vim.set_message(format!("Error reloading file: {}", e));
-                    } else {
-                        self.editor.clamp_cursor();
-                        self.editor.refresh_syntax();
-                    }
-                }
+            if !buffers_to_reload.is_empty() && self.vim.mode == Mode::Normal {
+                self.vim.mode = Mode::Confirm(crate::vim::mode::ConfirmAction::ReloadFile);
             }
 
             if let Some(path) = self.editor.buffer().file_path.clone() {
@@ -1202,7 +1195,7 @@ impl App {
                                 _ => {}
                             },
                             Mode::Confirm(action) => match key.code {
-                                KeyCode::Char('y') | KeyCode::Char('Y') => match action {
+                                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Char('l') | KeyCode::Char('L') => match action {
                                     crate::vim::mode::ConfirmAction::Quit => {
                                         self.save_and_format(None);
                                         self.should_quit = true;
@@ -1212,13 +1205,25 @@ impl App {
                                         self.editor.close_current_buffer();
                                         self.vim.mode = Mode::Normal;
                                     }
+                                    crate::vim::mode::ConfirmAction::ReloadFile => {
+                                        if let Err(e) = self.editor.buffer_mut().reload() {
+                                            self.vim.set_message(format!("Error reloading file: {}", e));
+                                        } else {
+                                            self.editor.clamp_cursor();
+                                            self.editor.refresh_syntax();
+                                        }
+                                        self.vim.mode = Mode::Normal;
+                                    }
                                 },
-                                KeyCode::Char('n') | KeyCode::Char('N') => match action {
+                                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char('i') | KeyCode::Char('I') => match action {
                                     crate::vim::mode::ConfirmAction::Quit => {
                                         self.should_quit = true;
                                     }
                                     crate::vim::mode::ConfirmAction::CloseBuffer => {
                                         self.editor.close_current_buffer();
+                                        self.vim.mode = Mode::Normal;
+                                    }
+                                    crate::vim::mode::ConfirmAction::ReloadFile => {
                                         self.vim.mode = Mode::Normal;
                                     }
                                 },
@@ -1341,13 +1346,6 @@ impl App {
                             Mode::BlockInsert => self.handle_block_insert_mode(key),
                         }
 
-                        // Hide intro once editing begins or a file is opened (like Vim)
-                        if self.vim.show_intro {
-                            let buf = self.editor.buffers.get(self.editor.active_idx);
-                            if buf.map(|b| b.modified || b.file_path.is_some()).unwrap_or(false) {
-                                self.vim.show_intro = false;
-                            }
-                        }
                     }
                 }
             }
@@ -1376,6 +1374,14 @@ impl App {
                     self.editor.refresh_split_syntax(pane.buffer_idx);
                 }
             }
+            // Hide intro whenever the active buffer has a file or content (checked every frame)
+            if self.vim.show_intro {
+                let buf = self.editor.buffers.get(self.editor.active_idx);
+                if buf.map(|b| b.modified || b.file_path.is_some()).unwrap_or(false) {
+                    self.vim.show_intro = false;
+                }
+            }
+
             self.terminal.draw(|f| {
                 self.ui.draw(
                     f,

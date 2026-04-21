@@ -40,7 +40,7 @@ pub struct Config {
 }
 
 fn default_colorscheme() -> String { "gruvbox-material".to_string() }
-fn default_wrap() -> bool { false }
+fn default_wrap() -> bool { true }
 fn default_true() -> bool { true }
 fn default_tabstop() -> usize { 2 }
 fn default_laststatus() -> usize { 3 }
@@ -58,7 +58,7 @@ impl Config {
         Self {
             disable_autoformat: false,
             colorscheme: default_colorscheme(),
-            wrap: false,
+            wrap: true,
             number: true,
             relativenumber: true,
             cursorline: true,

@@ -639,6 +639,9 @@ impl TerminalUi {
                     crate::vim::mode::ConfirmAction::CloseBuffer => {
                         "Unsaved changes! Close buffer? [Y]es (Save), [N]o (Discard), [C]ancel: "
                     }
+                    crate::vim::mode::ConfirmAction::ReloadFile => {
+                        "W11 Warning: File changed on disk. [L]oad, [I]gnore: "
+                    }
                 };
                 frame.render_widget(
                     Paragraph::new(prompt).style(theme.get("Keyword")),
