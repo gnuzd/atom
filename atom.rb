@@ -16,7 +16,7 @@ class Atom < Formula
 
   on_linux do
     url "https://github.com/gnuzd/atom/archive/refs/tags/v0.1.11.tar.gz"
-    sha256 "REPLACE_WITH_LINUX_SHA256"
+    sha256 "c89049ee6a7b6a1fc733812322639676fe0e4f98c47d522c845ac87723ce987b"
     depends_on "rust" => :build
   end
 
