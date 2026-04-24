@@ -231,6 +231,9 @@ impl App {
                                                 y: loc.range.start.line as usize,
                                             };
                                             let _ = self.editor.open_file(path);
+                                            if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                                pane.buffer_idx = self.editor.active_idx;
+                                            }
                                             self.editor.cursor_mut().y = pos.y;
                                             self.editor.cursor_mut().x = pos.x;
                                             self.sync_explorer();

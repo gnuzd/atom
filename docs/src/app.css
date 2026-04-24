@@ -23,7 +23,11 @@
   color: var(--color-tokyo-text);
 }
 
-.prose h1, .prose h2, .prose h3, .prose h4, .prose strong {
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose strong {
   color: var(--color-tokyo-blue);
 }
 
