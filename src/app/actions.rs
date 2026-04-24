@@ -1314,9 +1314,10 @@ impl App {
                 if self.vim.git_diff_popup.is_some() {
                     self.vim.git_diff_popup = None;
                 } else if let Some(path) = self.editor.buffer().file_path.clone() {
+                    let anchor = self.editor.cursor().y;
                     let content = self.editor.buffer().text.to_string();
                     match self.vim.git_manager.get_hunk_diff(&path, &content) {
-                        Some(diff) => self.vim.git_diff_popup = Some(diff),
+                        Some(diff) => self.vim.git_diff_popup = Some((diff, anchor)),
                         None => self.vim.set_message("No changes in this file".to_string()),
                     }
                 }
