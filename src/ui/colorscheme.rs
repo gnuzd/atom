@@ -210,6 +210,7 @@ impl ColorScheme {
         hl.insert("TreeExplorerFileIcon".into(), Style::default().fg(palette.blue));
         hl.insert("TreeExplorerFolderName".into(), Style::default().fg(palette.white).add_modifier(Modifier::BOLD));
         hl.insert("TreeExplorerFileName".into(), Style::default().fg(palette.white));
+        hl.insert("TreeExplorerActiveFile".into(), Style::default().fg(palette.white).bg(palette.black2));
         hl.insert("TreeExplorerFilter".into(), Style::default().fg(palette.cyan));
         hl.insert("TreeExplorerCount".into(), Style::default().fg(palette.grey_fg));
 

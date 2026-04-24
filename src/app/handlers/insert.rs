@@ -42,8 +42,8 @@ impl App {
             {
                 self.trigger_lsp_completion(CompletionTriggerKind::INVOKED, None);
             }
-            KeyCode::PageUp => self.dispatch_action(Action::MovePageUp, 1),
-            KeyCode::PageDown => self.dispatch_action(Action::MovePageDown, 1),
+            KeyCode::PageUp | KeyCode::Home => self.dispatch_action(Action::MoveLineStart, 1),
+            KeyCode::PageDown | KeyCode::End => self.dispatch_action(Action::MoveLineEnd, 1),
             KeyCode::Char(c) => self.handle_insert_char(c),
             KeyCode::Backspace => self.handle_insert_backspace(),
             _ => {}

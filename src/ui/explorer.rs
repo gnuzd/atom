@@ -465,6 +465,8 @@ impl FileExplorer {
 
             let name_style = if i == self.selected_idx && vim.focus == crate::vim::mode::Focus::Explorer {
                 theme.get("Visual")
+            } else if i == self.selected_idx {
+                theme.get("TreeExplorerActiveFile")
             } else if entry.is_dir {
                 theme.get("TreeExplorerFolderName")
             } else {
