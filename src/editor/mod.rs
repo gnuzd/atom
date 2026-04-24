@@ -382,7 +382,18 @@ impl Editor {
     }
 
     pub fn move_to_line_start(&mut self) {
-        self.cursor_mut().x = 0;
+        let y = self.cursor().y;
+        let first_non_ws = self
+            .buffer()
+            .line(y)
+            .map(|line| line.chars().take_while(|&c| c == ' ' || c == '\t').count())
+            .unwrap_or(0);
+        let current_x = self.cursor().x;
+        self.cursor_mut().x = if current_x != first_non_ws && first_non_ws > 0 {
+            first_non_ws
+        } else {
+            0
+        };
     }
 
     pub fn move_to_line_end(&mut self) {
