@@ -13,6 +13,8 @@ impl App {
             Action::SelectNext => self.dispatch_action(Action::SelectNext, 1),
             Action::SelectPrev => self.dispatch_action(Action::SelectPrev, 1),
             Action::Indent => self.dispatch_action(Action::Indent, 1),
+            Action::MoveLineStart => self.dispatch_action(Action::MoveLineStart, 1),
+            Action::MoveLineEnd => self.dispatch_action(Action::MoveLineEnd, 1),
             _ => self.handle_insert_raw_key(key),
         }
     }
