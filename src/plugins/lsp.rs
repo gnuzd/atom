@@ -9,6 +9,8 @@ impl Plugin for LspPlugin {
     fn register_keymaps(&self, keymap: &mut Keymap, mode: Mode) {
         if let Mode::Normal = mode {
             keymap.bind("gd", Action::LspDefinition);
+            keymap.bind("K", Action::LspHover);
+            keymap.bind("D", Action::DiagnosticFloat);
             keymap.bind("<Space>f", Action::Format);
         }
     }

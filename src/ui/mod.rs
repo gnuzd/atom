@@ -1140,5 +1140,82 @@ impl TerminalUi {
                 );
             }
         }
+
+        // Hover Popup (K / lsp.buf.hover)
+        if let Some(hover_text) = &vim.hover_popup {
+            Self::draw_float_popup(frame, hover_text, " Hover ", pane_area, cursor_screen_y, &editor_layout, editor_width, cursor_y, cursor_x, &buffer, &theme);
+        }
+
+        // Diagnostic Float (D / vim.diagnostic.open_float)
+        if let Some(diag_text) = &vim.diagnostic_popup {
+            Self::draw_float_popup(frame, diag_text, " Diagnostics ", pane_area, cursor_screen_y, &editor_layout, editor_width, cursor_y, cursor_x, &buffer, &theme);
+        }
+    }
+}
+
+impl TerminalUi {
+    fn draw_float_popup(
+        frame: &mut Frame,
+        content: &str,
+        title: &str,
+        pane_area: Rect,
+        cursor_screen_y: Option<usize>,
+        editor_layout: &[Rect],
+        editor_width: usize,
+        cursor_y: usize,
+        cursor_x: usize,
+        buffer: &crate::editor::buffer::Buffer,
+        theme: &crate::ui::colorscheme::ColorScheme,
+    ) {
+        let lines: Vec<&str> = content.lines().collect();
+        let max_line_len = lines.iter().map(|l| l.len()).max().unwrap_or(4);
+        let popup_width = (max_line_len as u16 + 4).min(pane_area.width.saturating_sub(2)).max(20);
+        let popup_height = (lines.len() as u16 + 2).min(pane_area.height / 2).max(3);
+
+        let mut cursor_pos_in_line = 0usize;
+        if let Some(line) = buffer.line(cursor_y) {
+            for (i, _) in line.chars().enumerate() {
+                if i >= cursor_x { break; }
+                let c = line.char(i);
+                cursor_pos_in_line += if c == '\t' { 2 } else {
+                    unicode_width::UnicodeWidthChar::width(c).unwrap_or(1)
+                };
+            }
+        }
+        let screen_x = (cursor_pos_in_line % editor_width) as u16;
+        let base_x = (editor_layout[1].x + screen_x).min(pane_area.right().saturating_sub(popup_width));
+
+        let base_y = if let Some(sy) = cursor_screen_y {
+            let row = editor_layout[1].y + sy as u16;
+            if row + popup_height + 1 < pane_area.bottom() {
+                row + 1
+            } else {
+                row.saturating_sub(popup_height)
+            }
+        } else {
+            editor_layout[1].y
+        };
+
+        let popup_area = Rect {
+            x: base_x,
+            y: base_y,
+            width: popup_width,
+            height: popup_height,
+        };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(Span::styled(title, theme.get("Comment")))
+            .border_style(theme.get("TreeExplorerConnector"))
+            .style(theme.get("Normal"));
+
+        frame.render_widget(Clear, popup_area);
+        frame.render_widget(
+            Paragraph::new(content.to_string())
+                .block(block)
+                .wrap(ratatui::widgets::Wrap { trim: false }),
+            popup_area,
+        );
     }
 }

@@ -469,27 +469,38 @@ impl App {
 
     fn copy_to_system_clipboard(&mut self, text: &str) -> bool {
         if text.is_empty() {
-            self.vim
-                .set_message("Nothing to copy to clipboard".to_string());
+            self.vim.set_message("Nothing to copy to clipboard".to_string());
             return false;
         }
-
-        match Clipboard::new().and_then(|mut clipboard| clipboard.set_text(text.to_string())) {
-            Ok(()) => true,
-            Err(err) => {
-                self.vim
-                    .set_message(format!("Clipboard copy failed: {}", err));
+        let text_owned = text.to_string();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Clipboard::new().and_then(|mut cb| cb.set_text(text_owned))
+        }));
+        match result {
+            Ok(Ok(())) => true,
+            Ok(Err(err)) => {
+                self.vim.set_message(format!("Clipboard copy failed: {}", err));
+                false
+            }
+            Err(_) => {
+                self.vim.set_message("Clipboard copy failed (panic)".to_string());
                 false
             }
         }
     }
 
     fn read_from_system_clipboard(&mut self) -> Option<String> {
-        match Clipboard::new().and_then(|mut clipboard| clipboard.get_text()) {
-            Ok(text) => Some(text),
-            Err(err) => {
-                self.vim
-                    .set_message(format!("Clipboard paste failed: {}", err));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Clipboard::new().and_then(|mut cb| cb.get_text())
+        }));
+        match result {
+            Ok(Ok(text)) => Some(text),
+            Ok(Err(err)) => {
+                self.vim.set_message(format!("Clipboard paste failed: {}", err));
+                None
+            }
+            Err(_) => {
+                self.vim.set_message("Clipboard paste failed (panic)".to_string());
                 None
             }
         }
@@ -1119,6 +1130,40 @@ impl App {
                             Err(e) => {
                                 self.vim.set_message(format!("LSP Error: {}", e));
                             }
+                        }
+                    }
+                }
+            }
+            Action::LspHover => {
+                if let Some(path) = self.editor.buffer().file_path.clone() {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()) {
+                        let (y, x) = (self.editor.cursor().y, self.editor.cursor().x);
+                        match self.lsp_manager.request_hover(&ext, &path, y, x) {
+                            Ok(id) => { self.vim.hover_request_id = Some(id); }
+                            Err(e) => { self.vim.set_message(format!("LSP hover: {}", e)); }
+                        }
+                    }
+                }
+            }
+            Action::DiagnosticFloat => {
+                let cursor_line = self.editor.cursor().y as u32;
+                if let Some(path) = self.editor.buffer().file_path.clone() {
+                    if let Ok(uri) = lsp_types::Url::from_file_path(&path) {
+                        let diagnostics = self.lsp_manager.diagnostics.lock().unwrap();
+                        let messages: Vec<String> = diagnostics
+                            .get(&uri)
+                            .map(|by_client| {
+                                by_client.values().flat_map(|diags| {
+                                    diags.iter()
+                                        .filter(|d| d.range.start.line == cursor_line)
+                                        .map(|d| d.message.clone())
+                                }).collect()
+                            })
+                            .unwrap_or_default();
+                        if messages.is_empty() {
+                            self.vim.set_message("No diagnostics on this line".to_string());
+                        } else {
+                            self.vim.diagnostic_popup = Some(messages.join("\n"));
                         }
                     }
                 }

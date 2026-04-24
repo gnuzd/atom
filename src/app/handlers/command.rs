@@ -116,7 +116,7 @@ impl App {
     }
 
     fn execute_command(&mut self) {
-        let cmd_str = if !self.vim.command_suggestions.is_empty() {
+        let cmd_str = if self.vim.command_wildmenu_open && !self.vim.command_suggestions.is_empty() {
             self.vim.command_suggestions[self.vim.selected_command_suggestion].clone()
         } else {
             self.vim.command_buffer.trim().to_string()
@@ -247,6 +247,19 @@ impl App {
             "FormatEnable" => self.vim.config.disable_autoformat = false,
             "FormatDisable" => self.vim.config.disable_autoformat = true,
             "gd" | "Definition" => self.dispatch_action(Action::LspDefinition, 1),
+            "LspInfo" => {
+                let info = self.lsp_manager.get_clients_info();
+                if info.is_empty() {
+                    self.vim.set_message("No LSP clients active".to_string());
+                } else {
+                    let msg = info.iter().map(|(n, s)| format!("{}: {}", n, s)).collect::<Vec<_>>().join("  |  ");
+                    self.vim.set_message(msg);
+                }
+            }
+            "LspRestart" => {
+                self.lsp_manager.clients.lock().unwrap().clear();
+                self.vim.set_message("LSP clients cleared — will restart on next edit".to_string());
+            }
             "set" => {
                 if let Some(arg) = args.first() {
                     match *arg {

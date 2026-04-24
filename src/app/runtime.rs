@@ -225,6 +225,27 @@ impl App {
                                         }
                                     }
                                 }
+                            } else if Some(id) == self.vim.hover_request_id {
+                                self.vim.hover_request_id = None;
+                                if let Ok(Some(hover)) = serde_json::from_value::<Option<lsp_types::Hover>>(
+                                    resp.result.unwrap_or_default(),
+                                ) {
+                                    let marked_string_to_str = |ms: &lsp_types::MarkedString| match ms {
+                                        lsp_types::MarkedString::String(s) => s.clone(),
+                                        lsp_types::MarkedString::LanguageString(ls) => ls.value.clone(),
+                                    };
+                                    let text = match &hover.contents {
+                                        lsp_types::HoverContents::Scalar(ms) => marked_string_to_str(ms),
+                                        lsp_types::HoverContents::Array(arr) => {
+                                            arr.iter().map(marked_string_to_str).collect::<Vec<_>>().join("\n")
+                                        }
+                                        lsp_types::HoverContents::Markup(mc) => mc.value.clone(),
+                                    };
+                                    let trimmed = text.trim().to_string();
+                                    if !trimmed.is_empty() {
+                                        self.vim.hover_popup = Some(trimmed);
+                                    }
+                                }
                             } else if let Ok(value) = serde_json::from_value::<CompletionResponse>(
                                 resp.result.unwrap_or_default(),
                             ) {
@@ -524,6 +545,11 @@ impl App {
                         self.vim.yank_highlight_line = None;
                         if self.vim.blame_popup.is_some() {
                             self.vim.blame_popup = None;
+                            continue;
+                        }
+                        if self.vim.hover_popup.is_some() || self.vim.diagnostic_popup.is_some() {
+                            self.vim.hover_popup = None;
+                            self.vim.diagnostic_popup = None;
                             continue;
                         }
 
@@ -953,7 +979,14 @@ impl App {
                                                 }
                                             }
                                         }
+                                        KeyCode::PageUp => {
+                                            self.dispatch_action(Action::MovePageUp, 1);
+                                        }
+                                        KeyCode::PageDown => {
+                                            self.dispatch_action(Action::MovePageDown, 1);
+                                        }
                                         KeyCode::Char(c) => {
+                                            self.editor.clamp_cursor();
                                             let (y, x) =
                                                 (self.editor.cursor().y, self.editor.cursor().x);
                                             let idx = self.safe_line_to_char(y) + x;

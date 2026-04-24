@@ -237,6 +237,9 @@ pub struct VimState {
     pub show_intro: bool,
     pub folding_ranges: Vec<lsp_types::FoldingRange>,
     pub definition_request_id: Option<i32>,
+    pub hover_request_id: Option<i32>,
+    pub hover_popup: Option<String>,
+    pub diagnostic_popup: Option<String>,
     pub jumplist: Vec<(std::path::PathBuf, Position)>,
     pub jumplist_idx: usize,
 }
@@ -307,6 +310,9 @@ impl VimState {
             show_intro: false,
             folding_ranges: Vec::new(),
             definition_request_id: None,
+            hover_request_id: None,
+            hover_popup: None,
+            diagnostic_popup: None,
             jumplist: Vec::new(),
             jumplist_idx: 0,
         }

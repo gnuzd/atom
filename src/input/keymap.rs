@@ -68,6 +68,8 @@ pub enum Action {
     TelescopeBuffers,
     TelescopeThemes,
     LspDefinition,
+    LspHover,
+    DiagnosticFloat,
     ToggleExplorer,
     ToggleRelativeNumber,
     ToggleTrouble,
@@ -166,6 +168,8 @@ impl Action {
             "TelescopeBuffers"      => Action::TelescopeBuffers,
             "TelescopeThemes"       => Action::TelescopeThemes,
             "LspDefinition"         => Action::LspDefinition,
+            "LspHover"              => Action::LspHover,
+            "DiagnosticFloat"       => Action::DiagnosticFloat,
             "ToggleExplorer"        => Action::ToggleExplorer,
             "ToggleRelativeNumber"  => Action::ToggleRelativeNumber,
             "ToggleTrouble"         => Action::ToggleTrouble,
@@ -251,7 +255,7 @@ impl Keymap {
         km.bind("G", Action::JumpToLastLine);
         km.bind("Home", Action::MoveLineStart);
         km.bind("End", Action::MoveLineEnd);
-        km.bind("PageUp", Action::MoveLineStart);
+        km.bind("PageUp", Action::MovePageUp);
         km.bind("PageDown", Action::MovePageDown);
         km.bind("Left", Action::MoveLeft);
         km.bind("Down", Action::MoveDown);
@@ -298,8 +302,10 @@ impl Keymap {
         km.bind("CR", Action::Confirm);
         km.bind("Tab", Action::SelectNext);
         km.bind("<S-Tab>", Action::SelectPrev);
-        km.bind("BS", Action::DeleteCharBefore); // Usually handled specially
+        km.bind("BS", Action::DeleteCharBefore);
         km.bind("<C-v>", Action::PasteFromClipboard);
+        km.bind("PageUp", Action::MovePageUp);
+        km.bind("PageDown", Action::MovePageDown);
         km
     }
 }
