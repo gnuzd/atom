@@ -58,7 +58,9 @@ impl GitManager {
         Some(format!("{} {} • {} • {}", short_id, name, time_str, summary))
     }
 
-    /// Returns a diff string showing the old lines for the hunk that contains `new_line` (0-indexed).
+    /// Returns an inline diff string with line numbers, markers, context, and hunk separators.
+    /// Format per line: "{num:>4} {marker} {content}" where marker is +, -, or space.
+    /// Hunks are separated by "~~~".
     pub fn get_hunk_diff(&self, path: &Path, content: &str) -> Option<String> {
         let repo_lock = self.repo.lock().unwrap();
         let repo = repo_lock.as_ref()?;
@@ -71,16 +73,9 @@ impl GitManager {
         let old_lines: Vec<&str> = old_content.lines().collect();
         let new_lines: Vec<&str> = content.lines().collect();
 
-        let signs = diff_signs(&old_lines, &new_lines);
-        if signs.is_empty() {
-            return None;
-        }
-
-        // Build a unified-style diff summary
-        let mut out = String::new();
-        let mut i = 0;
         let m = old_lines.len();
         let n = new_lines.len();
+
         let mut dp = vec![vec![0usize; n + 1]; m + 1];
         for ii in (0..m).rev() {
             for jj in (0..n).rev() {
@@ -91,21 +86,60 @@ impl GitManager {
                 };
             }
         }
+
+        // ops: (display_line_num, marker, content)
+        // display_num = new_line for context/add, old_line for remove
+        let mut ops: Vec<(usize, char, String)> = Vec::new();
         let mut oi = 0usize;
         let mut ni = 0usize;
-        while oi < m || ni < n {
+        let mut guard = 0usize;
+
+        while (oi < m || ni < n) && guard < 2000 {
+            guard += 1;
             if oi < m && ni < n && old_lines[oi] == new_lines[ni] {
+                ops.push((ni + 1, ' ', new_lines[ni].to_string()));
                 oi += 1; ni += 1;
             } else if ni < n && (oi >= m || dp[oi][ni + 1] >= dp[oi + 1][ni]) {
-                out.push_str(&format!("+ {}\n", new_lines[ni]));
+                ops.push((ni + 1, '+', new_lines[ni].to_string()));
                 ni += 1;
             } else {
-                out.push_str(&format!("- {}\n", old_lines[oi]));
+                ops.push((oi + 1, '-', old_lines[oi].to_string()));
                 oi += 1;
             }
-            i += 1;
-            if i > 200 { break; }
         }
+
+        let changed: Vec<usize> = ops.iter().enumerate()
+            .filter(|(_, op)| op.1 != ' ')
+            .map(|(i, _)| i)
+            .collect();
+
+        if changed.is_empty() { return None; }
+
+        const CTX: usize = 3;
+        let mut hunks: Vec<(usize, usize)> = Vec::new();
+
+        for &ci in &changed {
+            let s = ci.saturating_sub(CTX);
+            let e = (ci + CTX).min(ops.len().saturating_sub(1));
+            if let Some(last) = hunks.last_mut() {
+                if s <= last.1 + 1 {
+                    last.1 = last.1.max(e);
+                    continue;
+                }
+            }
+            hunks.push((s, e));
+        }
+
+        let mut out = String::new();
+        for (h_idx, (start, end)) in hunks.iter().enumerate() {
+            if h_idx > 0 {
+                out.push_str("~~~\n");
+            }
+            for (num, marker, line_content) in &ops[*start..=*end] {
+                out.push_str(&format!("{:>4} {} {}\n", num, marker, line_content));
+            }
+        }
+
         if out.is_empty() { None } else { Some(out.trim_end().to_string()) }
     }
 

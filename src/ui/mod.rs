@@ -1161,9 +1161,62 @@ impl TerminalUi {
             Self::draw_float_popup(frame, diag_text, " Diagnostics ", pane_area, cursor_screen_y, &editor_layout, editor_width, cursor_y, cursor_x, &buffer, &theme);
         }
 
-        // Git Diff Hunk Popup (<leader>gh)
+        // Git Diff Hunk — inline overlay (no border, full width, line numbers + markers)
         if let Some(diff_text) = &vim.git_diff_popup.clone() {
-            Self::draw_highlighted_popup(frame, diff_text, " Git Diff ", pane_area, cursor_screen_y, &editor_layout, editor_width, cursor_y, cursor_x, &buffer, &theme, &editor.highlighter, "diff");
+            let diff_lines: Vec<&str> = diff_text.lines().collect();
+            let start_y = if let Some(sy) = cursor_screen_y {
+                editor_layout[1].y + sy as u16 + 1
+            } else {
+                editor_layout[1].y
+            };
+            let available_h = pane_area.bottom().saturating_sub(start_y);
+            let display_count = (diff_lines.len() as u16).min(available_h);
+            if display_count > 0 {
+                let inline_area = Rect {
+                    x: pane_area.x,
+                    y: start_y,
+                    width: pane_area.width,
+                    height: display_count,
+                };
+                frame.render_widget(Clear, inline_area);
+
+                let w = inline_area.width as usize;
+                let mut styled_lines: Vec<Line> = Vec::new();
+
+                for raw in &diff_lines[..display_count as usize] {
+                    if *raw == "~~~" {
+                        let sep = format!("{:─<width$}", "", width = w);
+                        styled_lines.push(Line::from(Span::styled(sep, theme.get("Comment"))));
+                        continue;
+                    }
+                    // Format: "{:>4} {marker} {content}" — marker at index 5
+                    let marker = raw.chars().nth(5).unwrap_or(' ');
+                    let line_style = match marker {
+                        '+' => {
+                            let bg = match theme.palette.green {
+                                ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 7, g / 5, b / 7),
+                                c => c,
+                            };
+                            Style::default().fg(theme.palette.green).bg(bg)
+                        }
+                        '-' => {
+                            let bg = match theme.palette.red {
+                                ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 5, g / 9, b / 9),
+                                c => c,
+                            };
+                            Style::default().fg(theme.palette.red).bg(bg)
+                        }
+                        _ => theme.get("Normal").bg(theme.palette.darker_black),
+                    };
+                    let padded = format!("{:<width$}", raw, width = w);
+                    styled_lines.push(Line::from(Span::styled(padded, line_style)));
+                }
+
+                frame.render_widget(
+                    Paragraph::new(Text::from(styled_lines)),
+                    inline_area,
+                );
+            }
         }
     }
 }
