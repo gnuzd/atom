@@ -53,6 +53,8 @@ impl App {
             LspStatus::None
         };
 
+        self.pending_save_paths.insert(path.clone());
+
         tokio::task::spawn_blocking(move || {
             use std::fs;
             use std::io::{self, Write};
@@ -1301,7 +1303,21 @@ impl App {
                 ));
             }
             Action::GitBlame => {
-                self.vim.blame_popup = Some("Git Blame: You (just now) - placeholder".to_string());
+                if let Some(path) = self.editor.buffer().file_path.clone() {
+                    let line = self.editor.cursor().y;
+                    let text = self.vim.git_manager.get_blame_line(&path, line)
+                        .unwrap_or_else(|| "Not in a git repo or file not committed".to_string());
+                    self.vim.blame_popup = Some(text);
+                }
+            }
+            Action::GitDiffHunk => {
+                if let Some(path) = self.editor.buffer().file_path.clone() {
+                    let content = self.editor.buffer().text.to_string();
+                    match self.vim.git_manager.get_hunk_diff(&path, &content) {
+                        Some(diff) => self.vim.git_diff_popup = Some(diff),
+                        None => self.vim.set_message("No changes in this file".to_string()),
+                    }
+                }
             }
             Action::ToggleFold => {
                 self.editor.toggle_fold(&self.vim.folding_ranges);

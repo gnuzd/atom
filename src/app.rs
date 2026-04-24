@@ -79,6 +79,8 @@ pub struct App {
     pub should_quit: bool,
     pub is_dragging: bool,
     pub drag_anchor: Option<Position>,
+    /// Paths currently being written by us — suppress the "file changed on disk" prompt for these.
+    pub pending_save_paths: std::collections::HashSet<PathBuf>,
 }
 
 impl App {
@@ -176,6 +178,7 @@ impl App {
             should_quit: false,
             is_dragging: false,
             drag_anchor: None,
+            pending_save_paths: std::collections::HashSet::new(),
         })
     }
 }

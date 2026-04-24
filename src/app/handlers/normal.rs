@@ -57,6 +57,7 @@ impl App {
                 " tt" => self.dispatch_action(Action::ToggleTrouble, count),
                 " bb" => self.dispatch_action(Action::ToggleAutoformat, count),
                 " bl" => self.dispatch_action(Action::GitBlame, count),
+                " gh" => self.dispatch_action(Action::GitDiffHunk, count),
                 " x" => self.dispatch_action(Action::CloseBuffer, count),
                 "gg" | "[[" => self.dispatch_action(Action::JumpToFirstLine, count),
                 "]]" => self.dispatch_action(Action::JumpToLastLine, count),

@@ -22,6 +22,93 @@ impl GitManager {
         Self { repo: Arc::new(Mutex::new(repo)) }
     }
 
+    /// Returns a one-line blame summary for `line` (0-indexed): "abc12345 Author • X ago • message"
+    pub fn get_blame_line(&self, path: &Path, line: usize) -> Option<String> {
+        let repo_lock = self.repo.lock().unwrap();
+        let repo = repo_lock.as_ref()?;
+        let workdir = repo.workdir()?;
+        let rel = path.strip_prefix(workdir).ok()?;
+        let blame = repo.blame_file(rel, None).ok()?;
+        let hunk = blame.get_line(line + 1)?;
+        let commit_id = hunk.final_commit_id();
+        if commit_id == git2::Oid::zero() {
+            return Some("Not committed yet".to_string());
+        }
+        let commit = repo.find_commit(commit_id).ok()?;
+        let author = commit.author();
+        let name = author.name().unwrap_or("Unknown");
+        let summary = commit.summary().unwrap_or("No message");
+        let short_id = &commit_id.to_string()[..8];
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let ago = now_secs - commit.time().seconds();
+        let time_str = if ago < 60 {
+            "just now".to_string()
+        } else if ago < 3600 {
+            format!("{} min ago", ago / 60)
+        } else if ago < 86400 {
+            format!("{} hr ago", ago / 3600)
+        } else {
+            format!("{} days ago", ago / 86400)
+        };
+
+        Some(format!("{} {} • {} • {}", short_id, name, time_str, summary))
+    }
+
+    /// Returns a diff string showing the old lines for the hunk that contains `new_line` (0-indexed).
+    pub fn get_hunk_diff(&self, path: &Path, content: &str) -> Option<String> {
+        let repo_lock = self.repo.lock().unwrap();
+        let repo = repo_lock.as_ref()?;
+        let workdir = repo.workdir()?;
+        let rel = path.strip_prefix(workdir).ok()?;
+        let blob = repo.revparse_single("HEAD:").ok()
+            .and_then(|obj| obj.as_tree().unwrap().get_path(rel).ok().map(|e| (obj, e)))
+            .and_then(|(_, entry)| repo.find_blob(entry.id()).ok())?;
+        let old_content = String::from_utf8_lossy(blob.content());
+        let old_lines: Vec<&str> = old_content.lines().collect();
+        let new_lines: Vec<&str> = content.lines().collect();
+
+        let signs = diff_signs(&old_lines, &new_lines);
+        if signs.is_empty() {
+            return None;
+        }
+
+        // Build a unified-style diff summary
+        let mut out = String::new();
+        let mut i = 0;
+        let m = old_lines.len();
+        let n = new_lines.len();
+        let mut dp = vec![vec![0usize; n + 1]; m + 1];
+        for ii in (0..m).rev() {
+            for jj in (0..n).rev() {
+                dp[ii][jj] = if old_lines[ii] == new_lines[jj] {
+                    dp[ii + 1][jj + 1] + 1
+                } else {
+                    dp[ii + 1][jj].max(dp[ii][jj + 1])
+                };
+            }
+        }
+        let mut oi = 0usize;
+        let mut ni = 0usize;
+        while oi < m || ni < n {
+            if oi < m && ni < n && old_lines[oi] == new_lines[ni] {
+                oi += 1; ni += 1;
+            } else if ni < n && (oi >= m || dp[oi][ni + 1] >= dp[oi + 1][ni]) {
+                out.push_str(&format!("+ {}\n", new_lines[ni]));
+                ni += 1;
+            } else {
+                out.push_str(&format!("- {}\n", old_lines[oi]));
+                oi += 1;
+            }
+            i += 1;
+            if i > 200 { break; }
+        }
+        if out.is_empty() { None } else { Some(out.trim_end().to_string()) }
+    }
+
     pub fn get_signs(&self, path: &Path, content: &str) -> Vec<(usize, GitSign)> {
         let mut signs = Vec::new();
         let repo_lock = self.repo.lock().unwrap();

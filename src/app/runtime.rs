@@ -37,7 +37,7 @@ impl App {
                             explorer_needs_refresh = true;
                             for path in event.paths {
                                 if let Some(active_path) = self.editor.buffer().file_path.as_ref() {
-                                    if path == *active_path {
+                                    if path == *active_path && !self.pending_save_paths.contains(&path) {
                                         buffers_to_reload.push(path);
                                     }
                                 }
@@ -119,6 +119,7 @@ impl App {
                     },
                     AsyncResult::Save(res) => match res {
                         Ok(final_text) => {
+                            self.pending_save_paths.remove(&path);
                             if let Some(buf_idx) = self
                                 .editor
                                 .buffers
@@ -211,7 +212,15 @@ impl App {
                                 if let Ok(value) = serde_json::from_value::<GotoDefinitionResponse>(
                                     resp.result.unwrap_or_default(),
                                 ) {
-                                    if let GotoDefinitionResponse::Scalar(loc) = value {
+                                    let goto_loc = match value {
+                                        GotoDefinitionResponse::Scalar(loc) => Some(loc),
+                                        GotoDefinitionResponse::Array(locs) => locs.into_iter().next(),
+                                        GotoDefinitionResponse::Link(links) => links.into_iter().next().map(|l| lsp_types::Location {
+                                            uri: l.target_uri,
+                                            range: l.target_range,
+                                        }),
+                                    };
+                                    if let Some(loc) = goto_loc {
                                         if let Ok(file_path) = loc.uri.to_file_path() {
                                             let path = PathBuf::from(file_path);
                                             let pos = Position {
@@ -547,6 +556,10 @@ impl App {
                             self.vim.blame_popup = None;
                             continue;
                         }
+                        if self.vim.git_diff_popup.is_some() {
+                            self.vim.git_diff_popup = None;
+                            continue;
+                        }
                         if self.vim.hover_popup.is_some() || self.vim.diagnostic_popup.is_some() {
                             self.vim.hover_popup = None;
                             self.vim.diagnostic_popup = None;
@@ -674,6 +687,8 @@ impl App {
                                                     ),
                                                     " bl" => self
                                                         .dispatch_action(Action::GitBlame, count),
+                                                    " gh" => self
+                                                        .dispatch_action(Action::GitDiffHunk, count),
                                                     " x" => self.dispatch_action(
                                                         Action::CloseBuffer,
                                                         count,
