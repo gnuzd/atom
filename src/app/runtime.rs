@@ -1196,8 +1196,21 @@ impl App {
                                     self.vim.mode = Mode::Normal;
                                     match input_type {
                                         ExplorerInputType::Add => {
-                                            if let Err(e) = self.explorer.create_file(&input) {
-                                                self.vim.set_message(format!("Error: {}", e));
+                                            match self.explorer.create_file(&input) {
+                                                Ok(path) if !input.ends_with('/') => {
+                                                    if let Err(e) = self.editor.open_file(path.clone()) {
+                                                        self.vim.set_message(format!("Error opening file: {}", e));
+                                                    } else {
+                                                        let new_idx = self.editor.active_idx;
+                                                        if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                                            pane.buffer_idx = new_idx;
+                                                        }
+                                                        self.vim.focus = Focus::Editor;
+                                                        self.explorer.reveal_path(&path);
+                                                    }
+                                                }
+                                                Ok(_) => {}
+                                                Err(e) => self.vim.set_message(format!("Error: {}", e)),
                                             }
                                         }
                                         ExplorerInputType::Rename => {

@@ -320,12 +320,24 @@ impl FileExplorer {
     pub fn move_down(&mut self) { if !self.entries.is_empty() && self.selected_idx < self.entries.len() - 1 { self.selected_idx += 1; } }
     pub fn selected_entry(&self) -> Option<&TreeEntry> { self.entries.get(self.selected_idx) }
 
-    pub fn create_file(&mut self, name: &str) -> std::io::Result<()> {
-        let parent = self.selected_entry().map(|e| if e.is_dir { e.path.clone() } else { e.path.parent().unwrap().to_path_buf() }).unwrap_or_else(|| self.root.clone());
-        let path = parent.join(name);
-        if name.ends_with('/') { fs::create_dir_all(path)?; } else { fs::File::create(path)?; }
+    /// Create a file (or directory if `name` ends with `/`).
+    /// Intermediate directories are created automatically.
+    /// Returns the created path so the caller can open it.
+    pub fn create_file(&mut self, name: &str) -> std::io::Result<std::path::PathBuf> {
+        let base = self.selected_entry()
+            .map(|e| if e.is_dir { e.path.clone() } else { e.path.parent().unwrap().to_path_buf() })
+            .unwrap_or_else(|| self.root.clone());
+        let path = base.join(name);
+        if name.ends_with('/') {
+            fs::create_dir_all(&path)?;
+        } else {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::File::create(&path)?;
+        }
         self.refresh();
-        Ok(())
+        Ok(path)
     }
 
     pub fn rename_selected(&mut self, new_name: &str) -> std::io::Result<()> {

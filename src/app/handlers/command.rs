@@ -152,10 +152,13 @@ impl App {
     pub(crate) fn dispatch_ex_command(&mut self, cmd: &str, force: bool, args: &[&str]) {
         match cmd {
             "q" | "quit" => self.dispatch_action(
-                if force { Action::QuitAll } else { Action::Quit },
+                if force { Action::QuitWithoutSaving } else { Action::Quit },
                 1,
             ),
-            "qa" | "qall" => self.dispatch_action(Action::QuitAll, 1),
+            "qa" | "qall" => self.dispatch_action(
+                if force { Action::QuitWithoutSaving } else { Action::QuitAll },
+                1,
+            ),
             "w" | "write" => {
                 let path = args.first().map(|s| PathBuf::from(*s));
                 self.save_and_format(path);
