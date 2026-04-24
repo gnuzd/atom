@@ -215,6 +215,8 @@ pub struct LspManager {
     pub bin_cache: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
     pub versions: Arc<Mutex<HashMap<String, i32>>>,
     pub id_counter: Arc<Mutex<i32>>,
+    /// "ext\0path" keys — prevents duplicate textDocument/didOpen for already-known documents.
+    pub opened_docs: Arc<Mutex<HashSet<String>>>,
     pub last_change: Option<Instant>,
     pub pending_change: bool,
 }
@@ -236,6 +238,7 @@ impl LspManager {
             bin_cache: Arc::new(Mutex::new(HashMap::new())),
             versions: Arc::new(Mutex::new(HashMap::new())),
             id_counter: Arc::new(Mutex::new(100)),
+            opened_docs: Arc::new(Mutex::new(HashSet::new())),
             last_change: None,
             pending_change: false,
         }
@@ -524,6 +527,28 @@ impl LspManager {
             std::env::current_dir().unwrap_or_default().join(path)
         };
         Url::from_file_path(abs_path).unwrap_or_else(|_| Url::parse("file:///").unwrap())
+    }
+
+    /// Sends textDocument/didOpen only if not already sent for this (ext, path).
+    /// Call this whenever a buffer becomes active so the LSP always knows about it.
+    pub fn ensure_did_open(&self, ext: &str, path: &Path, text: &str) {
+        let key = format!("{}\0{}", ext, path.to_string_lossy());
+        {
+            let opened = self.opened_docs.lock().unwrap();
+            if opened.contains(&key) {
+                return;
+            }
+        }
+        let clients_lock = self.clients.lock().unwrap();
+        let has_ready = clients_lock.get(ext)
+            .map(|c| c.iter().any(|(_, s, _)| *s == ClientState::Ready))
+            .unwrap_or(false);
+        if !has_ready {
+            return;
+        }
+        drop(clients_lock);
+        let _ = self.did_open(ext, path, text.to_string(), None);
+        self.opened_docs.lock().unwrap().insert(key);
     }
 
     pub fn did_open(&self, ext: &str, path: &Path, text: String, target_cmd: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {

@@ -170,6 +170,9 @@ impl App {
                     let _ = self
                         .lsp_manager
                         .start_client(&ext, self.vim.project_root.clone());
+                    // Ensure didOpen is sent for this buffer if LSP is already running
+                    let text = self.editor.buffer().text.to_string();
+                    self.lsp_manager.ensure_did_open(&ext, &path, &text);
                 }
             }
 
