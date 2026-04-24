@@ -148,6 +148,31 @@ impl App {
             }
         });
 
+        // Inject user-defined snippets that match the current prefix and filetype
+        if !prefix.is_empty() {
+            let ext = self.editor.buffer().file_path.as_ref()
+                .and_then(|p| p.extension())
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase())
+                .unwrap_or_default();
+            for snippet in &self.vim.user_snippets {
+                if snippet.filetype == ext && snippet.trigger.to_lowercase().contains(&prefix) {
+                    let key = format!("{}:snippet", snippet.trigger);
+                    if !unique_items.contains(&key) {
+                        unique_items.insert(key);
+                        filtered.push(lsp_types::CompletionItem {
+                            label: snippet.trigger.clone(),
+                            detail: Some(snippet.name.clone()),
+                            kind: Some(lsp_types::CompletionItemKind::SNIPPET),
+                            insert_text: Some(snippet.body.clone()),
+                            insert_text_format: Some(lsp_types::InsertTextFormat::SNIPPET),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
         self.vim.filtered_suggestions = filtered;
         self.vim.selected_suggestion = 0;
         self.vim.suggestion_state.select(Some(0));
@@ -456,6 +481,75 @@ impl App {
         if args.len() == 1 {
             self.vim.show_intro = true;
         }
+    }
+
+    /// Expand LSP snippet syntax into plain text, placing cursor at `$0`.
+    /// Handles: `$N`, `${N}`, `${N:default}`, `${N|choice1,choice2|}`.
+    /// Returns `(expanded_text, cursor_offset_from_start)`.
+    pub fn expand_snippet(body: &str) -> String {
+        let chars: Vec<char> = body.chars().collect();
+        let mut out = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] != '$' {
+                out.push(chars[i]);
+                i += 1;
+                continue;
+            }
+            i += 1; // skip '$'
+            if i >= chars.len() {
+                out.push('$');
+                continue;
+            }
+            if chars[i] == '{' {
+                i += 1; // skip '{'
+                // skip optional number
+                while i < chars.len() && chars[i].is_ascii_digit() { i += 1; }
+                if i >= chars.len() { continue; }
+                match chars[i] {
+                    '}' => { i += 1; } // ${N} — pure tabstop, emit nothing
+                    ':' => {
+                        // ${N:default} — emit the default value
+                        i += 1;
+                        let mut depth = 1usize;
+                        while i < chars.len() {
+                            match chars[i] {
+                                '{' => { depth += 1; out.push(chars[i]); i += 1; }
+                                '}' => {
+                                    depth -= 1;
+                                    i += 1;
+                                    if depth == 0 { break; }
+                                    out.push('}');
+                                }
+                                _ => { out.push(chars[i]); i += 1; }
+                            }
+                        }
+                    }
+                    '|' => {
+                        // ${N|choice1,choice2|} — emit first choice
+                        i += 1;
+                        let start = i;
+                        while i < chars.len() && chars[i] != ',' && chars[i] != '|' { i += 1; }
+                        out.extend(chars[start..i].iter());
+                        // skip to closing '}'
+                        while i < chars.len() && chars[i] != '}' { i += 1; }
+                        if i < chars.len() { i += 1; }
+                    }
+                    _ => {
+                        // malformed — skip to '}'
+                        while i < chars.len() && chars[i] != '}' { i += 1; }
+                        if i < chars.len() { i += 1; }
+                    }
+                }
+            } else if chars[i].is_ascii_digit() {
+                // $N — pure tabstop, emit nothing
+                while i < chars.len() && chars[i].is_ascii_digit() { i += 1; }
+            } else {
+                // not a tabstop — keep the '$'
+                out.push('$');
+            }
+        }
+        out
     }
 
     pub(crate) fn safe_line_to_char(&self, y: usize) -> usize {
@@ -1449,11 +1543,7 @@ impl App {
                     }
 
                     if insert_text.contains('$') {
-                        insert_text = insert_text
-                            .replace("$0", "")
-                            .replace("$1", "")
-                            .replace("${1:", "")
-                            .replace('}', "");
+                        insert_text = Self::expand_snippet(&insert_text);
                     }
 
                     self.editor.buffer_mut().apply_edit(|t| {

@@ -242,6 +242,7 @@ pub struct VimState {
     pub diagnostic_popup: Option<String>,
     pub jumplist: Vec<(std::path::PathBuf, Position)>,
     pub jumplist_idx: usize,
+    pub user_snippets: Vec<crate::config::UserSnippet>,
 }
 
 impl VimState {
@@ -315,6 +316,7 @@ impl VimState {
             diagnostic_popup: None,
             jumplist: Vec::new(),
             jumplist_idx: 0,
+            user_snippets: Vec::new(),
         }
     }
 

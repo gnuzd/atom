@@ -84,9 +84,10 @@ pub struct App {
 impl App {
     pub fn new() -> Result<Self> {
         let _ = crate::config::Config::write_default_lua();
-        let (config, user_keymaps) = crate::config::Config::load_with_keymaps();
+        let (config, user_keymaps, user_snippets) = crate::config::Config::load_with_keymaps();
         let project_root = find_project_root(&env::current_dir().unwrap_or_default());
-        let vim = VimState::new(config, project_root);
+        let mut vim = VimState::new(config, project_root);
+        vim.user_snippets = user_snippets;
 
         enable_raw_mode()?;
         let mut stdout = io::stdout();

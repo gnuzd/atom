@@ -53,6 +53,15 @@ pub struct UserKeymap {
     pub action: String, // action name or ":command"
 }
 
+/// A user-defined code snippet from init.lua
+#[derive(Debug, Clone)]
+pub struct UserSnippet {
+    pub filetype: String,  // e.g. "svelte", "rs", "ts"
+    pub trigger: String,   // prefix that triggers the snippet
+    pub name: String,      // display name shown in menu
+    pub body: String,      // snippet body with $1, ${1:default}, $0 syntax
+}
+
 impl Config {
     pub fn default() -> Self {
         Self {
@@ -85,8 +94,8 @@ impl Config {
         PathBuf::from(home).join(".config").join("atom").join("config.json")
     }
 
-    /// Load config + user keymaps. Tries init.lua first, falls back to config.json.
-    pub fn load_with_keymaps() -> (Self, Vec<UserKeymap>) {
+    /// Load config + user keymaps + user snippets. Tries init.lua first, falls back to config.json.
+    pub fn load_with_keymaps() -> (Self, Vec<UserKeymap>, Vec<UserSnippet>) {
         let lua_path = Self::init_lua_path();
         if let Ok(content) = fs::read_to_string(&lua_path) {
             match Self::from_lua(&content) {
@@ -94,10 +103,10 @@ impl Config {
                 Err(e) => eprintln!("atom: init.lua error: {}", e),
             }
         }
-        (Self::load(), vec![])
+        (Self::load(), vec![], vec![])
     }
 
-    fn from_lua(content: &str) -> LuaResult<(Self, Vec<UserKeymap>)> {
+    fn from_lua(content: &str) -> LuaResult<(Self, Vec<UserKeymap>, Vec<UserSnippet>)> {
         let lua = Lua::new();
         let mut config = Self::default();
 
@@ -121,9 +130,26 @@ impl Config {
         let keymap_table = lua.create_table()?;
         keymap_table.set("set", keymap_set)?;
 
+        // vim.snippet.add(filetype, trigger, name, body)
+        lua.globals().set("_atom_snippets", lua.create_table()?)?;
+        let snippet_add = lua.create_function(|lua, (ft, trigger, name, body): (String, String, String, String)| {
+            let t: LuaTable = lua.globals().get("_atom_snippets")?;
+            let len = t.raw_len();
+            let entry = lua.create_table()?;
+            entry.set(1, ft)?;
+            entry.set(2, trigger)?;
+            entry.set(3, name)?;
+            entry.set(4, body)?;
+            t.set(len + 1, entry)?;
+            Ok(())
+        })?;
+        let snippet_table = lua.create_table()?;
+        snippet_table.set("add", snippet_add)?;
+
         let vim_table = lua.create_table()?;
         vim_table.set("opt", opt_table)?;
         vim_table.set("keymap", keymap_table)?;
+        vim_table.set("snippet", snippet_table)?;
         lua.globals().set("vim", vim_table)?;
 
         // Execute init.lua
@@ -185,7 +211,19 @@ impl Config {
             user_keymaps.push(UserKeymap { mode, key, action });
         }
 
-        Ok((config, user_keymaps))
+        // Read snippets
+        let sn_list: LuaTable = lua.globals().get("_atom_snippets")?;
+        let mut user_snippets = Vec::new();
+        for i in 1..=sn_list.raw_len() {
+            let entry: LuaTable = sn_list.get(i)?;
+            let filetype: String = entry.get(1)?;
+            let trigger: String = entry.get(2)?;
+            let name: String = entry.get(3)?;
+            let body: String = entry.get(4)?;
+            user_snippets.push(UserSnippet { filetype, trigger, name, body });
+        }
+
+        Ok((config, user_keymaps, user_snippets))
     }
 
     pub fn load() -> Self {
@@ -247,4 +285,16 @@ vim.opt.mouse = true
 -- vim.keymap.set("n", "<leader>ff", ":TelescopeFiles")
 -- vim.keymap.set("n", "<C-h>", ":split")
 -- vim.keymap.set("n", "<C-w>", "CloseBuffer")
+
+-- Snippets: vim.snippet.add(filetype, trigger, display_name, body)
+--   filetype: file extension without dot, e.g. "svelte", "rs", "ts"
+--   trigger:  prefix typed to show the snippet
+--   body:     snippet text with $1/$2 tabstops, ${1:default}, $0 = final cursor
+--
+-- Examples:
+-- vim.snippet.add("svelte", "scri", "Script block",  "<script>\n\t$1\n</script>")
+-- vim.snippet.add("svelte", "styl", "Style block",   "<style>\n\t$1\n</style>")
+-- vim.snippet.add("svelte", "each", "Each block",    "{#each ${1:items} as ${2:item}}\n\t$3\n{/each}")
+-- vim.snippet.add("ts",     "fn",   "Arrow function","const ${1:name} = (${2:args}) => {\n\t$3\n}")
+-- vim.snippet.add("rs",     "fn",   "Function",      "fn ${1:name}(${2}) -> ${3:()} {\n\t$4\n}")
 "#;
