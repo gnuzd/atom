@@ -914,10 +914,8 @@ impl App {
                                 KeyCode::Char('l') | KeyCode::Right => {
                                     self.dispatch_action(Action::MoveRight, 1)
                                 }
-                                KeyCode::PageUp => self.dispatch_action(Action::MoveLineStart, 1),
-                                KeyCode::PageDown => self.dispatch_action(Action::MovePageDown, 1),
-                                KeyCode::Home => self.dispatch_action(Action::MoveLineStart, 1),
-                                KeyCode::End => self.dispatch_action(Action::MoveLineEnd, 1),
+                                KeyCode::PageUp | KeyCode::Home => self.dispatch_action(Action::MoveLineStart, 1),
+                                KeyCode::PageDown | KeyCode::End => self.dispatch_action(Action::MoveLineEnd, 1),
                                 KeyCode::Char('w') => {
                                     self.dispatch_action(Action::MoveWordForward, 1)
                                 }
@@ -952,6 +950,8 @@ impl App {
                                         self.dispatch_action(Action::SelectPrev, 1)
                                     }
                                     Action::Indent => self.dispatch_action(Action::Indent, 1),
+                                    Action::MoveLineStart => self.dispatch_action(Action::MoveLineStart, 1),
+                                    Action::MoveLineEnd => self.dispatch_action(Action::MoveLineEnd, 1),
                                     _ => match key.code {
                                         KeyCode::Up => {
                                             if self.vim.show_suggestions
@@ -1000,11 +1000,11 @@ impl App {
                                                 }
                                             }
                                         }
-                                        KeyCode::PageUp => {
-                                            self.dispatch_action(Action::MovePageUp, 1);
+                                        KeyCode::PageUp | KeyCode::Home => {
+                                            self.dispatch_action(Action::MoveLineStart, 1);
                                         }
-                                        KeyCode::PageDown => {
-                                            self.dispatch_action(Action::MovePageDown, 1);
+                                        KeyCode::PageDown | KeyCode::End => {
+                                            self.dispatch_action(Action::MoveLineEnd, 1);
                                         }
                                         KeyCode::Char(c) => {
                                             self.editor.clamp_cursor();
