@@ -1313,22 +1313,31 @@ impl TerminalUi {
             if in_code_fence || lang_hint == "diff" {
                 // Apply syntax highlighting to code / diff lines
                 if lang_hint == "diff" {
-                    let style = if raw.starts_with("+ ") {
-                        theme.get("String")
-                    } else if raw.starts_with("- ") {
-                        theme.get("Keyword")
+                    if raw.starts_with("+ ") || raw.starts_with("- ") {
+                        let is_add = raw.starts_with("+ ");
+                        let content = &raw[2..];
+                        let (fg, bg) = if is_add {
+                            let c = theme.palette.green;
+                            let dim = match c {
+                                ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 6, g / 5, b / 6),
+                                other => other,
+                            };
+                            (c, dim)
+                        } else {
+                            let c = theme.palette.red;
+                            let dim = match c {
+                                ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 5, g / 9, b / 6),
+                                other => other,
+                            };
+                            (c, dim)
+                        };
+                        let line_style = Style::default().fg(fg).bg(bg);
+                        // Pad to max_line_len so the background fills the popup width
+                        let padded = format!("{:<width$}", content, width = max_line_len.saturating_sub(2));
+                        styled_lines.push(Line::from(Span::styled(padded, line_style)));
                     } else {
-                        theme.get("Normal")
-                    };
-                    let prefix_style = style;
-                    let rest_styles = highlighter.highlight_line(&raw[2.min(raw.len())..]);
-                    let mut spans = vec![Span::styled(&raw[..2.min(raw.len())], prefix_style)];
-                    let rest: Vec<char> = raw[2.min(raw.len())..].chars().collect();
-                    for (i, ch) in rest.iter().enumerate() {
-                        let s = rest_styles.get(i).copied().unwrap_or(theme.get("Normal"));
-                        spans.push(Span::styled(ch.to_string(), s));
+                        styled_lines.push(Line::from(Span::styled(raw.to_string(), theme.get("Comment"))));
                     }
-                    styled_lines.push(Line::from(spans));
                 } else {
                     let styles = highlighter.highlight_line(raw);
                     let chars: Vec<char> = raw.chars().collect();
