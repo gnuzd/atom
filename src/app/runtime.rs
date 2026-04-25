@@ -29,8 +29,8 @@ impl App {
             let mut explorer_needs_refresh = false;
             let mut buffers_to_reload = Vec::new();
 
-            // Prune stale save-suppression tokens (safety net if the watcher never fires).
-            self.pending_save_paths.retain(|_, t| t.elapsed() < Duration::from_secs(10));
+            // Evict entries whose suppression window has expired (> 3 s since save completed).
+            self.pending_save_paths.retain(|_, t| t.elapsed() < Duration::from_secs(3));
 
             while let Ok(res) = self.rx.try_recv() {
                 if let Ok(event) = res {
@@ -41,8 +41,10 @@ impl App {
                             for path in event.paths {
                                 if let Some(active_path) = self.editor.buffer().file_path.as_ref() {
                                     if path == *active_path {
-                                        // Consume the save token — if it was our write, skip reload.
-                                        if self.pending_save_paths.remove(&path).is_none() {
+                                        // Suppress if this event was triggered by our own save
+                                        // (macOS can fire several events per write — use a time
+                                        // window, not a consume-once token, to cover all of them).
+                                        if !self.pending_save_paths.contains_key(&path) {
                                             buffers_to_reload.push(path);
                                         }
                                     }
@@ -125,8 +127,9 @@ impl App {
                     },
                     AsyncResult::Save(res) => match res {
                         Ok(final_text) => {
-                            // Leave pending_save_paths entry intact; the notify-event handler
-                            // consumes the token to avoid the "file changed on disk" race.
+                            // Reset timestamp to NOW (write just finished) so the 3-second
+                            // suppression window starts from actual completion, not save start.
+                            self.pending_save_paths.insert(path.clone(), std::time::Instant::now());
                             if let Some(buf_idx) = self
                                 .editor
                                 .buffers
