@@ -129,20 +129,21 @@ impl GitManager {
             hunks.push((s, e));
         }
 
-        // Find the hunk whose new-file lines are nearest to the cursor.
-        let target = cursor_line + 1; // 1-indexed
-        let best = hunks.iter().min_by_key(|&&(start, end)| {
-            let new_nums: Vec<usize> = ops[start..=end].iter()
-                .filter(|(_, m, _)| *m != '-')
-                .map(|(n, _, _)| *n)
-                .collect();
-            if new_nums.is_empty() {
-                usize::MAX
-            } else {
-                let lo = *new_nums.first().unwrap();
-                let hi = *new_nums.last().unwrap();
-                if lo <= target && target <= hi { 0 } else { lo.abs_diff(target).min(hi.abs_diff(target)) }
+        // Find the hunk whose new-file line range contains the cursor.
+        // Context lines (space ops) anchor deletion hunks in new-file coordinates,
+        // so a pure-delete hunk still matches when the cursor sits on the adjacent line.
+        // No nearest-hunk fallback: if the cursor isn't inside any hunk, return None.
+        let target = cursor_line + 1; // 1-indexed new-file line
+        let best = hunks.iter().find(|&&(start, end)| {
+            let mut lo = usize::MAX;
+            let mut hi = 0usize;
+            for (num, marker, _) in &ops[start..=end] {
+                if *marker != '-' {
+                    lo = lo.min(*num);
+                    hi = hi.max(*num);
+                }
             }
+            lo != usize::MAX && lo <= target && target <= hi
         })?;
 
         let (start, end) = *best;
