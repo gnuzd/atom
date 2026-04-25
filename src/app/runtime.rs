@@ -29,6 +29,9 @@ impl App {
             let mut explorer_needs_refresh = false;
             let mut buffers_to_reload = Vec::new();
 
+            // Prune stale save-suppression tokens (safety net if the watcher never fires).
+            self.pending_save_paths.retain(|_, t| t.elapsed() < Duration::from_secs(10));
+
             while let Ok(res) = self.rx.try_recv() {
                 if let Ok(event) = res {
                     use notify::EventKind;
@@ -37,8 +40,11 @@ impl App {
                             explorer_needs_refresh = true;
                             for path in event.paths {
                                 if let Some(active_path) = self.editor.buffer().file_path.as_ref() {
-                                    if path == *active_path && !self.pending_save_paths.contains(&path) {
-                                        buffers_to_reload.push(path);
+                                    if path == *active_path {
+                                        // Consume the save token — if it was our write, skip reload.
+                                        if self.pending_save_paths.remove(&path).is_none() {
+                                            buffers_to_reload.push(path);
+                                        }
                                     }
                                 }
                             }
@@ -119,7 +125,8 @@ impl App {
                     },
                     AsyncResult::Save(res) => match res {
                         Ok(final_text) => {
-                            self.pending_save_paths.remove(&path);
+                            // Leave pending_save_paths entry intact; the notify-event handler
+                            // consumes the token to avoid the "file changed on disk" race.
                             if let Some(buf_idx) = self
                                 .editor
                                 .buffers

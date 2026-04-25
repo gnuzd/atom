@@ -1161,9 +1161,8 @@ impl TerminalUi {
             Self::draw_float_popup(frame, diag_text, " Diagnostics ", pane_area, cursor_screen_y, &editor_layout, editor_width, cursor_y, cursor_x, &buffer, &theme);
         }
 
-        // Git Diff Hunk — inline overlay anchored to hunk's buffer line (gitsigns-style)
+        // Git Diff Hunk — inline overlay above the changed line, showing old→new (gitsigns-style)
         if let Some((diff_text, anchor_line)) = &vim.git_diff_popup.clone() {
-            // Find the screen row of the anchor buffer line (first screen row of that line)
             let anchor_screen_y = screen_to_buffer_lines
                 .iter()
                 .position(|&(idx, row)| idx == *anchor_line && row == 0)
@@ -1171,12 +1170,19 @@ impl TerminalUi {
 
             if let Some(anchor_y) = anchor_screen_y {
                 let diff_lines: Vec<&str> = diff_text.lines().collect();
-                // Place overlay starting one row below the anchor line
-                let start_y = pane_area.y + anchor_y as u16 + 1;
-                let available_h = pane_area.bottom().saturating_sub(start_y);
-                let display_count = (diff_lines.len() as u16).min(available_h);
+                let n = diff_lines.len() as u16;
+
+                // Prefer placing above the cursor line; fall back to below if not enough room.
+                let (start_y, display_count) = if anchor_y as u16 >= n {
+                    (pane_area.y + anchor_y as u16 - n, n)
+                } else {
+                    let below = pane_area.y + anchor_y as u16 + 1;
+                    let avail = pane_area.bottom().saturating_sub(below);
+                    (below, n.min(avail))
+                };
 
                 if display_count > 0 {
+                    let w = pane_area.width as usize;
                     let inline_area = Rect {
                         x: pane_area.x,
                         y: start_y,
@@ -1185,36 +1191,35 @@ impl TerminalUi {
                     };
                     frame.render_widget(Clear, inline_area);
 
-                    let w = inline_area.width as usize;
                     let mut styled_lines: Vec<Line> = Vec::new();
-
                     for raw in &diff_lines[..display_count as usize] {
-                        if *raw == "~~~" {
-                            let sep = format!("{:─<width$}", "", width = w);
-                            styled_lines.push(Line::from(Span::styled(sep, theme.get("Comment"))));
-                            continue;
-                        }
-                        // Format: "{:>4} {marker} {content}" — marker at index 5
-                        let marker = raw.chars().nth(5).unwrap_or(' ');
-                        let line_style = match marker {
+                        // Format: "{marker} {content}" — marker at index 0
+                        let marker = raw.chars().next().unwrap_or(' ');
+                        let content = if raw.len() > 2 { &raw[2..] } else { "" };
+                        let (fg, bg) = match marker {
                             '+' => {
                                 let bg = match theme.palette.green {
-                                    ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 7, g / 5, b / 7),
+                                    ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 8, g / 5, b / 8),
                                     c => c,
                                 };
-                                Style::default().fg(theme.palette.green).bg(bg)
+                                (theme.palette.green, bg)
                             }
                             '-' => {
                                 let bg = match theme.palette.red {
-                                    ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 5, g / 9, b / 9),
+                                    ratatui::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r / 5, g / 10, b / 10),
                                     c => c,
                                 };
-                                Style::default().fg(theme.palette.red).bg(bg)
+                                (theme.palette.red, bg)
                             }
-                            _ => theme.get("Normal").bg(theme.palette.darker_black),
+                            _ => (theme.palette.white, theme.palette.darker_black),
                         };
-                        let padded = format!("{:<width$}", raw, width = w);
-                        styled_lines.push(Line::from(Span::styled(padded, line_style)));
+                        let marker_span = Span::styled(
+                            format!(" {} ", marker),
+                            Style::default().fg(fg).bg(bg).add_modifier(ratatui::style::Modifier::BOLD),
+                        );
+                        let content_padded = format!("{:<width$}", content, width = w.saturating_sub(3));
+                        let content_span = Span::styled(content_padded, Style::default().fg(fg).bg(bg));
+                        styled_lines.push(Line::from(vec![marker_span, content_span]));
                     }
 
                     frame.render_widget(

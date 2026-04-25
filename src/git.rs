@@ -58,10 +58,9 @@ impl GitManager {
         Some(format!("{} {} • {} • {}", short_id, name, time_str, summary))
     }
 
-    /// Returns an inline diff string with line numbers, markers, context, and hunk separators.
-    /// Format per line: "{num:>4} {marker} {content}" where marker is +, -, or space.
-    /// Hunks are separated by "~~~".
-    pub fn get_hunk_diff(&self, path: &Path, content: &str) -> Option<String> {
+    /// Returns an inline diff for the hunk nearest the given cursor line (0-indexed, new-file).
+    /// Only +/- lines are returned (no context), formatted as "{marker} {content}".
+    pub fn get_hunk_diff(&self, path: &Path, content: &str, cursor_line: usize) -> Option<String> {
         let repo_lock = self.repo.lock().unwrap();
         let repo = repo_lock.as_ref()?;
         let workdir = repo.workdir()?;
@@ -115,7 +114,7 @@ impl GitManager {
 
         if changed.is_empty() { return None; }
 
-        const CTX: usize = 3;
+        const CTX: usize = 2;
         let mut hunks: Vec<(usize, usize)> = Vec::new();
 
         for &ci in &changed {
@@ -130,13 +129,27 @@ impl GitManager {
             hunks.push((s, e));
         }
 
-        let mut out = String::new();
-        for (h_idx, (start, end)) in hunks.iter().enumerate() {
-            if h_idx > 0 {
-                out.push_str("~~~\n");
+        // Find the hunk whose new-file lines are nearest to the cursor.
+        let target = cursor_line + 1; // 1-indexed
+        let best = hunks.iter().min_by_key(|&&(start, end)| {
+            let new_nums: Vec<usize> = ops[start..=end].iter()
+                .filter(|(_, m, _)| *m != '-')
+                .map(|(n, _, _)| *n)
+                .collect();
+            if new_nums.is_empty() {
+                usize::MAX
+            } else {
+                let lo = *new_nums.first().unwrap();
+                let hi = *new_nums.last().unwrap();
+                if lo <= target && target <= hi { 0 } else { lo.abs_diff(target).min(hi.abs_diff(target)) }
             }
-            for (num, marker, line_content) in &ops[*start..=*end] {
-                out.push_str(&format!("{:>4} {} {}\n", num, marker, line_content));
+        })?;
+
+        let (start, end) = *best;
+        let mut out = String::new();
+        for (_, marker, line_content) in &ops[start..=end] {
+            if *marker != ' ' {
+                out.push_str(&format!("{} {}\n", marker, line_content));
             }
         }
 

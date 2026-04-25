@@ -53,7 +53,7 @@ impl App {
             LspStatus::None
         };
 
-        self.pending_save_paths.insert(path.clone());
+        self.pending_save_paths.insert(path.clone(), std::time::Instant::now());
 
         tokio::task::spawn_blocking(move || {
             use std::fs;
@@ -1316,9 +1316,9 @@ impl App {
                 } else if let Some(path) = self.editor.buffer().file_path.clone() {
                     let anchor = self.editor.cursor().y;
                     let content = self.editor.buffer().text.to_string();
-                    match self.vim.git_manager.get_hunk_diff(&path, &content) {
+                    match self.vim.git_manager.get_hunk_diff(&path, &content, anchor) {
                         Some(diff) => self.vim.git_diff_popup = Some((diff, anchor)),
-                        None => self.vim.set_message("No changes in this file".to_string()),
+                        None => self.vim.set_message("No changes near cursor".to_string()),
                     }
                 }
             }
@@ -1604,6 +1604,9 @@ impl App {
                                 if let Err(e) = self.editor.open_file(path) {
                                     self.vim.set_message(format!("Error: {}", e));
                                 } else {
+                                    if let Some(pane) = self.vim.pane_layout.get_pane_mut(self.vim.focused_pane_id) {
+                                        pane.buffer_idx = self.editor.active_idx;
+                                    }
                                     self.editor.cursor_mut().y = line;
                                     self.editor.cursor_mut().x = 0;
                                     self.sync_explorer();
