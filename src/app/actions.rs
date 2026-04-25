@@ -1310,18 +1310,6 @@ impl App {
                     self.vim.blame_popup = Some(text);
                 }
             }
-            Action::GitDiffHunk => {
-                if self.vim.git_diff_popup.is_some() {
-                    self.vim.git_diff_popup = None;
-                } else if let Some(path) = self.editor.buffer().file_path.clone() {
-                    let anchor = self.editor.cursor().y;
-                    let content = self.editor.buffer().text.to_string();
-                    match self.vim.git_manager.get_hunk_diff(&path, &content, anchor) {
-                        Some(diff) => self.vim.git_diff_popup = Some((diff, anchor)),
-                        None => self.vim.set_message("No changes near cursor".to_string()),
-                    }
-                }
-            }
             Action::ToggleFold => {
                 self.editor.toggle_fold(&self.vim.folding_ranges);
             }

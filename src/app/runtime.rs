@@ -572,10 +572,6 @@ impl App {
                             self.vim.blame_popup = None;
                             continue;
                         }
-                        if self.vim.git_diff_popup.is_some() {
-                            self.vim.git_diff_popup = None;
-                            continue;
-                        }
                         if self.vim.hover_popup.is_some() || self.vim.diagnostic_popup.is_some() {
                             self.vim.hover_popup = None;
                             self.vim.diagnostic_popup = None;
@@ -703,8 +699,6 @@ impl App {
                                                     ),
                                                     " bl" => self
                                                         .dispatch_action(Action::GitBlame, count),
-                                                    " gh" => self
-                                                        .dispatch_action(Action::GitDiffHunk, count),
                                                     " x" => self.dispatch_action(
                                                         Action::CloseBuffer,
                                                         count,

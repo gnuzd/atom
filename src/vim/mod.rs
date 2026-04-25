@@ -233,7 +233,6 @@ pub struct VimState {
     pub git_info: Option<GitInfo>,
     pub git_manager: crate::git::GitManager,
     pub blame_popup: Option<String>,
-    pub git_diff_popup: Option<(String, usize)>, // (diff text, anchor buffer line)
     pub last_git_update: Option<Instant>,
     pub show_intro: bool,
     pub folding_ranges: Vec<lsp_types::FoldingRange>,
@@ -308,7 +307,6 @@ impl VimState {
             git_info: None,
             git_manager: crate::git::GitManager::new(&project_root),
             blame_popup: None,
-            git_diff_popup: None,
             last_git_update: None,
             show_intro: false,
             folding_ranges: Vec::new(),
