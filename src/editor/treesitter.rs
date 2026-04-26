@@ -77,6 +77,11 @@ pub const LANGUAGES: &[TreesitterLanguage] = &[
         repo: "https://github.com/tree-sitter/tree-sitter-css",
         file_types: &["css"],
     },
+    TreesitterLanguage {
+        name: "svelte",
+        repo: "https://github.com/tree-sitter-grammars/tree-sitter-svelte",
+        file_types: &["svelte"],
+    },
 ];
 
 pub struct TreesitterManager {

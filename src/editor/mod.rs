@@ -67,6 +67,7 @@ impl Editor {
             "toml" => "toml",
             "html" => "html",
             "css" => "css",
+            "svelte" => "svelte",
             _ => &ext,
         };
 

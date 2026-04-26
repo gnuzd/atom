@@ -9,6 +9,7 @@ pub struct Palette {
     pub black2: Color,
     pub grey: Color,
     pub grey_fg: Color,
+    pub comment: Color,
     pub red: Color,
     pub green: Color,
     pub yellow: Color,
@@ -27,6 +28,7 @@ impl Palette {
             black2: Color::Rgb(40, 39, 55),
             grey: Color::Rgb(47, 46, 62),
             grey_fg: Color::Rgb(56, 55, 71),
+            comment: Color::Rgb(108, 112, 134), // overlay0 — catppuccin mocha comment
             red: Color::Rgb(243, 139, 168),
             green: Color::Rgb(171, 233, 179),
             yellow: Color::Rgb(250, 227, 176),
@@ -45,6 +47,7 @@ impl Palette {
             black2: Color::Rgb(44, 47, 48),
             grey: Color::Rgb(54, 57, 58),
             grey_fg: Color::Rgb(64, 67, 68),
+            comment: Color::Rgb(146, 131, 116), // #928374 — gruvbox grey
             red: Color::Rgb(236, 107, 100),
             green: Color::Rgb(169, 182, 101),
             yellow: Color::Rgb(224, 192, 128),
@@ -63,6 +66,7 @@ impl Palette {
             black2: Color::Rgb(28, 31, 37),  // base01
             grey: Color::Rgb(36, 39, 45),    // base02
             grey_fg: Color::Rgb(43, 46, 52), // base03
+            comment: Color::Rgb(92, 103, 115), // #5c6773 — ayu comment
             red: Color::Rgb(240, 113, 116),  // base0D in ayu is red-ish
             green: Color::Rgb(170, 216, 76),
             yellow: Color::Rgb(255, 238, 153),
@@ -81,6 +85,7 @@ impl Palette {
             black2: Color::Rgb(36, 38, 54),
             grey: Color::Rgb(59, 66, 97),
             grey_fg: Color::Rgb(68, 75, 110),
+            comment: Color::Rgb(86, 95, 137), // #565f89 — tokyonight comment
             red: Color::Rgb(247, 118, 118),
             green: Color::Rgb(158, 206, 106),
             yellow: Color::Rgb(224, 175, 104),
@@ -99,6 +104,7 @@ impl Palette {
             black2: Color::Rgb(37, 41, 49),   // base01 (#252931)
             grey: Color::Rgb(84, 88, 98),     // base03
             grey_fg: Color::Rgb(86, 92, 100), // base04
+            comment: Color::Rgb(92, 99, 112), // #5c6370 — onedark comment
             red: Color::Rgb(224, 108, 117),
             green: Color::Rgb(152, 195, 121),
             yellow: Color::Rgb(229, 192, 123),
@@ -117,6 +123,7 @@ impl Palette {
             black2: Color::Rgb(45, 53, 59),
             grey: Color::Rgb(71, 82, 88),
             grey_fg: Color::Rgb(86, 95, 100),
+            comment: Color::Rgb(122, 132, 126), // #7a8478 — everforest comment
             red: Color::Rgb(230, 126, 128),
             green: Color::Rgb(167, 192, 128),
             yellow: Color::Rgb(214, 182, 125),
@@ -167,7 +174,7 @@ impl ColorScheme {
         hl.insert("Keyword".into(), Style::default().fg(palette.purple).add_modifier(Modifier::BOLD));
         hl.insert("Function".into(), Style::default().fg(palette.blue));
         hl.insert("String".into(), Style::default().fg(palette.green));
-        hl.insert("Comment".into(), Style::default().fg(palette.grey_fg).add_modifier(Modifier::ITALIC));
+        hl.insert("Comment".into(), Style::default().fg(palette.comment).add_modifier(Modifier::ITALIC));
         hl.insert("Constant".into(), Style::default().fg(palette.orange));
         hl.insert("Type".into(), Style::default().fg(palette.yellow));
         hl.insert("Variable".into(), Style::default().fg(palette.white));

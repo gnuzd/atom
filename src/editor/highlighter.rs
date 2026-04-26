@@ -200,6 +200,34 @@ impl Highlighter {
                 continue;
             }
 
+            // HTML/Svelte/XML comments: <!-- ... --> (must come before the tag handler)
+            if chars[i] == '<' && i + 3 < chars.len() && chars[i+1] == '!' && chars[i+2] == '-' && chars[i+3] == '-' {
+                let style = self.theme.get("Comment");
+                let todo_style = self.theme.get("Todo");
+                let special_keywords = ["TODO", "FIXME", "BUG", "HACK", "NOTE"];
+                while i < chars.len() {
+                    if chars[i] == '-' && i + 2 < chars.len() && chars[i+1] == '-' && chars[i+2] == '>' {
+                        styles[i] = style; styles[i+1] = style; styles[i+2] = style;
+                        i += 3;
+                        break;
+                    }
+                    let mut found_special = false;
+                    for kw in &special_keywords {
+                        if i + kw.len() <= chars.len() {
+                            let word: String = chars[i..i+kw.len()].iter().collect();
+                            if word == *kw {
+                                for k in 0..kw.len() { styles[i+k] = todo_style; }
+                                i += kw.len();
+                                found_special = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_special { styles[i] = style; i += 1; }
+                }
+                continue;
+            }
+
             // Basic HTML/XML Tag and Attribute Highlighting
             if chars[i] == '<' {
                 let j = i + 1;
