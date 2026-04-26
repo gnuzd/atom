@@ -123,7 +123,10 @@ impl Telescope {
             .build();
 
         let query_lower = self.query.to_lowercase();
+        let mut visited = 0usize;
         for entry in walker.filter_map(|e| e.ok()) {
+            visited += 1;
+            if visited > 10_000 || self.results.len() >= 100 { break; }
             if entry.file_type().map(|f| f.is_file()).unwrap_or(false) {
                 let path = entry.path().strip_prefix(&self.search_root).unwrap_or(entry.path()).to_path_buf();
                 if path == Path::new("") { continue; }
@@ -137,7 +140,6 @@ impl Telescope {
                     });
                 }
             }
-            if self.results.len() > 100 { break; }
         }
     }
 
@@ -145,16 +147,23 @@ impl Telescope {
         self.results.clear();
         if self.query.is_empty() { return; }
 
-        let output = Command::new("rg")
+        let mut child = match Command::new("rg")
             .arg("--vimgrep")
             .arg("--smart-case")
+            .arg("--max-filesize").arg("1M")
             .arg(&self.query)
             .arg(&self.search_root)
-            .output();
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(_) => return,
+        };
 
-        if let Ok(output) = output {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
+        if let Some(stdout) = child.stdout.take() {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines().flatten() {
                 let parts: Vec<&str> = line.splitn(4, ':').collect();
                 if parts.len() >= 4 {
                     let path = PathBuf::from(parts[0]);
@@ -167,9 +176,11 @@ impl Telescope {
                         buffer_idx: None,
                     });
                 }
-                if self.results.len() > 100 { break; }
+                if self.results.len() >= 100 { break; }
             }
         }
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     pub fn update_preview(&mut self) {
@@ -181,8 +192,13 @@ impl Telescope {
                     self.preview_lines = self.get_theme_sample().lines().map(|s| s.to_string()).collect();
                 }
                 _ => {
-                    if let Ok(content) = std::fs::read_to_string(&result.path) {
-                        self.preview_lines = content.lines().map(|s| s.to_string()).collect();
+                    let too_large = std::fs::metadata(&result.path)
+                        .map(|m| m.len() > 1024 * 1024)
+                        .unwrap_or(false);
+                    if too_large {
+                        self.preview_lines = vec!["[File too large to preview]".to_string()];
+                    } else if let Ok(content) = std::fs::read_to_string(&result.path) {
+                        self.preview_lines = content.lines().take(2000).map(|s| s.to_string()).collect();
                         let target_line = result.line_number.unwrap_or(1).saturating_sub(1);
                         self.preview_scroll = target_line.saturating_sub(15);
                     }
@@ -412,12 +428,16 @@ export default Counter;"#
         let inner_preview_area = preview_block.inner(main_chunks[1]);
         frame.render_widget(preview_block, main_chunks[1]);
 
+        // Compute once per draw — avoids O(lines) ColorScheme allocations per frame
+        let preview_theme = if self.kind == TelescopeKind::Themes {
+            selected_result.map(|r| crate::ui::colorscheme::ColorScheme::new(&r.path.to_string_lossy())).unwrap_or(theme.clone())
+        } else {
+            theme.clone()
+        };
+
         // Fill background inside border for themes
-        if self.kind == TelescopeKind::Themes {
-            if let Some(res) = selected_result {
-                let temp_theme = crate::ui::colorscheme::ColorScheme::new(&res.path.to_string_lossy());
-                frame.render_widget(Block::default().style(temp_theme.get("Normal")), inner_preview_area);
-            }
+        if self.kind == TelescopeKind::Themes && selected_result.is_some() {
+            frame.render_widget(Block::default().style(preview_theme.get("Normal")), inner_preview_area);
         }
 
         let preview_layout = Layout::default()
@@ -429,18 +449,19 @@ export default Counter;"#
         let mut preview_text = Text::default();
         let target_line_idx = selected_result.and_then(|r| r.line_number.map(|l| l.saturating_sub(1)));
 
+        // Create highlighter once per draw, not once per line
+        let theme_highlighter = if self.kind == TelescopeKind::Themes {
+            Some(crate::editor::highlighter::Highlighter::new(preview_theme.clone()))
+        } else {
+            None
+        };
+
         let preview_height = inner_preview_area.height as usize;
         for i in 0..preview_height {
             let actual_line_idx = self.preview_scroll + i;
             if actual_line_idx >= self.preview_lines.len() { break; }
             let line = &self.preview_lines[actual_line_idx];
             let is_target = Some(actual_line_idx) == target_line_idx;
-
-            let preview_theme = if self.kind == TelescopeKind::Themes {
-                selected_result.map(|r| crate::ui::colorscheme::ColorScheme::new(&r.path.to_string_lossy())).unwrap_or(theme.clone())
-            } else {
-                theme.clone()
-            };
 
             // Highlight active line background in preview
             if is_target {
@@ -458,17 +479,18 @@ export default Counter;"#
             line_numbers.lines.push(Line::from(vec![Span::styled(format!("{:>4} ", actual_line_idx + 1), ln_style)]));
 
             // Code content
-            let syntax_styles = if self.kind == TelescopeKind::Themes {
-                let highlighter = crate::editor::highlighter::Highlighter::new(preview_theme.clone());
-                highlighter.highlight_line(line)
+            let syntax_styles = if let Some(h) = &theme_highlighter {
+                h.highlight_line(line)
             } else {
                 editor.highlighter.highlight_line(line)
             };
 
+            // Precompute indent depth once per line instead of once per character
+            let indent_count = line.chars().take_while(|&c| c == ' ').count();
             let mut spans = Vec::new();
             for (x, c) in line.chars().enumerate() {
                 let mut style = syntax_styles.get(x).copied().unwrap_or(preview_theme.get("Normal"));
-                
+
                 // Clear individual backgrounds on target line to avoid "patchy" look
                 if is_target {
                     style.bg = None;
@@ -479,8 +501,7 @@ export default Counter;"#
                         spans.push(Span::styled(" ", style));
                     }
                 } else {
-                    // Indent guide logic for non-tab characters
-                    let is_indent_pos = x % 2 == 0 && x < line.chars().take_while(|&c| c == ' ').count();
+                    let is_indent_pos = x % 2 == 0 && x < indent_count;
                     if is_indent_pos {
                         let mut indent_style = preview_theme.get("Comment").add_modifier(Modifier::DIM);
                         if is_target { indent_style.bg = None; }
