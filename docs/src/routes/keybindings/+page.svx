@@ -1,0 +1,100 @@
+# Keybindings
+
+Atom uses Vim-inspired modal editing. This page lists the default keybindings for each mode.
+
+## Normal Mode
+
+Normal mode is the default mode for navigation and editing.
+
+### Navigation
+| Key | Action |
+|-----|--------|
+| `h` | Move Left |
+| `j` | Move Down |
+| `k` | Move Up |
+| `l` | Move Right |
+| `w` | Move Word Forward |
+| `b` | Move Word Backward |
+| `e` | Move Word End |
+| `gg`, `[[` | Jump to First Line |
+| `G`, `]]` | Jump to Last Line |
+| `[num]j/k` | Jump N lines down/up |
+
+### Editing
+| Key | Action |
+|-----|--------|
+| `i` | Enter Insert Mode |
+| `I` | Enter Insert Mode at Line Start |
+| `v` | Enter Visual Mode |
+| `Ctrl+v` | Enter Visual Block Mode |
+| `s` | Substitute (delete char, enter insert) |
+| `u` | Undo |
+| `Ctrl+r` | Redo |
+| `x` | Delete Character |
+| `dd` | Delete Line |
+| `yy` | Yank (Copy) Line |
+| `p` | Paste After |
+| `P` | Paste Before |
+| `Ctrl+c` | Copy selection to clipboard |
+| `o` | Open Line Below |
+| `O` | Open Line Above |
+| `ZZ` | Save and Quit |
+| `ZQ` | Quit Without Saving |
+
+### Global & Plugin Shortcuts
+| Key | Action |
+|-----|--------|
+| `:` | Enter Command Mode |
+| `/` | Enter Search Mode |
+| `\` | Toggle File Explorer |
+| `Tab` | Next Buffer |
+| `Shift+Tab` | Previous Buffer |
+| `?` | Open Keymaps Help |
+| `gd` | Go to Definition (LSP) |
+| `<Space>ff` | Telescope: Find Files |
+| `<Space>fg` | Telescope: Live Grep |
+| `<Space>fb` | Telescope: Buffers |
+| `<Space>th` | Telescope: Theme Picker |
+| `<Space>tt` | Toggle Trouble View |
+| `<Space>/` | Toggle Comment |
+| `<Space>n` | Toggle Relative Line Numbers |
+| `<Space>bb` | Toggle Autoformat |
+| `<Space>bl` | Git Blame (popup) |
+| `<Space>x` | Close Current Buffer |
+| `zc` / `za` | Fold / Unfold |
+| `]g` / `[g` | Next / Previous Git Hunk |
+
+---
+
+## Insert Mode
+
+Insert mode is used for typing text.
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Return to Normal Mode |
+| `Backspace` | Delete Character Before |
+| `Tab` | 2 Spaces / Completion Next |
+| `Shift+Tab` | Completion Prev |
+| `Up` / `Down` | Completion Navigate |
+| `Ctrl+Space` | Trigger Completion |
+| `Ctrl+s` | Save File |
+| `Ctrl+v` | Paste from Clipboard |
+
+---
+
+## Visual Mode
+
+Visual mode is used for selecting text.
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Return to Normal Mode |
+| `h` / `j` / `k` / `l` | Extend Selection |
+| `w` / `b` | Extend by Word |
+| `y` | Yank Selection |
+| `d` / `x` | Delete Selection |
+| `s` | Substitute Selection |
+| `p` | Paste After Selection |
+| `Ctrl+c` | Copy Selection to Clipboard |
+| `Ctrl+s` | Save File |

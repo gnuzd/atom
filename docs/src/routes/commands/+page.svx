@@ -1,0 +1,60 @@
+# Commands
+
+Atom features a powerful command-line interface for executing editor commands. You can enter command mode by pressing `:` in Normal mode.
+
+## File Operations
+
+| Command | Description |
+|---------|-------------|
+| `:w`, `:write` | Write (save) the current buffer |
+| `:wa`, `:wall` | Write all modified buffers |
+| `:q`, `:quit` | Quit the current window |
+| `:qa`, `:qall` | Quit all windows |
+| `:wq` | Save and quit |
+| `:x` | Save and quit |
+| `:wqa`, `:xa` | Save all buffers and quit |
+| `:e <path>`, `:edit <path>` | Edit a file at the specified path |
+| `:Reload`, `:e!` | Reload the current file from disk |
+
+## Buffer Management
+
+| Command | Description |
+|---------|-------------|
+| `:bn`, `:bnext` | Go to the next buffer |
+| `:bp`, `:bprev` | Go to the previous buffer |
+| `:bd`, `:bdelete` | Delete (close) the current buffer |
+
+## Splits
+
+| Command | Description |
+|---------|-------------|
+| `:sp`, `:split` | Split window horizontally |
+| `:vsp`, `:vsplit` | Split window vertically |
+
+## Plugin Commands
+
+| Command | Description |
+|---------|-------------|
+| `:colorscheme` | Change the colorscheme (opens picker if no arg) |
+| `:Nucleus` | Open the Nucleus package manager |
+| `:checkhealth` | Open the Nucleus package manager |
+| `:TreesitterManager` | Open the Tree-sitter manager |
+| `:Trouble` | Toggle the Trouble diagnostic view |
+| `:format`, `:Format` | Format the current buffer using LSP |
+| `:FormatAll` | Format all open buffers |
+| `:FormatEnable` | Enable autoformat on save |
+| `:FormatDisable` | Disable autoformat on save |
+| `:gd` | Go to definition (LSP) |
+| `:LspInfo` | Show LSP client information |
+| `:LspRestart` | Restart LSP clients |
+
+## Settings
+
+| Command | Description |
+|---------|-------------|
+| `:set number` | Enable line numbers |
+| `:set nonumber` | Disable line numbers |
+| `:set relativenumber` | Enable relative line numbers |
+| `:set norelativenumber` | Disable relative line numbers |
+| `:config` | Save current session configuration |
+| `:help` | Open the keybindings help view |
