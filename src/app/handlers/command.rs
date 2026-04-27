@@ -261,6 +261,8 @@ impl App {
             }
             "LspRestart" => {
                 self.lsp_manager.clients.lock().unwrap().clear();
+                self.lsp_manager.failed_exts.lock().unwrap().clear();
+                self.lsp_manager.opened_docs.lock().unwrap().clear();
                 self.vim.set_message("LSP clients cleared — will restart on next edit".to_string());
             }
             "set" => {

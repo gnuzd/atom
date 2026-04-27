@@ -304,7 +304,11 @@ impl LspManager {
     pub fn get_server_commands(&self, ext: &str) -> Vec<(&'static str, &'static [&'static str])> {
         let mut servers = Vec::new();
         match ext {
-            "rs" => servers.push(("rust-analyzer", &[] as &[&str])),
+            "rs" => {
+                if self.is_installed("rust-analyzer") {
+                    servers.push(("rust-analyzer", &[] as &[&str]));
+                }
+            }
             "py" => servers.push(("pyright-langserver", &["--stdio"])),
             "js" | "ts" | "jsx" | "tsx" => {
                 if self.is_installed("vtsls") {
