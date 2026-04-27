@@ -869,6 +869,7 @@ impl TerminalUi {
 
                         // Overlay Highlights
                         let mut is_in_range = false;
+                        if is_focused {
                         if let Some(start) = vim.selection_start {
                             let cur = crate::vim::Position {
                                 x: cursor_x,
@@ -911,6 +912,7 @@ impl TerminalUi {
                                 style = theme.get("Visual");
                             }
                         }
+                        } // end is_focused visual selection
                         if !search_query.is_empty() {
                             let line_str = line.to_string();
                             if let Some(pos) =
@@ -1006,7 +1008,7 @@ impl TerminalUi {
                 }
 
                 // V-Block: show highlight on empty/short lines that have no chars in the range
-                if matches!(vim.mode, Mode::VisualBlock | Mode::BlockInsert) {
+                if is_focused && matches!(vim.mode, Mode::VisualBlock | Mode::BlockInsert) {
                     if let Some(start) = vim.selection_start {
                         let cur = crate::vim::Position { x: cursor_x, y: cursor_y };
                         let top_y = start.y.min(cur.y);
