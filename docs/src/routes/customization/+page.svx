@@ -74,10 +74,16 @@ vim.snippet.add("rs", "fn", "Function", "fn ${1:name}(${2}) -> ${3:()} {\n\t$4\n
 ### Themes
 Atom supports several built-in themes:
 - `Catppuccin`
+![Catppuccin](/images/catppuccin.png)
 - `OneDark`
+![OneDark](/images/onedark.png)
 - `Ayu Dark`
-- `Gruvbox`
+![Ayu Dark](/images/ayu-dark.png)
+- `Gruvbox Material`
+![Gruvbox Material](/images/gruvbox-material.png)
 - `TokyoNight`
+![TokyoNight](/images/tokionight.png)
 - `Everforest`
+![Everforest](/images/everforest.png)
 
 Set the theme in `init.lua` or switch at runtime with `:colorscheme <name>` (or `:colorscheme` with no argument to open the interactive picker).

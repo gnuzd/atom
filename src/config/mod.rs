@@ -107,7 +107,16 @@ impl Config {
     }
 
     fn from_lua(content: &str) -> LuaResult<(Self, Vec<UserKeymap>, Vec<UserSnippet>)> {
-        let lua = Lua::new();
+        // Only load safe stdlib subsets — no io, os, package, or debug.
+        let lua = Lua::new_with(
+            mlua::StdLib::STRING | mlua::StdLib::TABLE | mlua::StdLib::MATH,
+            LuaOptions::default(),
+        )?;
+        // Strip dangerous BASE globals: dynamic code loading and shell access.
+        let globals = lua.globals();
+        for name in &["load", "loadfile", "dofile", "require", "collectgarbage"] {
+            globals.set(*name, LuaValue::Nil)?;
+        }
         let mut config = Self::default();
 
         // vim.opt — plain table, read back after exec

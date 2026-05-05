@@ -47,4 +47,4 @@ Once installed, simply run `atom` in your terminal:
 atom .
 ```
 
-You can now use the `:Mason` command to install language servers and other packages.
+You can now use the `:Nucleus` command to install language servers and other packages.

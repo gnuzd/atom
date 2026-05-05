@@ -10,7 +10,10 @@
 		List, 
 		X, 
 		GithubLogo, 
-		Package 
+		Package,
+		Keyboard,
+		Command,
+		Gear
 	} from 'phosphor-svelte';
 
 	let { children } = $props();
@@ -19,7 +22,10 @@
 	const navItems = [
 		{ name: 'Introduction', path: '/', icon: BookOpen },
 		{ name: 'Prerequisites', path: '/prerequisites', icon: TerminalWindow },
-		{ name: 'Installation', path: '/installation', icon: DownloadSimple }
+		{ name: 'Installation', path: '/installation', icon: DownloadSimple },
+		{ name: 'Keybindings', path: '/keybindings', icon: Keyboard },
+		{ name: 'Commands', path: '/commands', icon: Command },
+		{ name: 'Customization', path: '/customization', icon: Gear }
 	];
 
 	function toggleSidebar() {

@@ -1,15 +1,15 @@
 pub mod app;
 pub mod config;
 pub mod editor;
-pub mod lsp;
-pub mod ui;
-pub mod vim;
 pub mod git;
 pub mod input;
+pub mod lsp;
 pub mod plugins;
+pub mod ui;
+pub mod vim;
 
-use std::error::Error;
 use app::App;
+use std::error::Error;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
