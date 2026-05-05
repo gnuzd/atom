@@ -1,22 +1,22 @@
 class Atom < Formula
   desc "A lightning-fast, modal terminal editor written in Rust"
   homepage "https://github.com/gnuzd/atom"
-  version "0.1.12"
+  version "0.1.13"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/gnuzd/atom/releases/download/v0.1.12/atom-v0.1.12-aarch64-apple-darwin.tar.gz"
-      sha256 "f9351d3ef78a3ddb6cee29971bc996d9360c0cc88e3cde7daa7a4fcc17f05d33"
+      url "https://github.com/gnuzd/atom/releases/download/v0.1.13/atom-v0.1.13-aarch64-apple-darwin.tar.gz"
+      sha256 "REPLACE_WITH_AARCH64_SHA256"
     else
-      url "https://github.com/gnuzd/atom/releases/download/v0.1.12/atom-v0.1.12-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/gnuzd/atom/releases/download/v0.1.13/atom-v0.1.13-x86_64-apple-darwin.tar.gz"
       sha256 "REPLACE_WITH_X86_64_SHA256"
     end
   end
 
   on_linux do
-    url "https://github.com/gnuzd/atom/archive/refs/tags/v0.1.12.tar.gz"
-    sha256 "5d4c96de9cd0a3e4d3ccb02f15b3641167450ac1d5832b7de806dafbeb31f3d5"
+    url "https://github.com/gnuzd/atom/archive/refs/tags/v0.1.13.tar.gz"
+    sha256 "REPLACE_WITH_LINUX_SHA256"
     depends_on "rust" => :build
   end
 
